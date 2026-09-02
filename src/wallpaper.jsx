@@ -106,21 +106,32 @@ function WallpaperCanvas() {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window')
         const appWindow = getCurrentWindow()
+        const myLabel = appWindow.label
 
         unlisteners.push(
           await appWindow.listen('aura:set-engine', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             bootEngine(payload.engineId, payload.config || {})
           })
         )
 
         unlisteners.push(
           await appWindow.listen('aura:update-config', ({ payload }) => {
-            engineRef.current?.updateOptions?.(payload)
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
+            const cfg = payload.config || payload
+            engineRef.current?.updateOptions?.(cfg)
           })
         )
 
         unlisteners.push(
-          await appWindow.listen('aura:stop', () => {
+          await appWindow.listen('aura:stop', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             bootSeqRef.current++
             activeIdRef.current = null
             setActiveId(null)
@@ -137,7 +148,10 @@ function WallpaperCanvas() {
         )
 
         unlisteners.push(
-          await appWindow.listen('aura:pause', () => {
+          await appWindow.listen('aura:pause', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             if (engineRef.current && engineRef.current.updateOptions) {
                engineRef.current.updateOptions({ paused: true });
             } else {
@@ -147,7 +161,10 @@ function WallpaperCanvas() {
         )
 
         unlisteners.push(
-          await appWindow.listen('aura:resume', () => {
+          await appWindow.listen('aura:resume', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             if (engineRef.current && engineRef.current.updateOptions) {
                engineRef.current.updateOptions({ paused: false });
             } else {
@@ -158,12 +175,18 @@ function WallpaperCanvas() {
 
         unlisteners.push(
           await appWindow.listen('aura:set-brightness', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             setBrightness(payload.brightness)
           })
         )
 
         unlisteners.push(
           await appWindow.listen('aura:set-opacity', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
             setOpacity(payload.opacity)
           })
         )

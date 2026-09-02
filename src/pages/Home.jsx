@@ -37,6 +37,8 @@ export default function HomePage() {
   const audioMuted            = useStore(s => s.audioMuted)
 
   const screenArrangement     = useStore(s => s.screenArrangement)
+  const monitorWallpapers     = useStore(s => s.monitorWallpapers)
+  const setMonitorWallpaper   = useStore(s => s.setMonitorWallpaper)
   
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
@@ -60,6 +62,13 @@ export default function HomePage() {
       })
       .catch(e => console.error("Failed to fetch monitors", e))
   }, [])
+
+  function handleSelectMonitor(label) {
+    setSelectedMonitorLabel(label)
+    if (monitorWallpapers && monitorWallpapers[label]) {
+      setActiveWallpaper(monitorWallpapers[label])
+    }
+  }
 
   // ── Select a wallpaper (just marks it as "selected" in the control panel) ──
   function selectWallpaper(engine) {
@@ -89,6 +98,9 @@ export default function HomePage() {
         brightness: wallpaperBrightness,
         monitorLabel: targetLabel,
       })
+      if (targetLabel) {
+        setMonitorWallpaper(targetLabel, activeWallpaper)
+      }
       setWallpaperRunning(true)
     } finally {
       setApplying(false)
@@ -97,7 +109,11 @@ export default function HomePage() {
 
   // ── Stop the live wallpaper ──────────────────────────────────────────────────
   async function stopWallpaper() {
-    await tauriInvoke('stop_wallpaper', {})
+    const targetLabel = screenArrangement === 'per-screen' ? selectedMonitorLabel : null;
+    await tauriInvoke('stop_wallpaper', { monitorLabel: targetLabel })
+    if (targetLabel) {
+      setMonitorWallpaper(targetLabel, null)
+    }
     setWallpaperRunning(false)
   }
 
@@ -203,17 +219,26 @@ export default function HomePage() {
             <div style={{ marginBottom: 24, padding: '16px', background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-main)' }}>
               <div className="text-sm font-medium" style={{ marginBottom: 12 }}>Target Monitor</div>
               <div className="flex gap-2">
-                {monitors.map((m, i) => (
-                  <button 
-                    key={m.label} 
-                    className={`btn ${selectedMonitorLabel === m.label ? 'btn-primary' : 'btn-ghost'}`}
-                    onClick={() => setSelectedMonitorLabel(m.label)}
-                    style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: 4 }}
-                  >
-                    <Monitor size={16} />
-                    <span style={{ fontSize: 11 }}>Screen {i + 1}</span>
-                  </button>
-                ))}
+                {monitors.map((m, i) => {
+                  const isSelected = selectedMonitorLabel === m.label
+                  const monWp = monitorWallpapers?.[m.label]
+                  return (
+                    <button 
+                      key={m.label} 
+                      className={`btn ${isSelected ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => handleSelectMonitor(m.label)}
+                      style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}
+                    >
+                      <Monitor size={16} />
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>Screen {i + 1}</span>
+                      {monWp && (
+                        <span style={{ fontSize: 10, opacity: 0.8, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {monWp.name}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
