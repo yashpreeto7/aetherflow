@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -Command \"$ts = Get-Date -Format 'yyyy-MM-dd HH:mm'; $log = 'C:\\Users\\Yashpreet_o7\\Desktop\\AURAOS\\SESSION_LOG.md'; if (-not (Test-Path $log)) { '# AuraOS Session Log`n' | Set-Content $log }; \\\"[$ts] File modified in AuraOS workspace`n\\\" | Add-Content $log\"",
+            "description": "Append timestamp to session log on every file write"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -Command \"$ctx = 'C:\\Users\\Yashpreet_o7\\Desktop\\AURAOS\\CONTEXT.md'; $hoff = 'C:\\Users\\Yashpreet_o7\\Desktop\\AURAOS\\HANDOFF.md'; $msg = ''; if (Test-Path $ctx) { $msg += \\\"[AuraOS Context Available] Read CONTEXT.md for full project state.`n\\\" }; if (Test-Path $hoff) { $msg += \\\"[AuraOS Handoff Available] Read HANDOFF.md for session status.`n\\\" }; if ($msg) { Write-Output $msg }\"",
+            "description": "Remind agent to read context files at session start"
+          }
+        ]
+      }
+    ]
+  }
+}

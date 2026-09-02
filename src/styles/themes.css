@@ -1,0 +1,221 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AuraOS — Sovereign Theme Engine
+   All theme tokens as CSS custom properties on [data-theme].
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Base defaults (Sovereign Onyx) ───────────────────────────────────────── */
+:root {
+  --card-opacity: 0.92;
+  --sidebar-opacity: 0.88;
+  --card-blur: 12px;
+  --glow-intensity: 1;
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Outfit', 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+/* ── Sovereign Onyx — Pure Titanium Black ─────────────────────────────────── */
+[data-theme="sovereign-onyx"] {
+  --rgb-base:         9, 9, 11;
+  --rgb-sidebar:     17, 17, 20;
+  --rgb-card:        26, 26, 32;
+  --rgb-card-hover:  38, 38, 46;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.08));
+
+  --border-main:     #27272a;
+  --border-accent:   #3b82f6;
+  --color-brand:     #3b82f6;
+  --color-brand-hover: #2563eb;
+  --color-accent:    #60a5fa;
+  --color-highlight: #818cf8;
+  --color-cyan:      #67e8f9;
+  --color-emerald:   #34d399;
+  --color-amber:     #fbbf24;
+  --color-rose:      #fb7185;
+  --color-purple:    #a78bfa;
+
+  --text-main:       #fafafa;
+  --text-muted:      #a1a1aa;
+  --text-subtle:     #52525b;
+
+  --glow-shadow:     0 4px 20px -2px rgba(59,130,246,0.35);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.8), 0 4px 12px rgba(0,0,0,0.6);
+  --shadow-card-hover: 0 0 0 1px #3b82f6, 0 8px 24px rgba(59,130,246,0.25);
+  --bevel-highlight: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* ── Sovereign Slate — Deep Indigo Blueprint ──────────────────────────────── */
+[data-theme="sovereign-slate"] {
+  --rgb-base:        12, 15, 23;
+  --rgb-sidebar:     18, 23, 34;
+  --rgb-card:        24, 32, 48;
+  --rgb-card-hover:  34, 44, 66;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.1));
+
+  --border-main:     #1e2d4a;
+  --border-accent:   #6366f1;
+  --color-brand:     #6366f1;
+  --color-brand-hover: #4f46e5;
+  --color-accent:    #38bdf8;
+  --color-highlight: #a855f7;
+  --color-cyan:      #38bdf8;
+  --color-emerald:   #10b981;
+  --color-amber:     #f59e0b;
+  --color-rose:      #f43f5e;
+  --color-purple:    #8b5cf6;
+
+  --text-main:       #f1f5f9;
+  --text-muted:      #94a3b8;
+  --text-subtle:     #475569;
+
+  --glow-shadow:     0 4px 20px -2px rgba(99,102,241,0.35);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-card-hover: 0 0 0 1px #6366f1, 0 8px 24px rgba(99,102,241,0.25);
+  --bevel-highlight: inset 0 1px 0 rgba(255,255,255,0.10);
+}
+
+/* ── Sovereign Studio — Forest Graphite ───────────────────────────────────── */
+[data-theme="sovereign-studio"] {
+  --rgb-base:        10, 14, 15;
+  --rgb-sidebar:     17, 24, 26;
+  --rgb-card:        23, 34, 37;
+  --rgb-card-hover:  34, 49, 54;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.1));
+
+  --border-main:     #1e3040;
+  --border-accent:   #10b981;
+  --color-brand:     #10b981;
+  --color-brand-hover: #059669;
+  --color-accent:    #2dd4bf;
+  --color-highlight: #06b6d4;
+  --color-cyan:      #22d3ee;
+  --color-emerald:   #10b981;
+  --color-amber:     #f59e0b;
+  --color-rose:      #f43f5e;
+  --color-purple:    #8b5cf6;
+
+  --text-main:       #ecfdf5;
+  --text-muted:      #94a3b8;
+  --text-subtle:     #475569;
+
+  --glow-shadow:     0 4px 20px -2px rgba(16,185,129,0.35);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.55);
+  --shadow-card-hover: 0 0 0 1px #10b981, 0 8px 24px rgba(16,185,129,0.25);
+  --bevel-highlight: inset 0 1px 0 rgba(16,185,129,0.15);
+}
+
+/* ── Sovereign Obsidian — Warm Amber Gold ─────────────────────────────────── */
+[data-theme="sovereign-obsidian"] {
+  --rgb-base:        14, 11, 8;
+  --rgb-sidebar:     23, 19, 14;
+  --rgb-card:        34, 28, 21;
+  --rgb-card-hover:  48, 40, 30;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.1));
+
+  --border-main:     #3d2e1e;
+  --border-accent:   #f59e0b;
+  --color-brand:     #f59e0b;
+  --color-brand-hover: #d97706;
+  --color-accent:    #fbbf24;
+  --color-highlight: #f97316;
+  --color-cyan:      #38bdf8;
+  --color-emerald:   #10b981;
+  --color-amber:     #f59e0b;
+  --color-rose:      #ef4444;
+  --color-purple:    #c084fc;
+
+  --text-main:       #fef3c7;
+  --text-muted:      #a8a29e;
+  --text-subtle:     #57534e;
+
+  --glow-shadow:     0 4px 20px -2px rgba(245,158,11,0.35);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.8), 0 4px 16px rgba(0,0,0,0.6);
+  --shadow-card-hover: 0 0 0 1px #f59e0b, 0 8px 24px rgba(245,158,11,0.3);
+  --bevel-highlight: inset 0 1px 0 rgba(245,158,11,0.15);
+}
+
+/* ── Sovereign Manifesto — Light Editorial Swiss ──────────────────────────── */
+[data-theme="sovereign-manifesto"] {
+  --rgb-base:        245, 240, 232;
+  --rgb-sidebar:     234, 228, 216;
+  --rgb-card:        252, 251, 250;
+  --rgb-card-hover:  240, 234, 223;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.1));
+
+  --border-main:     #0a0a0a;
+  --border-accent:   #d42b2b;
+  --color-brand:     #d42b2b;
+  --color-brand-hover: #b91c1c;
+  --color-accent:    #1a3dc4;
+  --color-highlight: #f5c518;
+  --color-cyan:      #1a3dc4;
+  --color-emerald:   #15803d;
+  --color-amber:     #b45309;
+  --color-rose:      #d42b2b;
+  --color-purple:    #4338ca;
+
+  --text-main:       #0a0a0a;
+  --text-muted:      #5c584e;
+  --text-subtle:     #9c9890;
+
+  --glow-shadow:     0 4px 16px -2px rgba(212,43,43,0.2);
+  --shadow-card:     3px 3px 0 #0a0a0a;
+  --shadow-card-hover: 5px 5px 0 #d42b2b;
+  --bevel-highlight: none;
+}
+
+/* ── Sovereign Light — High Contrast Clean ────────────────────────────────── */
+[data-theme="sovereign-light"] {
+  --rgb-base:        248, 250, 252;
+  --rgb-sidebar:     255, 255, 255;
+  --rgb-card:        255, 255, 255;
+  --rgb-card-hover:  241, 245, 249;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.05));
+
+  --border-main:     #e2e8f0;
+  --border-accent:   #2563eb;
+  --color-brand:     #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-accent:    #0ea5e9;
+  --color-highlight: #7c3aed;
+  --color-cyan:      #0891b2;
+  --color-emerald:   #059669;
+  --color-amber:     #d97706;
+  --color-rose:      #e11d48;
+  --color-purple:    #7c3aed;
+
+  --text-main:       #0f172a;
+  --text-muted:      #64748b;
+  --text-subtle:     #94a3b8;
+
+  --glow-shadow:     0 4px 20px -2px rgba(37,99,235,0.2);
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-card-hover: 0 0 0 2px #2563eb, 0 8px 24px rgba(37,99,235,0.15);
+  --bevel-highlight: inset 0 1px 0 rgba(255,255,255,0.9);
+}
