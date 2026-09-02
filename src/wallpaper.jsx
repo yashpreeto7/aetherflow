@@ -23,6 +23,7 @@ function WallpaperCanvas() {
   const canvasRef   = useRef(null)
   const engineRef   = useRef(null)
   const activeIdRef = useRef(null)
+  const bootSeqRef  = useRef(0)
 
   const [activeId,   setActiveId]   = useState(null)
   const [opacity,    setOpacity]    = useState(1)
@@ -45,18 +46,26 @@ function WallpaperCanvas() {
 
   // ── Engine boot/swap ─────────────────────────────────────────────────────────
   async function bootEngine(engineId, config = {}) {
-    if (!canvasRef.current) return
+    const seq = ++bootSeqRef.current
 
-    // Stop previous engine cleanly before starting new one
+    // Stop and destroy ANY current engine immediately
     if (engineRef.current) {
-      engineRef.current.stop()
+      try { engineRef.current.stop() } catch (e) {}
       engineRef.current = null
     }
 
     // Completely silence and remove any lingering audio/video media
     silenceAllMedia()
 
-    if (!engineId) return
+    if (!engineId) {
+      activeIdRef.current = null
+      setActiveId(null)
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d')
+        ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+      }
+      return
+    }
 
     const descriptor = ENGINES[engineId]
     if (!descriptor) {
@@ -69,9 +78,18 @@ function WallpaperCanvas() {
 
     try {
       const factory = await descriptor.load()
-      // Bail if another engine was requested while this one was loading
-      if (activeIdRef.current !== engineId) return
+      
+      // If a newer boot request or stop arrived while loading, abort!
+      if (seq !== bootSeqRef.current) return
 
+      // Ensure any previously running engine is stopped
+      if (engineRef.current) {
+        try { engineRef.current.stop() } catch (e) {}
+        engineRef.current = null
+      }
+      silenceAllMedia()
+
+      if (!canvasRef.current) return
       const engine = factory(canvasRef.current, config)
       engineRef.current = engine
       engine.start()
@@ -103,10 +121,11 @@ function WallpaperCanvas() {
 
         unlisteners.push(
           await appWindow.listen('aura:stop', () => {
+            bootSeqRef.current++
             activeIdRef.current = null
             setActiveId(null)
             if (engineRef.current) {
-              engineRef.current.stop()
+              try { engineRef.current.stop() } catch (e) {}
               engineRef.current = null
             }
             silenceAllMedia()
@@ -149,12 +168,12 @@ function WallpaperCanvas() {
           })
         )
       } catch (err) {
-        // Tauri not available — running in browser dev mode.
-        // Auto-boot the first engine so the page isn't blank.
-        console.error('[AuraOS Wallpaper] Tauri listen error:', err)
-        console.warn('[AuraOS Wallpaper] Tauri not available, loading preview engine')
-        const firstId = Object.keys(ENGINES)[0]
-        if (firstId) bootEngine(firstId, ENGINES[firstId].defaultConfig)
+        // Only auto-boot in a regular browser (NOT inside Tauri)
+        if (!window.__TAURI_INTERNALS__) {
+          console.warn('[AuraOS Wallpaper] Tauri not available, loading preview engine')
+          const firstId = Object.keys(ENGINES)[0]
+          if (firstId) bootEngine(firstId, ENGINES[firstId].defaultConfig)
+        }
       }
     }
 

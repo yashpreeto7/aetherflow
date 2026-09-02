@@ -461,24 +461,13 @@ fn apply_wallpaper(
         if label.starts_with("wallpaper_") {
             if target == "*" || target == label {
                 let _ = win.set_ignore_cursor_events(true);
-                // win.show() removed to prevent z-order changes that cover desktop icons
                 let payload = serde_json::json!({
                     "engineId": engine_id.clone(),
                     "config": config.clone(),
                 });
-                let _ = win.emit_to(label.clone(), "aura:set-engine", payload.clone());
-                let _ = win.emit("aura:set-engine", payload.clone());
-                let _ = app.emit("aura:set-engine", payload);
-
-                let b_payload = serde_json::json!({ "brightness": brightness });
-                let _ = win.emit_to(label.clone(), "aura:set-brightness", b_payload.clone());
-                let _ = win.emit("aura:set-brightness", b_payload.clone());
-                let _ = app.emit("aura:set-brightness", b_payload);
-
-                let o_payload = serde_json::json!({ "opacity": opacity });
-                let _ = win.emit_to(label.clone(), "aura:set-opacity", o_payload.clone());
-                let _ = win.emit("aura:set-opacity", o_payload.clone());
-                let _ = app.emit("aura:set-opacity", o_payload);
+                let _ = win.emit("aura:set-engine", payload);
+                let _ = win.emit("aura:set-brightness", serde_json::json!({ "brightness": brightness }));
+                let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity }));
             }
         }
     }
@@ -490,9 +479,7 @@ fn stop_wallpaper(app: AppHandle) {
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
-            let _ = win.emit_to(label.clone(), "aura:stop", serde_json::json!({}));
             let _ = win.emit("aura:stop", serde_json::json!({}));
-            let _ = app.emit("aura:stop", serde_json::json!({}));
         }
     }
 }
@@ -504,7 +491,7 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == label) {
-            let _ = win.emit_to(label.clone(), "aura:update-config", config.clone());
+            let _ = win.emit("aura:update-config", config.clone());
         }
     }
 }
@@ -515,7 +502,7 @@ fn set_wallpaper_brightness(app: AppHandle, brightness: f64) {
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
-            let _ = win.emit_to(label.clone(), "aura:set-brightness", serde_json::json!({ "brightness": brightness }));
+            let _ = win.emit("aura:set-brightness", serde_json::json!({ "brightness": brightness }));
         }
     }
 }
@@ -526,7 +513,7 @@ fn set_wallpaper_opacity(app: AppHandle, opacity: f64) {
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
-            let _ = win.emit_to(label.clone(), "aura:set-opacity", serde_json::json!({ "opacity": opacity }));
+            let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity }));
         }
     }
 }
