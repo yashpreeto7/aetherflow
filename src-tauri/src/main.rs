@@ -15,7 +15,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, HWND_BOTTOM, SWP_SHOWWINDOW,
     GetWindowLongW, SetWindowLongW, GWL_STYLE, GWL_EXSTYLE, WS_CHILD, WS_POPUP,
     WS_VISIBLE, WS_THICKFRAME, WS_CAPTION, WS_BORDER,
-    SWP_NOACTIVATE, SWP_NOZORDER, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_FRAMECHANGED,
     GetClassNameW,
     WS_EX_LAYERED, SetLayeredWindowAttributes, LWA_ALPHA,
     GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
@@ -269,41 +269,90 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             mon_screen_x, mon_screen_y, client_x, client_y
         ));
 
-        // Compensate for DWM's 9px invisible non-client margin on left and right,
-        // and 10px on bottom.
-        // Outer window starts at client_x - 9 and has width mon_w + 18.
-        // When DWM subtracts 9px, the internal client viewport starts at
-        // EXACTLY client_x (0px) with width mon_w (1920px).
-        // This eliminates BOTH the left gap (0..9px) and the right leak (1920..1929px).
-        let adj_x = client_x - 9;
-        let adj_y = client_y;
-        let adj_w = mon_w + 18;
-        let adj_h = mon_h + 10;
+        // ── Measure the non-client frame insets dynamically ─────────────────
+        // We map the client area's (0,0) to screen coordinates and compare with
+        // the outer window rect to determine the exact top, left, right, bottom padding.
+        let mut pre_wr: RECT = std::mem::zeroed();
+        let mut pre_cr: RECT = std::mem::zeroed();
+        GetWindowRect(hwnd, &mut pre_wr);
+        GetClientRect(hwnd, &mut pre_cr);
+
+        let mut client_origin = [POINT { x: 0, y: 0 }];
+        MapWindowPoints(hwnd, std::ptr::null_mut(), client_origin.as_mut_ptr(), 1);
+
+        let left_frame = client_origin[0].x - pre_wr.left;
+        let top_frame = client_origin[0].y - pre_wr.top;
+        let right_frame = pre_wr.right - (client_origin[0].x + pre_cr.right);
+        let bottom_frame = pre_wr.bottom - (client_origin[0].y + pre_cr.bottom);
+
+        log_msg(&format!(
+            "[AuraOS WP] Measured frame insets: left={}, top={}, right={}, bottom={}",
+            left_frame, top_frame, right_frame, bottom_frame
+        ));
+        log_msg(&format!(
+            "[AuraOS WP] Pre-positioning: WinRect=({},{})-({},{}) [{}x{}], ClientScreen=({},{})",
+            pre_wr.left, pre_wr.top, pre_wr.right, pre_wr.bottom,
+            pre_wr.right - pre_wr.left, pre_wr.bottom - pre_wr.top,
+            client_origin[0].x, client_origin[0].y
+        ));
+
+        // Use measured insets if plausible (0..50px), otherwise fallback to 9px horizontal
+        let pad_left = if left_frame >= 0 && left_frame < 50 { left_frame } else { 9 };
+        let pad_top = if top_frame >= 0 && top_frame < 50 { top_frame } else { 0 };
+        let pad_right = if right_frame >= 0 && right_frame < 50 { right_frame } else { 9 };
+        let pad_bottom = if bottom_frame >= 0 && bottom_frame < 50 { bottom_frame } else { 10 - pad_top };
+
+        let adj_x = client_x - pad_left;
+        let adj_y = client_y - pad_top;
+        let adj_w = mon_w + pad_left + pad_right;
+        let adj_h = mon_h + pad_top + pad_bottom;
+
+        log_msg(&format!(
+            "[AuraOS WP] Target client pos=({},{}) size={}x{} -> HWND pos=({},{}) size={}x{}",
+            client_x, client_y, mon_w, mon_h,
+            adj_x, adj_y, adj_w, adj_h
+        ));
+
+        // ── Z-Order Management ───────────────────────────────────────────────
+        // The wallpaper must be BEHIND desktop icons (SHELLDLL_DefView) but
+        // ABOVE the bare desktop wallpaper background.
+        // If parent is Progman and state.shell is SHELLDLL_DefView, placing our
+        // window behind state.shell (hWndInsertAfter = state.shell) guarantees
+        // icons remain in front of the live wallpaper.
+        let insert_after = if !state.shell.is_null() && parent_hwnd == progman {
+            log_msg(&format!("[AuraOS WP] Z-order: placing directly behind SHELLDLL_DefView 0x{:X}", state.shell as usize));
+            state.shell
+        } else {
+            log_msg("[AuraOS WP] Z-order: using HWND_BOTTOM");
+            HWND_BOTTOM
+        };
 
         SetWindowPos(
             hwnd,
-            std::ptr::null_mut(),
+            insert_after,
             adj_x, adj_y,
             adj_w, adj_h,
-            SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
 
-        // Verification log
+        // Verification log: measure resulting client screen coordinates
         let mut final_wr: RECT = std::mem::zeroed();
         let mut final_cr: RECT = std::mem::zeroed();
         GetWindowRect(hwnd, &mut final_wr);
         GetClientRect(hwnd, &mut final_cr);
-        log_msg(&format!(
-            "[AuraOS WP] FINAL HWND WinRect: ({},{})-({},{}) [{}x{}], ClientRect: ({},{})-({},{}) [{}x{}]",
-            final_wr.left, final_wr.top, final_wr.right, final_wr.bottom,
-            final_wr.right - final_wr.left, final_wr.bottom - final_wr.top,
-            final_cr.left, final_cr.top, final_cr.right, final_cr.bottom,
-            final_cr.right - final_cr.left, final_cr.bottom - final_cr.top
-        ));
+        let mut final_client_screen = [POINT { x: 0, y: 0 }];
+        MapWindowPoints(hwnd, std::ptr::null_mut(), final_client_screen.as_mut_ptr(), 1);
 
         log_msg(&format!(
-            "[AuraOS WP] SetWindowPos done: pos=({},{}), size={}x{}",
-            adj_x, adj_y, adj_w, adj_h
+            "[AuraOS WP] POST-POSITION HWND WinRect: ({},{})-({},{}) [{}x{}]",
+            final_wr.left, final_wr.top, final_wr.right, final_wr.bottom,
+            final_wr.right - final_wr.left, final_wr.bottom - final_wr.top
+        ));
+        log_msg(&format!(
+            "[AuraOS WP] POST-POSITION ClientRect: [{}x{}], ScreenOrigin: ({},{}) vs MonitorOrigin: ({},{})",
+            final_cr.right, final_cr.bottom,
+            final_client_screen[0].x, final_client_screen[0].y,
+            mon_screen_x, mon_screen_y
         ));
         log_msg("[AuraOS WP] pin_hwnd_as_wallpaper complete.");
     }
