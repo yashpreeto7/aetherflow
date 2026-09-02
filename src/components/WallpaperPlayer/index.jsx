@@ -33,6 +33,23 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     preview,   // audio-spectrum uses this to skip mic request in thumbnail mode
   }
 
+  const silenceLocalMedia = useCallback(() => {
+    if (canvasRef.current?.parentNode) {
+      canvasRef.current.parentNode.querySelectorAll('video, audio').forEach(media => {
+        try {
+          media.pause()
+          media.muted = true
+          media.volume = 0
+          media.currentTime = 0
+          media.src = ''
+          media.removeAttribute('src')
+          media.load()
+          media.remove()
+        } catch (e) {}
+      })
+    }
+  }, [])
+
   // ── Boot / swap engine ─────────────────────────────────────────────────────
   const bootEngine = useCallback(async () => {
     if (!canvasRef.current || !engineId) return
@@ -42,6 +59,8 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
       engineRef.current.stop()
       engineRef.current = null
     }
+
+    silenceLocalMedia()
 
     const descriptor = ENGINES[engineId]
     if (!descriptor) return
@@ -57,7 +76,7 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     } catch (err) {
       console.error('AuraOS: Failed to load engine', engineId, err)
     }
-  }, [engineId]) // Re-mount only when engine ID changes
+  }, [engineId, silenceLocalMedia]) // Re-mount only when engine ID changes
 
   useEffect(() => {
     activeIdRef.current = engineId
@@ -67,8 +86,9 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
         engineRef.current.stop()
         engineRef.current = null
       }
+      silenceLocalMedia()
     }
-  }, [engineId, bootEngine])
+  }, [engineId, bootEngine, silenceLocalMedia])
 
   // ── Live-update config without remounting ──────────────────────────────────
   useEffect(() => {

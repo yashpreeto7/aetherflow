@@ -33,6 +33,7 @@ export default function createVideoPlayer(canvas, options) {
   function init() {
     videoEl = document.createElement('video');
     videoEl.loop = true;
+    videoEl.autoplay = false; // Never use HTML autoplay to prevent unmanaged playback
     
     // Always mute in preview mode
     if (options.preview) {
@@ -42,8 +43,6 @@ export default function createVideoPlayer(canvas, options) {
       videoEl.muted = options.muted ?? false;
       videoEl.volume = Math.max(0, Math.min(1, (options.volume ?? 50) / 100));
     }
-    
-    videoEl.autoplay = true;
     
     // Style it to cover the container (just like the canvas does)
     videoEl.style.position = 'absolute';
@@ -79,13 +78,19 @@ export default function createVideoPlayer(canvas, options) {
     stop() {
       isRunning = false;
       if (videoEl) {
-        videoEl.pause();
-        videoEl.removeAttribute('src'); // Clean up memory
-        videoEl.load();
+        try {
+          videoEl.pause();
+          videoEl.muted = true;
+          videoEl.volume = 0;
+          videoEl.currentTime = 0;
+          videoEl.src = '';
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch (e) {}
         videoEl.remove();
         videoEl = null;
       }
-      canvas.style.display = ''; // restore canvas visibility
+      if (canvas) canvas.style.display = ''; // restore canvas visibility
     },
     updateOptions(newOpts) {
       if (newOpts.videoPath !== options.videoPath) {

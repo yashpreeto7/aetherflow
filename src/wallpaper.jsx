@@ -28,6 +28,21 @@ function WallpaperCanvas() {
   const [opacity,    setOpacity]    = useState(1)
   const [brightness, setBrightness] = useState(0.85)
 
+  function silenceAllMedia() {
+    document.querySelectorAll('video, audio').forEach(media => {
+      try {
+        media.pause()
+        media.muted = true
+        media.volume = 0
+        media.currentTime = 0
+        media.src = ''
+        media.removeAttribute('src')
+        media.load()
+        media.remove()
+      } catch (e) {}
+    })
+  }
+
   // ── Engine boot/swap ─────────────────────────────────────────────────────────
   async function bootEngine(engineId, config = {}) {
     if (!canvasRef.current) return
@@ -37,6 +52,9 @@ function WallpaperCanvas() {
       engineRef.current.stop()
       engineRef.current = null
     }
+
+    // Completely silence and remove any lingering audio/video media
+    silenceAllMedia()
 
     if (!engineId) return
 
@@ -91,6 +109,7 @@ function WallpaperCanvas() {
               engineRef.current.stop()
               engineRef.current = null
             }
+            silenceAllMedia()
             if (canvasRef.current) {
               const ctx = canvasRef.current.getContext('2d')
               ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
