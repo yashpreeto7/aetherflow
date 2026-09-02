@@ -23,4 +23,16 @@
 - **Build status:** ✅ `npm run build` passes in ~409ms
 - **Next session should:** Install Rust (`winget install Rustlang.Rustup`) then run `npm run tauri:dev` — see REMAINING_TASKS.md Task 1
 
+## Session: 2026-09-02 22:40 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash / Claude Sonnet)
+- **Completed:**
+  - Resolved multi-monitor geometry and DWM invisible non-client frame margin offset (eliminated left gap & right monitor spill)
+  - Implemented dynamic frame inset measurement via `MapWindowPoints` (eliminated top edge gap)
+  - Fixed Windows 11 desktop Z-order by parenting to Progman and placing directly behind `SHELLDLL_DefView` (desktop icons remain on top of live wallpaper)
+  - Resolved WebView2 rendering pipeline and restored proper IPC event routing
+  - Pushed codebase to GitHub repository: https://github.com/yashpreeto7/Wallgine
+- **Build status:** ✅ `cargo check` and `npm run build` passing with 0 errors
+- **Result:** Live wallpaper embedding and geometry verified working by user.
+
 ---
+
