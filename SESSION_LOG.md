@@ -62,6 +62,16 @@
   - Established Library as Master Repository & Home as Curated Dashboard:
     - Library contains ALL wallpapers (built-ins + customs) with Pin to Home toggles.
     - Home displays ONLY curated/pinned favorite wallpapers with quick unpin actions and "Manage in Library" link.
-- **Build status:** ✅ `npm run build` (475ms) and `cargo check` (0.53s) passing with 0 errors
+## Session: 2026-09-03 15:35 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~15 minutes
+- **Completed:**
+  - Resolved 1GB - 2.5GB memory consumption and memory leak on scroll:
+    - Root cause 1: 15+ concurrent 60 FPS `requestAnimationFrame` canvas loops and hardware video decoders were running simultaneously across all thumbnail cards.
+    - Root cause 2: `WallpaperPlayer` had an asynchronous race condition where unmounting while `descriptor.load()` was in flight leaked orphaned animation loops that never stopped on scroll.
+    - Added `bootSeqRef` and `isMountedRef` to `WallpaperPlayer` to guarantee orphaned animation loops are aborted and stopped.
+    - Created `WallpaperThumbnail` component: replaces heavy live engine loops in grid cards with zero-CPU vector SVG previews for built-ins, and paused/hover-only poster frames for videos.
+    - Live 60 FPS animation loop is now reserved exclusively for the Selected Wallpaper Hero.
+- **Build status:** ✅ `npm run build` (448ms) and `cargo check` (0.50s) passing with 0 errors
 
 ---
