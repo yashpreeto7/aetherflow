@@ -113,4 +113,20 @@
     - Updated `Home.jsx` and `Library.jsx` to listen for `aura:monitors-changed` to automatically update monitor selectors.
 - **Build status:** ✅ `npm run build` (424ms) and `cargo check` (1.95s) passing with 0 errors
 
+## Session: 2026-09-03 17:42 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~15 minutes
+- **Completed:**
+  - Resolved border strip visual artifacts during `PC screen only ↔ Extend` display topology transitions:
+    - Root cause: On display topology change, only removed/new windows were handled; existing wallpaper hosts were skipped, leaving them anchored to outdated desktop bounds/z-order without DWM redraw.
+    - Implemented debounced and coalesced display topology watcher: samples monitors and waits for two consecutive identical samples (300ms apart) to ensure Windows display settling before reconciling.
+    - Implemented full 10-step controlled wallpaper reconciliation in `src-tauri/src/main.rs`:
+      1. Keeps existing valid wallpaper hosts alive.
+      2. Destroys wallpaper HWNDs/WebViews ONLY for disconnected monitors (with `ShowWindow(SW_HIDE)`, `SetParent(NULL)`, and `DestroyWindow(HWND)` to prevent orphaned Win32 handles).
+      3. Creates hosts for newly added monitors using the exact working startup path.
+      4. Recalculates existing hosts with their updated `rcMonitor`, re-parenting, and re-applying `SetWindowPos`.
+      5. Forces immediate DWM and desktop invalidation/redraw via `InvalidateRect`, `UpdateWindow`, and `RedrawWindow` (`RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE | RDW_ALLCHILDREN`).
+      6. Verifies and logs `[WALLPAPER STATE]` (host count == monitor count invariant).
+- **Build status:** ✅ `npm run build` (467ms) and `cargo check` (2.23s) passing with 0 errors
+
 ---

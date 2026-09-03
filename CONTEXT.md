@@ -150,6 +150,7 @@ npm run tauri:dev
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed wallpaper apply issue and second screen white window popup by restoring launch-time window pre-creation & WorkerW pinning |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Added persistent Stop Wallpaper button in StatusBar across all pages, improved tray click restore, and killed lingering processes |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed runtime display change / hot-plug bug: implemented reactive display watcher reusing exact startup initialization path, auto window cleanup on disconnect, and get_monitor_active_wallpaper sync |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved display change transition border artifact: debounced watcher, 10-step controlled reconciliation (re-aligning existing hosts, InvalidateRect/RedrawWindow), and [WALLPAPER STATE] logging |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
