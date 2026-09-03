@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react'
-import { Zap, Palette, Cpu, Mic, Settings, ChevronLeft } from 'lucide-react'
+import { Zap, Palette, Cpu, Mic, Settings, ChevronLeft, Square } from 'lucide-react'
 import { useStore } from '../../store/useStore.js'
+import { stopDesktopWallpaper } from '../../lib/wallpaperActions.js'
 import { useNavigate } from 'react-router-dom'
 
 export default function StatusBar() {
-  const activeWallpaper  = useStore(s => s.activeWallpaper)
-  const activeTheme      = useStore(s => s.activeTheme)
-  const audioReactive    = useStore(s => s.audioReactive)
-  const sidebarCollapsed = useStore(s => s.sidebarCollapsed)
-  const toggleSidebar    = useStore(s => s.toggleSidebar)
-  const navigate         = useNavigate()
+  const activeWallpaper    = useStore(s => s.activeWallpaper)
+  const isWallpaperRunning = useStore(s => s.isWallpaperRunning)
+  const activeTheme        = useStore(s => s.activeTheme)
+  const audioReactive      = useStore(s => s.audioReactive)
+  const sidebarCollapsed   = useStore(s => s.sidebarCollapsed)
+  const toggleSidebar      = useStore(s => s.toggleSidebar)
+  const navigate           = useNavigate()
+  const [stopping, setStopping] = useState(false)
 
   // Live FPS counter
   const [fps, setFps] = useState(0)
@@ -33,6 +36,16 @@ export default function StatusBar() {
 
   const themeLabel = activeTheme?.replace('sovereign-', '').replace('-', ' ') ?? '—'
 
+  async function handleStop(e) {
+    e.stopPropagation()
+    setStopping(true)
+    try {
+      await stopDesktopWallpaper()
+    } finally {
+      setStopping(false)
+    }
+  }
+
   return (
     <div style={{
       gridColumn: '2 / 3',
@@ -48,6 +61,7 @@ export default function StatusBar() {
       fontSize: 11,
       color: 'var(--text-muted)',
       userSelect: 'none',
+      zIndex: 10,
     }}>
       {/* Left */}
       <div className="flex items-center gap-4">
@@ -57,13 +71,53 @@ export default function StatusBar() {
 
         <div className="flex items-center gap-2">
           <Zap size={11} style={{ color: 'var(--color-brand)' }} />
-          <span>{activeWallpaper?.name ?? 'No wallpaper'}</span>
+          <span>{activeWallpaper?.name ?? 'No wallpaper selected'}</span>
         </div>
 
         <div className="flex items-center gap-2">
           <Palette size={11} style={{ color: 'var(--color-accent)' }} />
           <span style={{ textTransform: 'capitalize' }}>{themeLabel}</span>
         </div>
+      </div>
+
+      {/* Center — Universal Desktop Status & Stop Button */}
+      <div className="flex items-center gap-3">
+        {isWallpaperRunning ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#34d399', fontWeight: 600 }}>
+              <span className="status-dot-live" />
+              Live on Desktop
+            </span>
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '3px 12px',
+                height: 24,
+                fontSize: 11,
+                fontWeight: 600,
+                background: 'rgba(239, 68, 68, 0.25)',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                color: '#fca5a5',
+                borderRadius: 6,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Stop wallpaper running on desktop"
+            >
+              <Square size={10} fill="#fca5a5" />
+              {stopping ? 'Stopping…' : 'Stop Wallpaper'}
+            </button>
+          </div>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--text-subtle)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-subtle)', opacity: 0.4 }} />
+            Desktop Idle
+          </span>
+        )}
       </div>
 
       {/* Right */}

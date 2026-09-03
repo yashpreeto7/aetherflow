@@ -42,29 +42,17 @@ export default function App() {
     broadcastAudio()
   }, [audioVolume, audioMuted])
 
-  // Intercept close → minimize to tray instead (if running in Tauri)
+  // Ensure window is visible and focused on mount
   React.useEffect(() => {
-    async function setupCloseHandler() {
+    async function initWindow() {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window')
         const win = getCurrentWindow()
-        
-        // Force show and focus on mount to prevent invisible window bugs
         await win.show()
         await win.setFocus()
-
-        const unlisten = await win.onCloseRequested(async (event) => {
-          event.preventDefault()
-          await win.hide()
-        })
-        return unlisten
-      } catch {
-        // Not running in Tauri (browser dev mode) — no-op
-      }
+      } catch {}
     }
-    let unlisten
-    setupCloseHandler().then(u => { unlisten = u })
-    return () => { unlisten?.() }
+    initWindow()
   }, [])
 
   return (

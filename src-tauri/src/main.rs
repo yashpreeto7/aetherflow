@@ -4,7 +4,7 @@
 use tauri::{
     AppHandle, Emitter, Manager, WebviewWindowBuilder, WebviewUrl,
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
 };
 
 #[cfg(windows)]
@@ -695,18 +695,18 @@ fn main() {
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    // Double-click tray icon → show control panel
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
+                    // Single-click or Double-click tray icon → restore and focus control panel
+                    match event {
+                        TrayIconEvent::Click { button: MouseButton::Left, .. }
+                        | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
+                            let app = tray.app_handle();
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.unminimize();
+                                let _ = win.set_focus();
+                            }
                         }
+                        _ => {}
                     }
                 })
                 .build(app)?;
