@@ -48,6 +48,20 @@
     - Added live pulsating green status badges and monitor targeting support in Library.
     - Created centralized `src/lib/wallpaperActions.js` dispatcher.
 - **Build status:** ✅ `npm run build` and `cargo check` passing with 0 errors
-- **Next session should:** Wire Windows auto-start registry hook, fullscreen game pause detector, or WASAPI desktop audio loopback.
+## Session: 2026-09-03 15:05 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~10 minutes
+- **Completed:**
+  - Resolved black previews issue:
+    - Fixed `engineId` fallback (`wallpaper.engine || wallpaper.id`) so built-in engines are never passed as `undefined`.
+    - Initialized canvas dimensions with non-zero fallbacks before engine boot to prevent 0-pixel canvases.
+    - Updated video preview element with `playsinline`, `muted`, `preload="auto"`, `zIndex: 1`, and frame seek to eliminate black video containers.
+  - Implemented Wallpaper Naming & Renaming:
+    - Created `AddWallpaperModal` to name custom wallpapers during file import or drag-and-drop, with option to pin to Home.
+    - Created `RenameWallpaperModal` with pencil icon buttons on all cards to rename any wallpaper.
+  - Established Library as Master Repository & Home as Curated Dashboard:
+    - Library contains ALL wallpapers (built-ins + customs) with Pin to Home toggles.
+    - Home displays ONLY curated/pinned favorite wallpapers with quick unpin actions and "Manage in Library" link.
+- **Build status:** ✅ `npm run build` (475ms) and `cargo check` (0.53s) passing with 0 errors
 
 ---

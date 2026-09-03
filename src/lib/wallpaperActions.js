@@ -103,9 +103,9 @@ export async function importWallpaperDialog() {
 }
 
 /**
- * Adds a video file path into the user's installed library
+ * Adds a video file path into the user's installed library with optional custom name & home pinning
  */
-export function addCustomVideoWallpaper(path) {
+export function addCustomVideoWallpaper(path, customName = null, pinToHome = true) {
   if (!path) return null
   const filename = path.split('\\').pop().split('/').pop()
   const cleanName = filename.replace(/\.[^/.]+$/, '') // remove extension for title
@@ -113,7 +113,7 @@ export function addCustomVideoWallpaper(path) {
   const item = {
     id: 'local-' + Date.now(),
     type: 'wallpaper',
-    name: cleanName || filename,
+    name: customName?.trim() || cleanName || filename,
     engine: 'video-player',
     config: { videoPath: path, speedMultiplier: 1 },
     tags: ['custom', 'video'],
@@ -121,6 +121,10 @@ export function addCustomVideoWallpaper(path) {
     isCustom: true,
   }
 
-  useStore.getState().installItem(item)
+  const state = useStore.getState()
+  state.installItem(item)
+  if (pinToHome) {
+    state.pinToHome(item.id)
+  }
   return item
 }

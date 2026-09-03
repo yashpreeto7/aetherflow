@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react'
-import { Trash2, Play, Image, Plus, Video, Monitor, Square, Check, Zap } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import {
+  Trash2, Play, Image, Plus, Video, Monitor, Square, Check,
+  Zap, Pin, PinOff, Pencil, Search, X
+} from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
-import { BUILTIN_THEMES } from '../engines/index.js'
+import { BUILTIN_THEMES, WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
+import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
-  importWallpaperDialog,
   addCustomVideoWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
@@ -21,10 +24,22 @@ export default function LibraryPage() {
   const uninstallItem        = useStore(s => s.uninstallItem)
   const screenArrangement    = useStore(s => s.screenArrangement)
   const monitorWallpapers    = useStore(s => s.monitorWallpapers)
+  const homeWallpaperIds     = useStore(s => s.homeWallpaperIds) || []
+  const togglePinToHome      = useStore(s => s.togglePinToHome)
+  const customNames          = useStore(s => s.customNames) || {}
+  const setWallpaperName     = useStore(s => s.setWallpaperName)
 
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
   const [applyingId, setApplyingId] = useState(null)
+
+  // Filters & Search
+  const [filterCategory, setFilterCategory] = useState('all') // 'all' | 'builtin' | 'custom' | 'pinned'
+  const [searchQuery, setSearchQuery]       = useState('')
+
+  // Modals state
+  const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
+  const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
 
   // Fetch monitors on mount
   useEffect(() => {
@@ -43,43 +58,65 @@ export default function LibraryPage() {
     })
   }, [])
 
-  // ── Import from file dialog ───────────────────────────────────────────────
-  const handleImport = async () => {
-    const newItem = await importWallpaperDialog()
-    if (newItem) {
-      // Auto-apply or select imported wallpaper
-      await handleApply(newItem)
+  // ── Import file handler with naming modal ──────────────────────────────────
+  const handleOpenImportDialog = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'Video Wallpapers',
+          extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov']
+        }]
+      })
+
+      if (selected) {
+        const path = typeof selected === 'string' ? selected : selected[0]
+        if (!path) return
+        const filename = path.split('\\').pop().split('/').pop()
+        const cleanName = filename.replace(/\.[^/.]+$/, '')
+        setAddModal({ isOpen: true, path, initialName: cleanName })
+      }
+    } catch (err) {
+      console.error('Failed to open import dialog:', err)
     }
   }
 
-  // ── Drag & Drop to Import ────────────────────────────────────────────────
+  // ── Drag & Drop listener ───────────────────────────────────────────────────
   useEffect(() => {
     let unlistenFn
     listen('tauri://drag-drop', event => {
-      const payload = event.payload
-      const paths = payload?.paths
+      const paths = event.payload?.paths
       if (!paths || paths.length === 0) return
 
       const path = paths[0]
       const ext = path.split('.').pop().toLowerCase()
       if (['mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov'].includes(ext)) {
-        const item = addCustomVideoWallpaper(path)
-        if (item) {
-          handleApply(item)
-        }
+        const filename = path.split('\\').pop().split('/').pop()
+        const cleanName = filename.replace(/\.[^/.]+$/, '')
+        setAddModal({ isOpen: true, path, initialName: cleanName })
       }
-    }).then(unlisten => {
-      unlistenFn = unlisten
-    }).catch(err => {
-      console.error('Failed to listen for drag-drop', err)
-    })
+    }).then(u => { unlistenFn = u }).catch(err => console.error(err))
 
-    return () => {
-      if (unlistenFn) unlistenFn()
+    return () => { if (unlistenFn) unlistenFn() }
+  }, [])
+
+  function handleConfirmAdd({ name, pinToHome }) {
+    if (!addModal.path) return
+    const newItem = addCustomVideoWallpaper(addModal.path, name, pinToHome)
+    setAddModal({ isOpen: false, path: '', initialName: '' })
+    if (newItem) {
+      handleApply(newItem)
     }
-  }, [screenArrangement, selectedMonitorLabel])
+  }
 
-  // ── Apply to Desktop directly ────────────────────────────────────────────
+  function handleConfirmRename(newName) {
+    if (!renameModal.id) return
+    setWallpaperName(renameModal.id, newName)
+    setRenameModal({ isOpen: false, id: null, currentName: '' })
+  }
+
+  // ── Apply to Desktop ───────────────────────────────────────────────────────
   async function handleApply(item, targetMon = null) {
     setApplyingId(item.id)
     try {
@@ -90,7 +127,7 @@ export default function LibraryPage() {
     }
   }
 
-  // ── Stop Desktop Wallpaper ───────────────────────────────────────────────
+  // ── Stop Desktop Wallpaper ─────────────────────────────────────────────────
   async function handleStop(targetMon = null) {
     const mon = targetMon ?? (screenArrangement === 'per-screen' ? selectedMonitorLabel : null)
     await stopDesktopWallpaper(mon)
@@ -108,9 +145,47 @@ export default function LibraryPage() {
     return activeWallpaper?.id === item.id ? ['all'] : null
   }
 
-  const installedWallpapers = installed.filter(i => i.type !== 'theme')
-  const installedThemes     = installed.filter(i => i.type === 'theme')
+  // ── Combine All Wallpapers (Built-in + Custom) ───────────────────────────────
+  const allWallpapers = useMemo(() => {
+    const builtins = WALLPAPER_LIST.map(w => ({
+      id: w.id,
+      name: customNames[w.id] || w.name,
+      engine: w.id,
+      tags: w.tags || ['canvas'],
+      config: w.defaultConfig || {},
+      isCustom: false,
+      builtin: true,
+    }))
 
+    const customs = installed
+      .filter(i => i.type === 'wallpaper')
+      .map(i => ({
+        ...i,
+        name: customNames[i.id] || i.name,
+        engine: i.engine || 'video-player',
+        isCustom: true,
+      }))
+
+    return [...customs, ...builtins]
+  }, [installed, customNames])
+
+  const filteredWallpapers = useMemo(() => {
+    return allWallpapers.filter(w => {
+      const isPinned = homeWallpaperIds.includes(w.id)
+      if (filterCategory === 'builtin' && w.isCustom) return false
+      if (filterCategory === 'custom' && !w.isCustom) return false
+      if (filterCategory === 'pinned' && !isPinned) return false
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase()
+        const matchName = w.name.toLowerCase().includes(query)
+        const matchTag = w.tags?.some(t => t.toLowerCase().includes(query))
+        return matchName || matchTag
+      }
+      return true
+    })
+  }, [allWallpapers, filterCategory, searchQuery, homeWallpaperIds])
+
+  const installedThemes = installed.filter(i => i.type === 'theme')
   const allThemes = [
     ...BUILTIN_THEMES.map(t => ({ ...t, type: 'theme', builtin: true })),
     ...installedThemes,
@@ -121,17 +196,17 @@ export default function LibraryPage() {
       {/* Header */}
       <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
         <div>
-          <h1 className="font-display font-bold text-2xl" style={{ letterSpacing: '-0.5px' }}>My Library</h1>
+          <h1 className="font-display font-bold text-2xl" style={{ letterSpacing: '-0.5px' }}>Wallpaper Library</h1>
           <p className="text-muted text-sm" style={{ marginTop: 4 }}>
-            Manage and directly apply your installed live wallpapers & themes
+            Master collection of all wallpapers — select what you want to appear on your Home screen
           </p>
         </div>
-        <button className="btn btn-primary" onClick={handleImport}>
-          <Plus size={15} /> Add Video Wallpaper
+        <button className="btn btn-primary" onClick={handleOpenImportDialog}>
+          <Plus size={15} /> Add Local Wallpaper
         </button>
       </div>
 
-      {/* Per-screen monitor selector if multiple monitors exist */}
+      {/* Target Screen Bar (for multi-monitor) */}
       {screenArrangement === 'per-screen' && monitors.length > 1 && (
         <div className="card p-3" style={{ marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div className="flex items-center gap-2">
@@ -157,55 +232,81 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {/* Wallpapers Section */}
-      <div className="flex justify-between items-center" style={{ marginBottom: 14 }}>
-        <h2 className="font-semibold text-sm text-muted" style={{ textTransform: 'uppercase', letterSpacing: 1 }}>
-          Wallpapers ({installedWallpapers.length})
-        </h2>
-        <span className="text-xs text-muted">Tip: Double-click any wallpaper to apply immediately to desktop</span>
+      {/* Filter and Search Bar */}
+      <div style={{ marginBottom: 16 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-base">All Wallpapers</h2>
+            <span className="badge font-mono">{filteredWallpapers.length}</span>
+          </div>
+
+          <div style={{ position: 'relative', width: 220 }}>
+            <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Search library…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px 26px 6px 30px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-main)',
+                borderRadius: 8,
+                color: 'var(--text-main)',
+                fontSize: 12,
+                outline: 'none',
+              }}
+            />
+            {searchQuery && (
+              <button
+                className="btn-icon"
+                style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', padding: 2 }}
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+          {[
+            { id: 'all', label: `All (${allWallpapers.length})` },
+            { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
+            { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
+            { id: 'custom', label: `Custom Videos (${allWallpapers.filter(w => w.isCustom).length})` },
+          ].map(cat => (
+            <button
+              key={cat.id}
+              className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
+              style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
+              onClick={() => setFilterCategory(cat.id)}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {installedWallpapers.length === 0 ? (
-        <div
-          className="card card-interactive"
-          style={{
-            padding: 48,
-            textAlign: 'center',
-            color: 'var(--text-subtle)',
-            marginBottom: 36,
-            border: '1.5px dashed var(--border-main)',
-            background: 'transparent',
-          }}
-          onClick={handleImport}
-        >
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: 'color-mix(in srgb, var(--color-brand) 15%, transparent)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 12px',
-          }}>
-            <Video size={24} className="text-brand" />
-          </div>
-          <div className="text-base font-semibold" style={{ color: 'var(--text-main)', marginBottom: 4 }}>
-            No custom wallpapers yet
-          </div>
-          <div className="text-xs text-muted" style={{ maxWidth: 360, margin: '0 auto 16px' }}>
-            Click here or drag & drop any MP4, WebM, or MKV video file to install it as a live desktop wallpaper.
-          </div>
-          <button className="btn btn-primary" style={{ margin: '0 auto' }}>
-            <Plus size={14} /> Browse Video File
+      {/* Wallpapers Grid */}
+      {filteredWallpapers.length === 0 ? (
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-subtle)', marginBottom: 36 }}>
+          <Search size={24} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+          <div className="text-sm">No wallpapers found matching your filter</div>
+          <button className="btn btn-ghost" style={{ marginTop: 12, fontSize: 12 }} onClick={() => { setSearchQuery(''); setFilterCategory('all'); }}>
+            Reset Filters
           </button>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 14, marginBottom: 36 }}>
-          {installedWallpapers.map(item => {
+          {filteredWallpapers.map(item => {
             const activeStatus = getActiveStatus(item)
             const isLive = Boolean(activeStatus)
             const isApplying = applyingId === item.id
+            const isPinnedToHome = homeWallpaperIds.includes(item.id)
+            const engineIdToLoad = item.engine || item.id
 
             return (
               <div
@@ -215,28 +316,43 @@ export default function LibraryPage() {
               >
                 {/* Thumbnail Preview */}
                 <div style={{ height: 118, position: 'relative', background: '#000' }}>
-                  <WallpaperPlayer engineId={item.engine} config={item.config ?? {}} preview />
+                  <WallpaperPlayer engineId={engineIdToLoad} config={item.config ?? {}} preview />
 
                   {/* Active Indicator Badge */}
                   {isLive && (
                     <div style={{
-                      position: 'absolute', top: 8, right: 8,
+                      position: 'absolute', top: 6, right: 6,
                       background: 'rgba(16, 185, 129, 0.9)',
                       backdropFilter: 'blur(4px)',
                       borderRadius: 999,
                       padding: '2px 8px',
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: 700,
                       color: '#fff',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 5,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                      gap: 4,
+                      zIndex: 3,
                     }}>
                       <div className="status-dot-live" />
-                      {activeStatus[0] === 'all' ? 'LIVE ON DESKTOP' : `LIVE (${activeStatus.length} SCREEN)`}
+                      {activeStatus[0] === 'all' ? 'LIVE' : activeStatus.join(', ')}
                     </div>
                   )}
+
+                  {/* Pin to Home status indicator on thumbnail */}
+                  <button
+                    className="btn-icon"
+                    style={{
+                      position: 'absolute', top: 6, left: 6, zIndex: 3,
+                      background: isPinnedToHome ? 'rgba(59, 130, 246, 0.85)' : 'rgba(0,0,0,0.6)',
+                      color: '#fff', padding: 4, borderRadius: 6,
+                      backdropFilter: 'blur(4px)',
+                    }}
+                    title={isPinnedToHome ? 'Pinned to Home (Click to remove)' : 'Pin to Home'}
+                    onClick={(e) => { e.stopPropagation(); togglePinToHome(item.id) }}
+                  >
+                    <Pin size={12} fill={isPinnedToHome ? '#fff' : 'none'} />
+                  </button>
 
                   {/* Hover Overlay with Quick Actions */}
                   <div className="wp-hover-overlay">
@@ -258,32 +374,68 @@ export default function LibraryPage() {
                         <Square size={10} fill="#fca5a5" /> Stop
                       </button>
                     )}
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Double-click to apply</span>
                   </div>
                 </div>
 
-                {/* Card Footer Info */}
+                {/* Card Info & Actions */}
                 <div style={{ padding: '10px 12px' }}>
-                  <div className="font-medium text-sm truncate" title={item.name}>{item.name}</div>
-                  <div className="flex items-center justify-between" style={{ marginTop: 8 }}>
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="font-medium text-sm truncate" title={item.name}>
+                      {item.name}
+                    </div>
+                    <div className="flex items-center">
+                      <button
+                        className="btn-icon"
+                        style={{ padding: 3 }}
+                        title="Rename Wallpaper"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRenameModal({ isOpen: true, id: item.id, currentName: item.name })
+                        }}
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      {item.isCustom && (
+                        <button
+                          className="btn-icon"
+                          style={{ padding: 3 }}
+                          title="Delete Wallpaper"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (isLive) handleStop()
+                            uninstallItem(item.id)
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2" style={{ marginTop: 8 }}>
                     <button
                       className={`btn ${isLive ? 'btn-ghost' : 'btn-primary'}`}
-                      style={{ flex: 1, padding: '5px 8px', fontSize: 12, justifyContent: 'center' }}
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, justifyContent: 'center' }}
                       onClick={() => handleApply(item)}
                       disabled={isApplying}
                     >
-                      {isLive ? <Check size={12} className="text-brand" /> : <Play size={12} />}
-                      {isApplying ? 'Applying…' : isLive ? 'Applied' : 'Apply to Desktop'}
+                      {isLive ? <Check size={11} className="text-brand" /> : <Play size={11} />}
+                      {isApplying ? 'Applying…' : isLive ? 'Live' : 'Apply'}
                     </button>
+
                     <button
-                      className="btn-icon"
-                      style={{ marginLeft: 6 }}
-                      title="Uninstall from Library"
-                      onClick={() => {
-                        if (isLive) handleStop()
-                        uninstallItem(item.id)
+                      className={`btn ${isPinnedToHome ? 'btn-ghost' : 'btn-ghost'}`}
+                      style={{
+                        padding: '5px 8px', fontSize: 11,
+                        color: isPinnedToHome ? 'var(--color-brand)' : 'var(--text-muted)',
+                        borderColor: isPinnedToHome ? 'var(--color-brand)' : 'var(--border-main)',
                       }}
+                      title={isPinnedToHome ? 'Remove from Home' : 'Show on Home'}
+                      onClick={() => togglePinToHome(item.id)}
                     >
-                      <Trash2 size={13} />
+                      <Pin size={11} fill={isPinnedToHome ? 'currentColor' : 'none'} />
+                      {isPinnedToHome ? 'On Home' : 'Pin'}
                     </button>
                   </div>
                 </div>
@@ -326,6 +478,22 @@ export default function LibraryPage() {
           )
         })}
       </div>
+
+      {/* Modals */}
+      <AddWallpaperModal
+        isOpen={addModal.isOpen}
+        filePath={addModal.path}
+        initialName={addModal.initialName}
+        onClose={() => setAddModal({ isOpen: false, path: '', initialName: '' })}
+        onConfirm={handleConfirmAdd}
+      />
+
+      <RenameWallpaperModal
+        isOpen={renameModal.isOpen}
+        currentName={renameModal.currentName}
+        onClose={() => setRenameModal({ isOpen: false, id: null, currentName: '' })}
+        onConfirm={handleConfirmRename}
+      />
     </div>
   )
 }

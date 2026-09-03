@@ -68,11 +68,45 @@ export const useStore = create(
 
       // ── Library (installed wallpapers & themes) ──────────────────────────
       installed: [],                   // [{ id, type, name, engine, config, installedAt }]
+      homeWallpaperIds: [              // IDs of wallpapers curated for Home screen
+        'matrix-rain', 'cyber-particles', 'synthwave-grid',
+        'deep-space', 'tokyo-rain', 'aurora', 'audio-spectrum'
+      ],
+      customNames: {},                 // { [id]: string } user-edited wallpaper names
 
       installItem: (item) =>
         set((s) => ({ installed: [...s.installed.filter(i => i.id !== item.id), item] })),
       uninstallItem: (id) =>
-        set((s) => ({ installed: s.installed.filter(i => i.id !== id) })),
+        set((s) => ({
+          installed: s.installed.filter(i => i.id !== id),
+          homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id),
+        })),
+
+      // ── Home Curation (Pin / Unpin) ──────────────────────────────────────
+      togglePinToHome: (id) => set((s) => {
+        const list = s.homeWallpaperIds || []
+        return {
+          homeWallpaperIds: list.includes(id) ? list.filter(x => x !== id) : [...list, id]
+        }
+      }),
+      pinToHome: (id) => set((s) => ({
+        homeWallpaperIds: (s.homeWallpaperIds || []).includes(id) ? s.homeWallpaperIds : [...(s.homeWallpaperIds || []), id]
+      })),
+      unpinFromHome: (id) => set((s) => ({
+        homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id)
+      })),
+
+      // ── Renaming ──────────────────────────────────────────────────────────
+      setWallpaperName: (id, newName) => set((s) => {
+        const customNames = { ...(s.customNames || {}), [id]: newName }
+        const installed = (s.installed || []).map(item =>
+          item.id === id ? { ...item, name: newName } : item
+        )
+        const activeWallpaper = s.activeWallpaper?.id === id
+          ? { ...s.activeWallpaper, name: newName }
+          : s.activeWallpaper
+        return { customNames, installed, activeWallpaper }
+      }),
 
       // ── Settings ──────────────────────────────────────────────────────────
       autoStart: false,
@@ -132,6 +166,8 @@ export const useStore = create(
         monitorWallpapers: s.monitorWallpapers,
         audioVolume: s.audioVolume,
         audioMuted: s.audioMuted,
+        homeWallpaperIds: s.homeWallpaperIds,
+        customNames: s.customNames,
       }),
     }
   )

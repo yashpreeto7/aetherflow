@@ -1,36 +1,46 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
-  Video, Trash2, Check, Sparkles, Filter, X
+  Video, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight
 } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
 import ThemeEditor from '../components/ThemeEditor/index.jsx'
+import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
-  importWallpaperDialog,
   addCustomVideoWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const [showThemeEditor, setShowThemeEditor] = useState(false)
   const [applying, setApplying]               = useState(false)
   const [searchQuery, setSearchQuery]         = useState('')
   const [filterCategory, setFilterCategory]   = useState('all') // 'all' | 'builtin' | 'custom'
 
+  // Modals state
+  const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
+  const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
+
   const activeWallpaper       = useStore(s => s.activeWallpaper)
   const setActiveWallpaper    = useStore(s => s.setActiveWallpaper)
   const isWallpaperRunning    = useStore(s => s.isWallpaperRunning)
-  const setWallpaperRunning   = useStore(s => s.setWallpaperRunning)
   const activeTheme           = useStore(s => s.activeTheme)
   const setActiveTheme        = useStore(s => s.setActiveTheme)
   const customThemes          = useStore(s => s.themes)
   const installed             = useStore(s => s.installed)
   const uninstallItem         = useStore(s => s.uninstallItem)
+  const homeWallpaperIds      = useStore(s => s.homeWallpaperIds) || []
+  const unpinFromHome         = useStore(s => s.unpinFromHome)
+  const customNames           = useStore(s => s.customNames) || {}
+  const setWallpaperName      = useStore(s => s.setWallpaperName)
+
   const wallpaperOpacity      = useStore(s => s.wallpaperOpacity)
   const setWallpaperOpacity   = useStore(s => s.setWallpaperOpacity)
   const wallpaperBrightness   = useStore(s => s.wallpaperBrightness)
@@ -43,7 +53,6 @@ export default function HomePage() {
 
   const screenArrangement     = useStore(s => s.screenArrangement)
   const monitorWallpapers     = useStore(s => s.monitorWallpapers)
-  const setMonitorWallpaper   = useStore(s => s.setMonitorWallpaper)
 
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
@@ -66,6 +75,30 @@ export default function HomePage() {
       .catch(e => console.error('Failed to fetch monitors', e))
   }, [])
 
+  // ── Import file handler with naming modal ──────────────────────────────────
+  const handleOpenImportDialog = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'Video Wallpapers',
+          extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov']
+        }]
+      })
+
+      if (selected) {
+        const path = typeof selected === 'string' ? selected : selected[0]
+        if (!path) return
+        const filename = path.split('\\').pop().split('/').pop()
+        const cleanName = filename.replace(/\.[^/.]+$/, '')
+        setAddModal({ isOpen: true, path, initialName: cleanName })
+      }
+    } catch (err) {
+      console.error('Failed to open import dialog:', err)
+    }
+  }
+
   // ── Drag & Drop listener ───────────────────────────────────────────────────
   useEffect(() => {
     let unlistenFn
@@ -76,16 +109,30 @@ export default function HomePage() {
       const path = paths[0]
       const ext = path.split('.').pop().toLowerCase()
       if (['mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov'].includes(ext)) {
-        const item = addCustomVideoWallpaper(path)
-        if (item) {
-          selectWallpaper(item)
-          handleApply(item)
-        }
+        const filename = path.split('\\').pop().split('/').pop()
+        const cleanName = filename.replace(/\.[^/.]+$/, '')
+        setAddModal({ isOpen: true, path, initialName: cleanName })
       }
     }).then(u => { unlistenFn = u }).catch(e => console.error(e))
 
     return () => { if (unlistenFn) unlistenFn() }
-  }, [screenArrangement, selectedMonitorLabel])
+  }, [])
+
+  function handleConfirmAdd({ name, pinToHome }) {
+    if (!addModal.path) return
+    const newItem = addCustomVideoWallpaper(addModal.path, name, pinToHome)
+    setAddModal({ isOpen: false, path: '', initialName: '' })
+    if (newItem) {
+      selectWallpaper(newItem)
+      handleApply(newItem)
+    }
+  }
+
+  function handleConfirmRename(newName) {
+    if (!renameModal.id) return
+    setWallpaperName(renameModal.id, newName)
+    setRenameModal({ isOpen: false, id: null, currentName: '' })
+  }
 
   function handleSelectMonitor(label) {
     setSelectedMonitorLabel(label)
@@ -94,28 +141,38 @@ export default function HomePage() {
     }
   }
 
-  // ── Unified Wallpapers List (Built-in + Custom/Installed) ─────────────────
-  const customWallpapers = useMemo(() => {
-    return installed
+  // ── Curated Home Wallpapers List ───────────────────────────────────────────
+  // Combine all items, but display ONLY those where homeWallpaperIds.includes(w.id)
+  const homeWallpapers = useMemo(() => {
+    const builtins = WALLPAPER_LIST.map(w => ({
+      id: w.id,
+      name: customNames[w.id] || w.name,
+      engine: w.id,
+      tags: w.tags || ['canvas'],
+      config: w.defaultConfig || {},
+      isCustom: false,
+      builtin: true,
+    }))
+
+    const customs = installed
       .filter(item => item.type === 'wallpaper')
       .map(item => ({
         id: item.id,
-        name: item.name,
-        engine: item.engine,
+        name: customNames[item.id] || item.name,
+        engine: item.engine || 'video-player',
         tags: item.tags || ['custom', 'video'],
-        defaultConfig: item.config || {},
+        config: item.config || {},
         isCustom: true,
         installedAt: item.installedAt,
       }))
-  }, [installed])
 
-  const allWallpapers = useMemo(() => {
-    const builtins = WALLPAPER_LIST.map(w => ({ ...w, isCustom: false }))
-    return [...customWallpapers, ...builtins]
-  }, [customWallpapers])
+    const all = [...customs, ...builtins]
+    // Filter to ONLY wallpapers pinned to Home
+    return all.filter(w => homeWallpaperIds.includes(w.id))
+  }, [installed, homeWallpaperIds, customNames])
 
   const filteredWallpapers = useMemo(() => {
-    return allWallpapers.filter(w => {
+    return homeWallpapers.filter(w => {
       if (filterCategory === 'builtin' && w.isCustom) return false
       if (filterCategory === 'custom' && !w.isCustom) return false
       if (searchQuery.trim()) {
@@ -126,15 +183,15 @@ export default function HomePage() {
       }
       return true
     })
-  }, [allWallpapers, filterCategory, searchQuery])
+  }, [homeWallpapers, filterCategory, searchQuery])
 
   // ── Select a wallpaper (for previewing & tuning sliders) ───────────────────
   function selectWallpaper(wallpaper) {
     setActiveWallpaper({
       id: wallpaper.id,
       name: wallpaper.name,
-      engine: wallpaper.engine,
-      config: { ...(wallpaper.defaultConfig || wallpaper.config || {}), speedMultiplier: wallpaperSpeed },
+      engine: wallpaper.engine || wallpaper.id,
+      config: { ...(wallpaper.config || {}), speedMultiplier: wallpaperSpeed },
       isCustom: wallpaper.isCustom,
     })
   }
@@ -164,15 +221,6 @@ export default function HomePage() {
   async function handleStop() {
     const mon = screenArrangement === 'per-screen' ? selectedMonitorLabel : null
     await stopDesktopWallpaper(mon)
-  }
-
-  // ── Import custom wallpaper from file ────────────────────────────────────
-  async function handleImport() {
-    const item = await importWallpaperDialog()
-    if (item) {
-      selectWallpaper(item)
-      await handleApply(item)
-    }
   }
 
   // ── Check if a wallpaper is active on any screen ──────────────────────────
@@ -219,21 +267,21 @@ export default function HomePage() {
             Welcome to <span className="text-brand">AuraOS</span>
           </h1>
           <p className="text-muted text-sm" style={{ marginTop: 4 }}>
-            Live wallpaper engine — select or double-click to apply to your desktop
+            Your curated desktop dashboard — pick or double-click any favorite wallpaper below
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn btn-primary" onClick={handleImport}>
+          <button className="btn btn-primary" onClick={handleOpenImportDialog}>
             <Plus size={15} /> Add Wallpaper
           </button>
         </div>
       </div>
 
-      {/* Hero Preview Panel for Selected Wallpaper */}
+      {/* Hero Preview Panel for Selected / Active Wallpaper */}
       {activeWallpaper ? (
         <div className="card" style={{ marginBottom: 28, overflow: 'hidden', position: 'relative', height: 180 }}>
           <WallpaperPlayer
-            engineId={activeWallpaper.engine}
+            engineId={activeWallpaper.engine || activeWallpaper.id}
             config={activeWallpaper.config}
             preview
           />
@@ -256,7 +304,17 @@ export default function HomePage() {
                     <div className="badge badge-brand">VIDEO WALLPAPER</div>
                   )}
                 </div>
-                <div className="font-bold text-lg">{activeWallpaper.name}</div>
+                <div className="font-bold text-lg flex items-center gap-2">
+                  <span>{customNames[activeWallpaper.id] || activeWallpaper.name}</span>
+                  <button
+                    className="btn-icon"
+                    style={{ padding: 2 }}
+                    title="Rename Wallpaper"
+                    onClick={() => setRenameModal({ isOpen: true, id: activeWallpaper.id, currentName: activeWallpaper.name })}
+                  >
+                    <Pencil size={12} />
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: 8 }}>
@@ -289,7 +347,7 @@ export default function HomePage() {
             marginBottom: 28, padding: 36, textAlign: 'center',
             border: '1.5px dashed var(--border-main)', background: 'transparent',
           }}
-          onClick={handleImport}
+          onClick={handleOpenImportDialog}
         >
           <Plus size={28} className="text-brand" style={{ margin: '0 auto 10px', opacity: 0.8 }} />
           <div className="text-sm font-medium">Select a wallpaper below or click to import your own</div>
@@ -355,9 +413,16 @@ export default function HomePage() {
       {/* Wallpapers Section Header & Filter Bar */}
       <div style={{ marginBottom: 16 }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-base">Wallpapers</h2>
-            <span className="badge font-mono">{filteredWallpapers.length}</span>
+          <div className="flex items-center gap-3">
+            <h2 className="font-semibold text-base">Home Favorites</h2>
+            <span className="badge font-mono">{homeWallpapers.length}</span>
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 11, padding: '3px 10px', height: 'auto' }}
+              onClick={() => navigate('/library')}
+            >
+              Manage in Library <ArrowRight size={11} style={{ marginLeft: 3 }} />
+            </button>
           </div>
 
           {/* Search bar */}
@@ -365,7 +430,7 @@ export default function HomePage() {
             <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder="Search wallpapers…"
+              placeholder="Search home wallpapers…"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               style={{
@@ -394,9 +459,9 @@ export default function HomePage() {
         {/* Category Filters */}
         <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
           {[
-            { id: 'all', label: `All (${allWallpapers.length})` },
-            { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
-            { id: 'custom', label: `Videos & Custom (${customWallpapers.length})` },
+            { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
+            { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
+            { id: 'custom', label: `Videos & Custom (${homeWallpapers.filter(w => w.isCustom).length})` },
           ].map(cat => (
             <button
               key={cat.id}
@@ -410,11 +475,24 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Unified Wallpaper Grid */}
-      {filteredWallpapers.length === 0 ? (
+      {/* Pinned Wallpaper Grid */}
+      {homeWallpapers.length === 0 ? (
+        <div className="card" style={{ padding: 48, textAlign: 'center', color: 'var(--text-subtle)', marginBottom: 36, border: '1.5px dashed var(--border-main)', background: 'transparent' }}>
+          <Pin size={28} className="text-brand" style={{ margin: '0 auto 12px', opacity: 0.7 }} />
+          <div className="text-base font-semibold" style={{ color: 'var(--text-main)', marginBottom: 6 }}>
+            No wallpapers pinned to Home yet
+          </div>
+          <p className="text-xs text-muted" style={{ maxWidth: 380, margin: '0 auto 18px' }}>
+            Your Library holds all available wallpapers. Visit the Library to select which ones you want to appear on your Home dashboard.
+          </p>
+          <button className="btn btn-primary" onClick={() => navigate('/library')} style={{ margin: '0 auto' }}>
+            Open Library to Pick Wallpapers <ArrowRight size={13} style={{ marginLeft: 4 }} />
+          </button>
+        </div>
+      ) : filteredWallpapers.length === 0 ? (
         <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-subtle)', marginBottom: 32 }}>
           <Search size={24} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
-          <div className="text-sm">No wallpapers matching "{searchQuery}"</div>
+          <div className="text-sm">No home wallpapers matching "{searchQuery}"</div>
           <button className="btn btn-ghost" style={{ marginTop: 12, fontSize: 12 }} onClick={() => { setSearchQuery(''); setFilterCategory('all'); }}>
             Reset Filters
           </button>
@@ -425,6 +503,7 @@ export default function HomePage() {
             const isSelected    = activeWallpaper?.id === wallpaper.id
             const activeScreens = getWallpaperActiveScreens(wallpaper)
             const isLive        = activeScreens.length > 0
+            const engineIdToLoad = wallpaper.engine || wallpaper.id
 
             return (
               <div
@@ -438,7 +517,7 @@ export default function HomePage() {
               >
                 {/* Preview area */}
                 <div style={{ height: 110, background: '#000', position: 'relative' }}>
-                  <WallpaperPlayer engineId={wallpaper.engine} config={wallpaper.defaultConfig} preview />
+                  <WallpaperPlayer engineId={engineIdToLoad} config={wallpaper.config} preview />
 
                   {/* Badges */}
                   {isLive && (
@@ -453,16 +532,22 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  {wallpaper.isCustom && !isLive && (
-                    <div style={{
-                      position: 'absolute', top: 6, right: 6,
-                      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-                      borderRadius: 999, padding: '2px 7px', fontSize: 9, fontWeight: 600, color: 'var(--color-brand)',
-                      border: '1px solid color-mix(in srgb, var(--color-brand) 40%, transparent)', zIndex: 2,
-                    }}>
-                      VIDEO
-                    </div>
-                  )}
+                  {/* Quick Unpin button on card top left */}
+                  <button
+                    className="btn-icon"
+                    style={{
+                      position: 'absolute', top: 6, left: 6, zIndex: 3,
+                      background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.85)',
+                      padding: 4, borderRadius: 6, backdropFilter: 'blur(4px)',
+                    }}
+                    title="Remove from Home screen"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      unpinFromHome(wallpaper.id)
+                    }}
+                  >
+                    <PinOff size={11} />
+                  </button>
 
                   {/* Hover Overlay with Wallpaper Engine quick action */}
                   <div className="wp-hover-overlay">
@@ -488,20 +573,33 @@ export default function HomePage() {
                     <div className="font-medium text-sm truncate" title={wallpaper.name}>
                       {wallpaper.name}
                     </div>
-                    {wallpaper.isCustom && (
+                    <div className="flex items-center">
                       <button
                         className="btn-icon"
                         style={{ padding: 3 }}
-                        title="Delete custom wallpaper"
+                        title="Rename Wallpaper"
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (isLive) handleStop()
-                          uninstallItem(wallpaper.id)
+                          setRenameModal({ isOpen: true, id: wallpaper.id, currentName: wallpaper.name })
                         }}
                       >
-                        <Trash2 size={12} />
+                        <Pencil size={11} />
                       </button>
-                    )}
+                      {wallpaper.isCustom && (
+                        <button
+                          className="btn-icon"
+                          style={{ padding: 3 }}
+                          title="Delete custom wallpaper"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (isLive) handleStop()
+                            uninstallItem(wallpaper.id)
+                          }}
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-muted" style={{ marginTop: 2 }}>
                     {wallpaper.tags?.slice(0, 2).join(', ') || 'custom'}
@@ -583,6 +681,22 @@ export default function HomePage() {
       </div>
 
       {showThemeEditor && <ThemeEditor onClose={() => setShowThemeEditor(false)} />}
+
+      {/* Modals */}
+      <AddWallpaperModal
+        isOpen={addModal.isOpen}
+        filePath={addModal.path}
+        initialName={addModal.initialName}
+        onClose={() => setAddModal({ isOpen: false, path: '', initialName: '' })}
+        onConfirm={handleConfirmAdd}
+      />
+
+      <RenameWallpaperModal
+        isOpen={renameModal.isOpen}
+        currentName={renameModal.currentName}
+        onClose={() => setRenameModal({ isOpen: false, id: null, currentName: '' })}
+        onConfirm={handleConfirmRename}
+      />
     </div>
   )
 }

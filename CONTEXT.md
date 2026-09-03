@@ -144,6 +144,7 @@ npm run tauri:dev
 | 2026-09-02 | Antigravity (Gemini 3.1 Pro) | Rust configured, previews generated, Theme Editor implemented, Video Wallpaper Engine implemented, backend command added |
 | 2026-09-02 | Antigravity (Gemini 3.8 Flash) | Multi-monitor geometry, frame offsets, Windows 11 desktop icon Z-order behind SHELLDLL_DefView resolved |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Wallpaper Engine UI/UX overhaul: direct apply from Library, unified Home custom wallpapers, '+ Add Wallpaper' button & drag-drop, card quick actions & double click |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved black previews; added wallpaper naming & renaming modals; established Library as master catalog and Home as curated favorites with Pin to Home toggles |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

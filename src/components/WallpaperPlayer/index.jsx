@@ -65,6 +65,15 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     const descriptor = ENGINES[engineId]
     if (!descriptor) return
 
+    // Ensure canvas has valid dimensions immediately
+    if (canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect()
+      const w = rect.width || canvasRef.current.offsetWidth || canvasRef.current.parentElement?.offsetWidth || 320
+      const h = rect.height || canvasRef.current.offsetHeight || canvasRef.current.parentElement?.offsetHeight || 180
+      canvasRef.current.width = Math.max(Math.round(w), 100)
+      canvasRef.current.height = Math.max(Math.round(h), 60)
+    }
+
     try {
       const factory = await descriptor.load()
       // Don't start if engine changed while loading

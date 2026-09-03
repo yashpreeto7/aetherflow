@@ -33,24 +33,33 @@ export default function createVideoPlayer(canvas, options) {
   function init() {
     videoEl = document.createElement('video');
     videoEl.loop = true;
-    videoEl.autoplay = false; // Never use HTML autoplay to prevent unmanaged playback
+    videoEl.autoplay = false;
+    videoEl.setAttribute('playsinline', '');
+    videoEl.setAttribute('webkit-playsinline', '');
+    videoEl.preload = 'auto';
     
     // Always mute in preview mode
     if (options.preview) {
       videoEl.muted = true;
       videoEl.volume = 0;
+      videoEl.setAttribute('muted', '');
+      videoEl.onloadedmetadata = () => {
+        if (videoEl.currentTime === 0) {
+          try { videoEl.currentTime = 0.05; } catch (e) {}
+        }
+      };
     } else {
       videoEl.muted = options.muted ?? false;
       videoEl.volume = Math.max(0, Math.min(1, (options.volume ?? 50) / 100));
     }
     
-    // Style it to cover the container (just like the canvas does)
+    // Style it to cover the container (in preview, zIndex 1 so it's above container background)
     videoEl.style.position = 'absolute';
     videoEl.style.inset = '0';
     videoEl.style.width = '100%';
     videoEl.style.height = '100%';
     videoEl.style.objectFit = 'cover';
-    videoEl.style.zIndex = '-2'; // behind canvas (-1)
+    videoEl.style.zIndex = options.preview ? '1' : '-2';
     
     container.insertBefore(videoEl, canvas);
     
@@ -72,7 +81,15 @@ export default function createVideoPlayer(canvas, options) {
     start() {
       isRunning = true;
       if (videoEl && videoEl.src) {
-        videoEl.play().catch(e => console.log("AuraOS: Play prevented", e));
+        const p = videoEl.play();
+        if (p !== undefined) {
+          p.catch(e => {
+            // If autoplay was blocked, seek slightly to ensure frame is shown
+            if (videoEl.currentTime === 0) {
+              try { videoEl.currentTime = 0.05; } catch (err) {}
+            }
+          });
+        }
       }
     },
     stop() {
