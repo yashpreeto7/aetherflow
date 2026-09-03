@@ -12,7 +12,7 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT, POINT};
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     EnumWindows, FindWindowW, FindWindowExW, SendMessageTimeoutW, SetParent, SMTO_NORMAL, GetShellWindow,
-    SetWindowPos, HWND_BOTTOM, SWP_SHOWWINDOW,
+    SetWindowPos, HWND_BOTTOM, SWP_SHOWWINDOW, ShowWindow, DestroyWindow, IsWindow, IsWindowVisible, GetParent,
     GetWindowLongW, SetWindowLongW, GWL_STYLE, GWL_EXSTYLE, WS_CHILD, WS_POPUP,
     WS_VISIBLE, WS_THICKFRAME, WS_CAPTION, WS_BORDER,
     SWP_NOACTIVATE, SWP_FRAMECHANGED,
@@ -24,7 +24,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
     MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    MapWindowPoints,
+    MapWindowPoints, InvalidateRect, UpdateWindow, RedrawWindow,
+    RDW_INVALIDATE, RDW_UPDATENOW, RDW_ERASE, RDW_ALLCHILDREN,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
@@ -348,6 +349,16 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
 
+        // Force immediate DWM composition update and desktop client area invalidation
+        InvalidateRect(hwnd, std::ptr::null(), 1);
+        UpdateWindow(hwnd);
+        RedrawWindow(
+            hwnd,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE | RDW_ALLCHILDREN,
+        );
+
         // Verification log: measure resulting client screen coordinates
         let mut final_wr: RECT = std::mem::zeroed();
         let mut final_cr: RECT = std::mem::zeroed();
@@ -385,80 +396,210 @@ fn get_monitor_label(name: &str) -> String {
     format!("wallpaper_{}", name.replace("\\", "").replace(".", "_").replace(" ", "_"))
 }
 
-fn ensure_wallpaper_windows(app: &AppHandle) {
-    let monitors = app.available_monitors().unwrap_or_default();
-    for monitor in &monitors {
-        if let Some(name) = monitor.name() {
-            let label = get_monitor_label(name);
-            if app.get_webview_window(&label).is_some() {
-                continue;
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct MonSnapshot {
+    name: String,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+}
+
+fn get_monitors_snapshot(app: &AppHandle) -> Vec<MonSnapshot> {
+    app.available_monitors()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|m| {
+            m.name().map(|name| MonSnapshot {
+                name: name.to_string(),
+                x: m.position().x,
+                y: m.position().y,
+                w: m.size().width,
+                h: m.size().height,
+            })
+        })
+        .collect()
+}
+
+fn log_wallpaper_state(app: &AppHandle, monitor_count: usize) {
+    let mut wallpaper_windows = Vec::new();
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") {
+            wallpaper_windows.push((label, win));
+        }
+    }
+    let host_count = wallpaper_windows.len();
+
+    let mut state_log = format!(
+        "\n[WALLPAPER STATE]\nmonitor count = {}\nwallpaper host count = {}",
+        monitor_count, host_count
+    );
+
+    #[cfg(windows)]
+    for (label, win) in &wallpaper_windows {
+        if let Ok(hwnd) = win.hwnd() {
+            let raw_hwnd = hwnd.0 as HWND;
+            unsafe {
+                let mut wr: RECT = std::mem::zeroed();
+                GetWindowRect(raw_hwnd, &mut wr);
+                let parent = GetParent(raw_hwnd);
+                let is_vis = IsWindowVisible(raw_hwnd) != 0;
+
+                state_log.push_str(&format!(
+                    "\nHWND = 0x{:X}\nmonitor ID = {}\nGetWindowRect = left={} top={} right={} bottom={} ({}x{})\nparent HWND = 0x{:X}\nvisible = {}",
+                    raw_hwnd as usize,
+                    label,
+                    wr.left, wr.top, wr.right, wr.bottom,
+                    wr.right - wr.left, wr.bottom - wr.top,
+                    parent as usize,
+                    is_vis
+                ));
             }
+        }
+    }
 
-            let size = monitor.size();
-            let pos = monitor.position();
-            let scale = monitor.scale_factor();
-            
-            // inner_size() takes LOGICAL pixels; monitor.size() returns PHYSICAL pixels.
-            // At 125% DPI scale=1.25, so divide to get logical dimensions.
-            // Without this the window is too narrow and the original wallpaper bleeds through.
-            let logical_w = size.width as f64 / scale;
-            let logical_h = size.height as f64 / scale;
-            // Create the window at the EXACT screen position of this monitor.
-            // This ensures WebView2 initializes its controller bounds to the full
-            // monitor size. After SetParent the window is automatically at the
-            // correct WorkerW-relative position — no resize needed afterwards.
-            let logical_x = pos.x as f64 / scale;
-            let logical_y = pos.y as f64 / scale;
+    log_msg(&state_log);
+    println!("{}", state_log);
 
-            let new_mon_log = format!(
-                "\n[NEW MONITOR]\nstable ID: {}\nrcMonitor: left={} top={} right={} bottom={} ({}x{})",
-                name, pos.x, pos.y, pos.x + size.width as i32, pos.y + size.height as i32, size.width, size.height
-            );
-            log_msg(&new_mon_log);
-            println!("{}", new_mon_log);
+    if monitor_count != host_count {
+        let warn_msg = format!(
+            "[WALLPAPER STATE WARNING] Invariant violated: monitor count ({}) != wallpaper host count ({})",
+            monitor_count, host_count
+        );
+        log_msg(&warn_msg);
+        eprintln!("{}", warn_msg);
+    } else {
+        log_msg("[WALLPAPER STATE] Invariant verified: wallpaper host count == monitor count.");
+        println!("[WALLPAPER STATE] Invariant verified: wallpaper host count == monitor count.");
+    }
+}
 
-            let win_res = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
-                .title(&format!("AuraOS Wallpaper - {}", name))
-                .decorations(false)
-                .transparent(true)
-                .visible(true)
-                .skip_taskbar(true)
-                .resizable(false)
-                .inner_size(logical_w, logical_h)
-                .position(logical_x, logical_y)
-                .build();
+fn reconcile_wallpaper_windows(app: &AppHandle) {
+    let monitors = app.available_monitors().unwrap_or_default();
+    let current_count = monitors.len();
 
-            match win_res {
-                Ok(win) => {
-                    #[cfg(windows)]
-                    if let Ok(hwnd) = win.hwnd() {
-                        let raw_hwnd = hwnd.0 as isize;
-                        let host_log = format!(
-                            "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
-                            raw_hwnd as usize
-                        );
-                        log_msg(&host_log);
-                        println!("{}", host_log);
+    // 1. Build set of valid labels for currently connected monitors
+    let mut valid_labels = std::collections::HashSet::new();
+    for m in &monitors {
+        if let Some(name) = m.name() {
+            valid_labels.insert(get_monitor_label(name));
+        }
+    }
 
-                        std::thread::spawn(move || {
-                            // 800 ms: let WebView2 finish initialising its internal HWND tree
-                            // before we call SetParent on it (500 ms was occasionally too short).
-                            std::thread::sleep(std::time::Duration::from_millis(800));
-                            // Coordinates / size are determined inside pin_hwnd_as_wallpaper
-                            // via MonitorFromWindow + GetMonitorInfoW + MapWindowPoints,
-                            // so there is nothing to pre-compute here.
-                            pin_hwnd_as_wallpaper(raw_hwnd as *mut std::ffi::c_void);
-                        });
+    // 2. Destroy wallpaper windows ONLY for monitors that no longer exist
+    let active_windows = app.webview_windows();
+    for (label, win) in active_windows {
+        if label.starts_with("wallpaper_") && !valid_labels.contains(&label) {
+            log_msg(&format!("[RECONCILIATION] Destroying wallpaper host for disconnected monitor: {}", label));
+            println!("[RECONCILIATION] Destroying wallpaper host for disconnected monitor: {}", label);
+
+            #[cfg(windows)]
+            if let Ok(hwnd) = win.hwnd() {
+                let raw_hwnd = hwnd.0 as HWND;
+                unsafe {
+                    if IsWindow(raw_hwnd) != 0 {
+                        ShowWindow(raw_hwnd, 0); // SW_HIDE
+                        SetParent(raw_hwnd, std::ptr::null_mut());
+                        DestroyWindow(raw_hwnd);
                     }
                 }
-                Err(err) => {
-                    let err_log = format!("\n[WALLPAPER HOST] ERROR creating window for {}: {}", name, err);
-                    log_msg(&err_log);
-                    eprintln!("{}", err_log);
+            }
+            let _ = win.destroy();
+
+            if let Ok(mut guard) = ACTIVE_WALLPAPERS.lock() {
+                if let Some(ref mut map) = *guard {
+                    map.remove(&label);
                 }
             }
         }
     }
+
+    // 3. Reconcile existing valid hosts or create new ones
+    for monitor in &monitors {
+        if let Some(name) = monitor.name() {
+            let label = get_monitor_label(name);
+
+            let size = monitor.size();
+            let pos = monitor.position();
+            let scale = monitor.scale_factor();
+            let logical_w = size.width as f64 / scale;
+            let logical_h = size.height as f64 / scale;
+            let logical_x = pos.x as f64 / scale;
+            let logical_y = pos.y as f64 / scale;
+
+            if let Some(win) = app.get_webview_window(&label) {
+                // EXISTING MONITOR: Recalculate using current rcMonitor, re-pin, update z-order & repaint
+                log_msg(&format!(
+                    "[RECONCILIATION] Re-aligning existing wallpaper host for {}: pos=({},{}) size={}x{}",
+                    name, pos.x, pos.y, size.width, size.height
+                ));
+                println!(
+                    "[RECONCILIATION] Re-aligning existing wallpaper host for {}: pos=({},{}) size={}x{}",
+                    name, pos.x, pos.y, size.width, size.height
+                );
+
+                let _ = win.set_size(tauri::LogicalSize::new(logical_w, logical_h));
+                let _ = win.set_position(tauri::LogicalPosition::new(logical_x, logical_y));
+
+                #[cfg(windows)]
+                if let Ok(hwnd) = win.hwnd() {
+                    let raw_hwnd = hwnd.0 as HWND;
+                    pin_hwnd_as_wallpaper(raw_hwnd);
+                }
+            } else {
+                // NEW MONITOR: Create host using the exact working startup path
+                let new_mon_log = format!(
+                    "\n[NEW MONITOR]\nstable ID: {}\nrcMonitor: left={} top={} right={} bottom={} ({}x{})",
+                    name, pos.x, pos.y, pos.x + size.width as i32, pos.y + size.height as i32, size.width, size.height
+                );
+                log_msg(&new_mon_log);
+                println!("{}", new_mon_log);
+
+                let win_res = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
+                    .title(&format!("AuraOS Wallpaper - {}", name))
+                    .decorations(false)
+                    .transparent(true)
+                    .visible(true)
+                    .skip_taskbar(true)
+                    .resizable(false)
+                    .inner_size(logical_w, logical_h)
+                    .position(logical_x, logical_y)
+                    .build();
+
+                match win_res {
+                    Ok(win) => {
+                        #[cfg(windows)]
+                        if let Ok(hwnd) = win.hwnd() {
+                            let raw_hwnd = hwnd.0 as isize;
+                            let host_log = format!(
+                                "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
+                                raw_hwnd as usize
+                            );
+                            log_msg(&host_log);
+                            println!("{}", host_log);
+
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_millis(800));
+                                pin_hwnd_as_wallpaper(raw_hwnd as *mut std::ffi::c_void);
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        let err_log = format!("\n[WALLPAPER HOST] ERROR creating window for {}: {}", name, err);
+                        log_msg(&err_log);
+                        eprintln!("{}", err_log);
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Log verified wallpaper state
+    log_wallpaper_state(app, current_count);
+}
+
+fn ensure_wallpaper_windows(app: &AppHandle) {
+    reconcile_wallpaper_windows(app);
 }
 
 // ─── Commands (callable from JS via invoke()) ─────────────────────────────────
@@ -722,64 +863,47 @@ fn main() {
             // Pre-create and pin the wallpaper windows in the background so applying is instant
             ensure_wallpaper_windows(app.handle());
 
-            // ── Background Display Change & Hot-Plug Watcher ───────────────────
+            // ── Background Display Change & Hot-Plug Watcher with Debouncing ───
             let app_handle = app.handle().clone();
             std::thread::spawn(move || {
                 // Wait for initial startup to settle
                 std::thread::sleep(std::time::Duration::from_millis(1500));
 
-                let mut last_monitor_names: Vec<String> = app_handle
-                    .available_monitors()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|m| m.name().map(|n| n.to_string()))
-                    .collect();
-                let mut last_monitor_count = last_monitor_names.len();
+                let mut last_stable_monitors = get_monitors_snapshot(&app_handle);
 
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    std::thread::sleep(std::time::Duration::from_millis(400));
 
-                    let monitors = app_handle.available_monitors().unwrap_or_default();
-                    let current_count = monitors.len();
-                    let current_names: Vec<String> = monitors
-                        .iter()
-                        .filter_map(|m| m.name().map(|n| n.to_string()))
-                        .collect();
+                    let current_sample = get_monitors_snapshot(&app_handle);
 
-                    if current_count != last_monitor_count || current_names != last_monitor_names {
+                    if current_sample != last_stable_monitors {
+                        // Display topology change in progress! Coalesce/debounce until stable.
+                        let mut stable_candidate = current_sample;
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_millis(300));
+                            let next_sample = get_monitors_snapshot(&app_handle);
+                            if next_sample == stable_candidate {
+                                break;
+                            }
+                            stable_candidate = next_sample;
+                        }
+
                         let change_log = format!(
                             "\n[DISPLAY CHANGE]\nmonitor count before: {}\nmonitor count after: {}",
-                            last_monitor_count, current_count
+                            last_stable_monitors.len(), stable_candidate.len()
                         );
                         log_msg(&change_log);
                         println!("{}", change_log);
 
-                        // Clean up any stale wallpaper windows whose monitor was disconnected
-                        let active_windows = app_handle.webview_windows();
-                        for (label, win) in active_windows {
-                            if label.starts_with("wallpaper_") {
-                                let still_connected = monitors.iter().any(|m| {
-                                    m.name().map(|n| get_monitor_label(n) == label).unwrap_or(false)
-                                });
-                                if !still_connected {
-                                    let rm_log = format!("[DISPLAY CHANGE] Monitor removed for window {}, destroying", label);
-                                    log_msg(&rm_log);
-                                    println!("{}", rm_log);
-                                    let _ = win.destroy();
-                                }
-                            }
-                        }
-
-                        // Re-run the EXACT same ensure_wallpaper_windows startup logic for new monitors
-                        ensure_wallpaper_windows(&app_handle);
+                        // Run the controlled reconciliation on the stabilized configuration
+                        reconcile_wallpaper_windows(&app_handle);
 
                         let _ = app_handle.emit("aura:monitors-changed", serde_json::json!({
-                            "count": current_count,
-                            "monitors": current_names.clone(),
+                            "count": stable_candidate.len(),
+                            "monitors": stable_candidate.iter().map(|m| m.name.clone()).collect::<Vec<_>>(),
                         }));
 
-                        last_monitor_count = current_count;
-                        last_monitor_names = current_names;
+                        last_stable_monitors = stable_candidate;
                     }
                 }
             });
