@@ -148,6 +148,7 @@ npm run tauri:dev
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed 1GB-2.5GB RAM leak: stopped running 15+ concurrent live 60fps canvas engines in grid cards, implemented WallpaperThumbnail, and fixed async unmount race condition |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Process & memory reduction: on-demand wallpaper window creation, merged audio & crashpad utility processes, and EmptyWorkingSet memory trimming on minimize |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed wallpaper apply issue and second screen white window popup by restoring launch-time window pre-creation & WorkerW pinning |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Added persistent Stop Wallpaper button in StatusBar across all pages, improved tray click restore, and killed lingering processes |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

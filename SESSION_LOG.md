@@ -89,6 +89,15 @@
     - Identified that creating wallpaper windows on-demand during `apply_wallpaper` caused a race condition where `aura:set-engine` was emitted before `wallpaper.html` loaded React and registered listeners, leaving a top-level unpinned white window.
     - Restored `ensure_wallpaper_windows` inside `setup()` so windows are created, transparency is applied, and windows are safely pinned behind desktop icons before any apply action occurs.
     - Verified `npm run build` (477ms) and `cargo check` (6.07s) pass with 0 errors.
-- **Build status:** ✅ `npm run build` and `cargo check` passing with 0 errors
+## Session: 2026-09-03 17:07 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~5 minutes
+- **Completed:**
+  - Resolved "desktop app disappear and we dont have an option to stop wallpaper":
+    - Added universal, persistent "Stop Wallpaper" button to `StatusBar/index.jsx` anchored at the bottom of every page with live pulsing status badge.
+    - Updated `src-tauri/src/main.rs` tray event listener to support single-click and double-click to immediately unminimize and focus the control panel.
+    - Removed duplicate `onCloseRequested` JS event listener from `App.jsx` to prevent window hiding race conditions.
+    - Killed lingering hidden background process so fresh `npm run tauri:dev` runs cleanly.
+- **Build status:** ✅ `npm run build` (497ms) and `cargo check` (1.10s) passing with 0 errors
 
 ---
