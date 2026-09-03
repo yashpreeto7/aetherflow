@@ -29,6 +29,19 @@ use windows_sys::Win32::Graphics::Gdi::{
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct ActiveWallpaperState {
+    pub engine_id: String,
+    pub config: serde_json::Value,
+    pub opacity: f64,
+    pub brightness: f64,
+}
+
+static ACTIVE_WALLPAPERS: Mutex<Option<HashMap<String, ActiveWallpaperState>>> = Mutex::new(None);
+
 // ─── PROGMAN / WorkerW trick ─────────────────────────────────────────────────
 
 struct DesktopWindows {
@@ -355,6 +368,14 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             mon_screen_x, mon_screen_y
         ));
         log_msg("[AuraOS WP] pin_hwnd_as_wallpaper complete.");
+        let host_summary = format!(
+            "[WALLPAPER HOST]\nparent HWND: 0x{:X}\nWebView controller created: true\nattached to WorkerW: 0x{:X}\nSetWindowPos: ({}, {}) [{} x {}]\nshown: true",
+            parent_hwnd as usize,
+            parent_hwnd as usize,
+            adj_x, adj_y, adj_w, adj_h
+        );
+        log_msg(&host_summary);
+        println!("{}", host_summary);
     }
 }
 
@@ -366,7 +387,7 @@ fn get_monitor_label(name: &str) -> String {
 
 fn ensure_wallpaper_windows(app: &AppHandle) {
     let monitors = app.available_monitors().unwrap_or_default();
-    for monitor in monitors {
+    for monitor in &monitors {
         if let Some(name) = monitor.name() {
             let label = get_monitor_label(name);
             if app.get_webview_window(&label).is_some() {
@@ -389,7 +410,14 @@ fn ensure_wallpaper_windows(app: &AppHandle) {
             let logical_x = pos.x as f64 / scale;
             let logical_y = pos.y as f64 / scale;
 
-            let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
+            let new_mon_log = format!(
+                "\n[NEW MONITOR]\nstable ID: {}\nrcMonitor: left={} top={} right={} bottom={} ({}x{})",
+                name, pos.x, pos.y, pos.x + size.width as i32, pos.y + size.height as i32, size.width, size.height
+            );
+            log_msg(&new_mon_log);
+            println!("{}", new_mon_log);
+
+            let win_res = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
                 .title(&format!("AuraOS Wallpaper - {}", name))
                 .decorations(false)
                 .transparent(true)
@@ -398,21 +426,36 @@ fn ensure_wallpaper_windows(app: &AppHandle) {
                 .resizable(false)
                 .inner_size(logical_w, logical_h)
                 .position(logical_x, logical_y)
-                .build()
-                .expect("Failed to create wallpaper window");
+                .build();
 
-            #[cfg(windows)]
-            if let Ok(hwnd) = win.hwnd() {
-                let raw_hwnd = hwnd.0 as isize;
-                std::thread::spawn(move || {
-                    // 800 ms: let WebView2 finish initialising its internal HWND tree
-                    // before we call SetParent on it (500 ms was occasionally too short).
-                    std::thread::sleep(std::time::Duration::from_millis(800));
-                    // Coordinates / size are determined inside pin_hwnd_as_wallpaper
-                    // via MonitorFromWindow + GetMonitorInfoW + MapWindowPoints,
-                    // so there is nothing to pre-compute here.
-                    pin_hwnd_as_wallpaper(raw_hwnd as *mut std::ffi::c_void);
-                });
+            match win_res {
+                Ok(win) => {
+                    #[cfg(windows)]
+                    if let Ok(hwnd) = win.hwnd() {
+                        let raw_hwnd = hwnd.0 as isize;
+                        let host_log = format!(
+                            "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
+                            raw_hwnd as usize
+                        );
+                        log_msg(&host_log);
+                        println!("{}", host_log);
+
+                        std::thread::spawn(move || {
+                            // 800 ms: let WebView2 finish initialising its internal HWND tree
+                            // before we call SetParent on it (500 ms was occasionally too short).
+                            std::thread::sleep(std::time::Duration::from_millis(800));
+                            // Coordinates / size are determined inside pin_hwnd_as_wallpaper
+                            // via MonitorFromWindow + GetMonitorInfoW + MapWindowPoints,
+                            // so there is nothing to pre-compute here.
+                            pin_hwnd_as_wallpaper(raw_hwnd as *mut std::ffi::c_void);
+                        });
+                    }
+                }
+                Err(err) => {
+                    let err_log = format!("\n[WALLPAPER HOST] ERROR creating window for {}: {}", name, err);
+                    log_msg(&err_log);
+                    eprintln!("{}", err_log);
+                }
             }
         }
     }
@@ -442,7 +485,6 @@ fn get_monitors(app: AppHandle) -> serde_json::Value {
 }
 
 /// Apply a wallpaper engine: shows & pins the wallpaper window, then emits
-/// Apply a wallpaper engine: shows & pins the wallpaper window, then emits
 /// 'aura:set-engine' to the wallpaper WebView so it boots the canvas engine.
 #[tauri::command]
 fn apply_wallpaper(
@@ -453,10 +495,21 @@ fn apply_wallpaper(
     brightness: f64,
     monitor_label: Option<String>,
 ) {
+    let target = monitor_label.unwrap_or_else(|| "*".to_string());
+
+    // Record desired state per monitor for immediate recovery upon window mount
+    if let Ok(mut guard) = ACTIVE_WALLPAPERS.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(target.clone(), ActiveWallpaperState {
+            engine_id: engine_id.clone(),
+            config: config.clone(),
+            opacity,
+            brightness,
+        });
+    }
+
     ensure_wallpaper_windows(&app);
 
-    let target = monitor_label.unwrap_or_else(|| "*".to_string());
-    
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
@@ -475,10 +528,19 @@ fn apply_wallpaper(
     }
 }
 
-/// Stop the active wallpaper and hide the wallpaper window.
+/// Stop the active wallpaper and clear active state.
 #[tauri::command]
 fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    if let Ok(mut guard) = ACTIVE_WALLPAPERS.lock() {
+        if let Some(ref mut map) = *guard {
+            if target == "*" {
+                map.clear();
+            } else {
+                map.remove(&target);
+            }
+        }
+    }
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -486,6 +548,25 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
             let _ = win.emit_to(label.as_str(), "aura:stop", payload);
         }
     }
+}
+
+/// Query active wallpaper state for a specific monitor window upon mounting
+#[tauri::command]
+fn get_monitor_active_wallpaper(label: String) -> Option<serde_json::Value> {
+    if let Ok(guard) = ACTIVE_WALLPAPERS.lock() {
+        if let Some(ref map) = *guard {
+            let entry = map.get(&label).or_else(|| map.get("*"));
+            if let Some(state) = entry {
+                return Some(serde_json::json!({
+                    "engineId": state.engine_id,
+                    "config": state.config,
+                    "opacity": state.opacity,
+                    "brightness": state.brightness,
+                }));
+            }
+        }
+    }
+    None
 }
 
 /// Hot-update the active engine config without restarting it.
@@ -590,6 +671,7 @@ fn main() {
             get_system_info,
             read_local_file,
             get_monitors,
+            get_monitor_active_wallpaper,
         ])
         .setup(|app| {
             // Show the main window
@@ -639,6 +721,68 @@ fn main() {
 
             // Pre-create and pin the wallpaper windows in the background so applying is instant
             ensure_wallpaper_windows(app.handle());
+
+            // ── Background Display Change & Hot-Plug Watcher ───────────────────
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Wait for initial startup to settle
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+
+                let mut last_monitor_names: Vec<String> = app_handle
+                    .available_monitors()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|m| m.name().map(|n| n.to_string()))
+                    .collect();
+                let mut last_monitor_count = last_monitor_names.len();
+
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(800));
+
+                    let monitors = app_handle.available_monitors().unwrap_or_default();
+                    let current_count = monitors.len();
+                    let current_names: Vec<String> = monitors
+                        .iter()
+                        .filter_map(|m| m.name().map(|n| n.to_string()))
+                        .collect();
+
+                    if current_count != last_monitor_count || current_names != last_monitor_names {
+                        let change_log = format!(
+                            "\n[DISPLAY CHANGE]\nmonitor count before: {}\nmonitor count after: {}",
+                            last_monitor_count, current_count
+                        );
+                        log_msg(&change_log);
+                        println!("{}", change_log);
+
+                        // Clean up any stale wallpaper windows whose monitor was disconnected
+                        let active_windows = app_handle.webview_windows();
+                        for (label, win) in active_windows {
+                            if label.starts_with("wallpaper_") {
+                                let still_connected = monitors.iter().any(|m| {
+                                    m.name().map(|n| get_monitor_label(n) == label).unwrap_or(false)
+                                });
+                                if !still_connected {
+                                    let rm_log = format!("[DISPLAY CHANGE] Monitor removed for window {}, destroying", label);
+                                    log_msg(&rm_log);
+                                    println!("{}", rm_log);
+                                    let _ = win.destroy();
+                                }
+                            }
+                        }
+
+                        // Re-run the EXACT same ensure_wallpaper_windows startup logic for new monitors
+                        ensure_wallpaper_windows(&app_handle);
+
+                        let _ = app_handle.emit("aura:monitors-changed", serde_json::json!({
+                            "count": current_count,
+                            "monitors": current_names.clone(),
+                        }));
+
+                        last_monitor_count = current_count;
+                        last_monitor_names = current_names;
+                    }
+                }
+            });
 
             // ── System tray ───────────────────────────────────────────────────
             let open_item  = MenuItem::with_id(app, "open",  "Open AuraOS",      true, None::<&str>)?;

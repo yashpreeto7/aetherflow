@@ -190,6 +190,19 @@ function WallpaperCanvas() {
             setOpacity(payload.opacity)
           })
         )
+
+        // Check if there is already an active wallpaper for this monitor (handles hot-plug & reload)
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const activeState = await invoke('get_monitor_active_wallpaper', { label: myLabel })
+          if (activeState?.engineId) {
+            bootEngine(activeState.engineId, activeState.config || {})
+            if (activeState.brightness !== undefined) setBrightness(activeState.brightness)
+            if (activeState.opacity !== undefined) setOpacity(activeState.opacity)
+          }
+        } catch (e) {
+          console.warn('[AuraOS Wallpaper] get_monitor_active_wallpaper query failed:', e)
+        }
       } catch (err) {
         // Only auto-boot in a regular browser (NOT inside Tauri)
         if (!window.__TAURI_INTERNALS__) {

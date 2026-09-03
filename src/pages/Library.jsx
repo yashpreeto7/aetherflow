@@ -43,21 +43,36 @@ export default function LibraryPage() {
   const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
   const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
 
-  // Fetch monitors on mount
+  // Fetch monitors on mount and when display configuration changes
   useEffect(() => {
-    tauriInvoke('get_monitors').then(res => {
-      if (res && res.length > 0) {
-        res.sort((a, b) => {
-          if (a.isPrimary && !b.isPrimary) return -1
-          if (!a.isPrimary && b.isPrimary) return 1
-          return a.x - b.x
-        })
-        setMonitors(res)
-        if (!selectedMonitorLabel) {
-          setSelectedMonitorLabel(res[0].label)
+    let unlistenMonitors
+    function loadMonitors() {
+      tauriInvoke('get_monitors').then(res => {
+        if (res && res.length > 0) {
+          res.sort((a, b) => {
+            if (a.isPrimary && !b.isPrimary) return -1
+            if (!a.isPrimary && b.isPrimary) return 1
+            return a.x - b.x
+          })
+          setMonitors(res)
+          setSelectedMonitorLabel(prev => {
+            if (prev && res.some(m => m.label === prev)) return prev
+            return res[0].label
+          })
         }
-      }
-    })
+      })
+    }
+    loadMonitors()
+
+    listen('aura:monitors-changed', () => {
+      loadMonitors()
+    }).then(u => { unlistenMonitors = u }).catch(() => {})
+
+    window.addEventListener('focus', loadMonitors)
+    return () => {
+      if (unlistenMonitors) unlistenMonitors()
+      window.removeEventListener('focus', loadMonitors)
+    }
   }, [])
 
   // ── Import file handler with naming modal ──────────────────────────────────
