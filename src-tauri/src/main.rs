@@ -43,6 +43,9 @@ pub struct ActiveWallpaperState {
 
 static ACTIVE_WALLPAPERS: Mutex<Option<HashMap<String, ActiveWallpaperState>>> = Mutex::new(None);
 
+pub mod mpv;
+static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new(None);
+
 // ─── PROGMAN / WorkerW trick ─────────────────────────────────────────────────
 
 struct DesktopWindows {
@@ -511,6 +514,12 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                     map.remove(&label);
                 }
             }
+
+            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                if let Some(ref mut map) = *mpv_guard {
+                    map.remove(&label);
+                }
+            }
         }
     }
 
@@ -626,7 +635,8 @@ fn get_monitors(app: AppHandle) -> serde_json::Value {
 }
 
 /// Apply a wallpaper engine: shows & pins the wallpaper window, then emits
-/// 'aura:set-engine' to the wallpaper WebView so it boots the canvas engine.
+/// 'aura:set-engine' to the wallpaper WebView so it boots the canvas engine,
+/// or launches MPV for video wallpapers.
 #[tauri::command]
 fn apply_wallpaper(
     app: AppHandle,
@@ -651,19 +661,65 @@ fn apply_wallpaper(
 
     ensure_wallpaper_windows(&app);
 
+    let video_path_opt = config.get("videoPath").and_then(|v| v.as_str());
+    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt);
+
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
             if target == "*" || target == label {
                 let _ = win.set_ignore_cursor_events(true);
-                let payload = serde_json::json!({
-                    "engineId": engine_id.clone(),
-                    "config": config.clone(),
-                    "target": target.clone(),
-                });
-                let _ = win.emit_to(label.as_str(), "aura:set-engine", payload);
-                let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
-                let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
+
+                if is_video {
+                    // Video wallpaper -> Route to MPV backend
+                    // Stop WebView2 wallpaper on this monitor so it's transparent and releases decoding
+                    let _ = win.emit_to(label.as_str(), "aura:stop", serde_json::json!({ "target": label.clone() }));
+
+                    #[cfg(windows)]
+                    if let Ok(hwnd) = win.hwnd() {
+                        let raw_hwnd = hwnd.0 as HWND;
+                        if let Some(vpath) = video_path_opt {
+                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                let map = mpv_guard.get_or_insert_with(HashMap::new);
+
+                                // Terminate existing MPV instance on this monitor if running
+                                if let Some(mut existing) = map.remove(&label) {
+                                    existing.terminate();
+                                }
+
+                                // Launch new MPV instance attached to the native host HWND
+                                match mpv::spawn_mpv_wallpaper(vpath, raw_hwnd, &label, Some(50.0), Some(false)) {
+                                    Ok(proc) => {
+                                        println!("[MPV] Successfully assigned MPV video wallpaper to {}", label);
+                                        map.insert(label.clone(), proc);
+                                    }
+                                    Err(err) => {
+                                        eprintln!("[MPV ERROR] Failed to spawn MPV on {}: {}", label, err);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Canvas / WebGL wallpaper -> Route to WebView2 backend
+                    // Terminate any MPV instance running on this monitor
+                    if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                        if let Some(ref mut map) = *mpv_guard {
+                            if let Some(mut existing) = map.remove(&label) {
+                                existing.terminate();
+                            }
+                        }
+                    }
+
+                    let payload = serde_json::json!({
+                        "engineId": engine_id.clone(),
+                        "config": config.clone(),
+                        "target": target.clone(),
+                    });
+                    let _ = win.emit_to(label.as_str(), "aura:set-engine", payload);
+                    let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
+                    let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
+                }
             }
         }
     }
@@ -682,6 +738,20 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
             }
         }
     }
+
+    // Terminate any MPV instances for target monitor(s)
+    if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref mut map) = *mpv_guard {
+            if target == "*" {
+                for (_, mut proc) in map.drain() {
+                    proc.terminate();
+                }
+            } else if let Some(mut proc) = map.remove(&target) {
+                proc.terminate();
+            }
+        }
+    }
+
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -691,6 +761,48 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
     }
     #[cfg(windows)]
     trim_all_process_memory();
+}
+
+#[tauri::command]
+fn set_mpv_pause(monitor_label: Option<String>, paused: bool) {
+    let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (label, proc) in map {
+                if target == "*" || target == *label {
+                    let _ = proc.set_pause(paused);
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn set_mpv_volume(monitor_label: Option<String>, volume: f64) {
+    let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (label, proc) in map {
+                if target == "*" || target == *label {
+                    let _ = proc.set_volume(volume);
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn set_mpv_mute(monitor_label: Option<String>, muted: bool) {
+    let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (label, proc) in map {
+                if target == "*" || target == *label {
+                    let _ = proc.set_mute(muted);
+                }
+            }
+        }
+    }
 }
 
 /// Query active wallpaper state for a specific monitor window upon mounting
@@ -716,6 +828,17 @@ fn get_monitor_active_wallpaper(label: String) -> Option<serde_json::Value> {
 #[tauri::command]
 fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_label: Option<String>) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    if let Some(new_vpath) = config.get("videoPath").and_then(|v| v.as_str()) {
+        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+            if let Some(ref mut map) = *mpv_guard {
+                for (label, proc) in map.iter_mut() {
+                    if target == "*" || target == *label {
+                        let _ = proc.load_file(new_vpath);
+                    }
+                }
+            }
+        }
+    }
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -884,6 +1007,9 @@ fn main() {
             get_monitors,
             get_monitor_active_wallpaper,
             trim_memory,
+            set_mpv_pause,
+            set_mpv_volume,
+            set_mpv_mute,
         ])
         .setup(|app| {
             // Show the main window
@@ -1014,6 +1140,7 @@ fn main() {
                             }
                         }
                         "pause" => {
+                            set_mpv_pause(None, true);
                             let windows = app.webview_windows();
                             for (label, win) in windows {
                                 if label.starts_with("wallpaper_") {
@@ -1022,6 +1149,7 @@ fn main() {
                             }
                         }
                         "resume" => {
+                            set_mpv_pause(None, false);
                             let windows = app.webview_windows();
                             for (label, win) in windows {
                                 if label.starts_with("wallpaper_") {
@@ -1033,6 +1161,13 @@ fn main() {
                             stop_wallpaper(app.clone(), None);
                         }
                         "quit" => {
+                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                if let Some(ref mut map) = *mpv_guard {
+                                    for (_, mut proc) in map.drain() {
+                                        proc.terminate();
+                                    }
+                                }
+                            }
                             std::process::exit(0);
                         }
                         _ => {}
