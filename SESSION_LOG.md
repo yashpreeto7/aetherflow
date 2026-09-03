@@ -81,6 +81,14 @@
     - Added Chromium/WebView2 browser flags `--disable-features=AudioServiceOutOfProcess` and `--disable-crash-reporter` to merge audio service and remove crashpad process.
     - Switched wallpaper window creation from eager launch-time pre-creation to on-demand creation upon wallpaper application.
     - Added `EmptyWorkingSet(GetCurrentProcess())` when minimizing/closing control panel to system tray to reclaim unused memory down to ~15MB.
-- **Build status:** ✅ `npm run build` (815ms) and `cargo check` passing with 0 errors
+## Session: 2026-09-03 17:02 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~5 minutes
+- **Completed:**
+  - Resolved "wallpaper does not apply and white window pops up on second screen":
+    - Identified that creating wallpaper windows on-demand during `apply_wallpaper` caused a race condition where `aura:set-engine` was emitted before `wallpaper.html` loaded React and registered listeners, leaving a top-level unpinned white window.
+    - Restored `ensure_wallpaper_windows` inside `setup()` so windows are created, transparency is applied, and windows are safely pinned behind desktop icons before any apply action occurs.
+    - Verified `npm run build` (477ms) and `cargo check` (6.07s) pass with 0 errors.
+- **Build status:** ✅ `npm run build` and `cargo check` passing with 0 errors
 
 ---
