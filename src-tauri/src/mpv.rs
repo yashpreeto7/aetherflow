@@ -158,6 +158,9 @@ pub fn spawn_mpv_wallpaper(
         .arg("--force-window=yes")
         .arg("--keep-open=yes")
         .arg("--panscan=1.0") // Fill exact monitor window without black letterboxing
+        .arg("--cache=no")
+        .arg("--demuxer-max-bytes=16M")
+        .arg("--demuxer-max-back-bytes=4M")
         .arg(format!("--input-ipc-server={}", pipe_name));
 
     // Audio handling
