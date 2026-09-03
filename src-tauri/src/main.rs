@@ -562,6 +562,15 @@ async fn read_local_file(path: String) -> Result<Vec<u8>, String> {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
+    // Optimize WebView2 child processes:
+    // 1. Merge audio service into browser process (removes 1 process)
+    // 2. Disable crashpad reporter (removes 1 process)
+    // 3. Disable background timer throttling for smooth desktop rendering
+    std::env::set_var(
+        "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--disable-features=AudioServiceOutOfProcess --disable-crash-reporter --disable-background-timer-throttling"
+    );
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -618,6 +627,14 @@ fn main() {
                         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                             let _ = w_clone.hide();
                             api.prevent_close();
+
+                            // Trim process memory working set when minimized/closed to tray
+                            #[cfg(windows)]
+                            unsafe {
+                                windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet(
+                                    windows_sys::Win32::System::Threading::GetCurrentProcess()
+                                );
+                            }
                         }
                     });
 
@@ -630,9 +647,7 @@ fn main() {
             }
 
             // ... tray code remains below ...
-
-            // Pre-create the wallpaper window (hidden) so first Apply is instant
-            ensure_wallpaper_windows(app.handle());
+            // Note: wallpaper windows are created on-demand when user applies a wallpaper
 
             // ── System tray ───────────────────────────────────────────────────
             let open_item  = MenuItem::with_id(app, "open",  "Open AuraOS",      true, None::<&str>)?;
