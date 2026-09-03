@@ -34,5 +34,20 @@
 - **Build status:** ✅ `cargo check` and `npm run build` passing with 0 errors
 - **Result:** Live wallpaper embedding and geometry verified working by user.
 
----
+## Session: 2026-09-03 14:58 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~25 minutes
+- **Completed:**
+  - Implemented Wallpaper Engine-inspired UI/UX overhaul requested by user:
+    - Enabled direct desktop application of wallpapers from Library (no need to navigate back to Home).
+    - Unified custom user-imported video wallpapers into the Home page grid alongside built-in engines.
+    - Added "+ Add Wallpaper" button and file drag-and-drop on both Home and Library pages.
+    - Added double-click to apply wallpaper immediately to desktop.
+    - Added hover overlay action buttons on wallpaper cards.
+    - Added category filter pills (All, Built-in Canvas, Videos & Custom) and search filter on Home.
+    - Added live pulsating green status badges and monitor targeting support in Library.
+    - Created centralized `src/lib/wallpaperActions.js` dispatcher.
+- **Build status:** ✅ `npm run build` and `cargo check` passing with 0 errors
+- **Next session should:** Wire Windows auto-start registry hook, fullscreen game pause detector, or WASAPI desktop audio loopback.
 
+---

@@ -225,3 +225,53 @@ input:checked ~ .toggle-thumb { transform: translateX(16px); }
 .h-full { height: 100%; }
 .overflow-auto { overflow: auto; }
 .rounded { border-radius: 8px; } .rounded-lg { border-radius: 12px; } .rounded-full { border-radius: 999px; }
+
+/* ── Wallpaper Card Enhancements ───────────────────────────────────────────── */
+.wp-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth), border-color 0.2s ease;
+  user-select: none;
+}
+.wp-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+.wp-card .wp-hover-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+}
+.wp-card:hover .wp-hover-overlay {
+  opacity: 1;
+}
+
+.status-dot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.6; }
+}
+
+/* ── Dropzone Highlight ─────────────────────────────────────────────────────── */
+.dropzone-active {
+  border-color: var(--color-brand) !important;
+  background: color-mix(in srgb, var(--color-brand) 10%, transparent) !important;
+}
+

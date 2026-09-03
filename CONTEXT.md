@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-02 12:38 IST — Session: Initial build by Antigravity (Gemini/Claude)
+2026-09-03 14:58 IST — Session: Wallpaper Engine-style UI/UX overhaul (direct apply from Library, unified Home grid, + Add Wallpaper, double click)
 
 ---
 
@@ -142,6 +142,8 @@ npm run tauri:dev
 | 2026-09-02 | Antigravity (Claude Sonnet 4.6) | Added .agents/ skills, AGENTS.md, GEMINI.md, REMAINING_TASKS.md, CONTEXT.md, hooks |
 
 | 2026-09-02 | Antigravity (Gemini 3.1 Pro) | Rust configured, previews generated, Theme Editor implemented, Video Wallpaper Engine implemented, backend command added |
+| 2026-09-02 | Antigravity (Gemini 3.8 Flash) | Multi-monitor geometry, frame offsets, Windows 11 desktop icon Z-order behind SHELLDLL_DefView resolved |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Wallpaper Engine UI/UX overhaul: direct apply from Library, unified Home custom wallpapers, '+ Add Wallpaper' button & drag-drop, card quick actions & double click |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
