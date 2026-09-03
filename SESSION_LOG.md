@@ -129,4 +129,15 @@
       6. Verifies and logs `[WALLPAPER STATE]` (host count == monitor count invariant).
 - **Build status:** ✅ `npm run build` (467ms) and `cargo check` (2.23s) passing with 0 errors
 
+## Session: 2026-09-03 19:30 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~15 minutes
+- **Completed:**
+  - Optimized memory consumption to match or beat Lively Wallpaper (~250-300MB total across dual monitors):
+    - **Chromium / WebView2 Process Flags**: Injected `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (`--process-per-site`, `--renderer-process-limit=2`, disabled out-of-process audio and non-essential services, set `--js-flags="--max-old-space-size=64"`, and capped disk/media cache to 2MB).
+    - **Deep Working-Set Trimming (Host + All Child WebView2s)**: Implemented Win32 `trim_all_process_memory()` using `CreateToolhelp32Snapshot` to find and call `EmptyWorkingSet` on the host and all child `msedgewebview2.exe` processes upon minimize/close to tray, stop wallpaper, and periodically every 45s.
+    - **Hover-Only Video Decoder Mounting**: Refactored `WallpaperThumbnail` so `<video>` hardware decoders are mounted ONLY when actively hovered over, eliminating the Direct3D decoder memory accumulation when scrolling through custom video wallpapers.
+    - **Auto-Pause Preview**: Added `visibilitychange` listener in `WallpaperPlayer` to pause animations when window is minimized or hidden.
+- **Build status:** ✅ `npm run build` (575ms) and `cargo check` (0.48s) passing with 0 errors
+
 ---
