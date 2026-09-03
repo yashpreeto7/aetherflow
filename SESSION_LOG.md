@@ -72,6 +72,15 @@
     - Added `bootSeqRef` and `isMountedRef` to `WallpaperPlayer` to guarantee orphaned animation loops are aborted and stopped.
     - Created `WallpaperThumbnail` component: replaces heavy live engine loops in grid cards with zero-CPU vector SVG previews for built-ins, and paused/hover-only poster frames for videos.
     - Live 60 FPS animation loop is now reserved exclusively for the Selected Wallpaper Hero.
-- **Build status:** ✅ `npm run build` (448ms) and `cargo check` (0.50s) passing with 0 errors
+## Session: 2026-09-03 16:55 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~15 minutes
+- **Completed:**
+  - Diagnosed Windows Task Manager process grouping and optimized process count:
+    - Explained why Windows 11 Task Manager groups child renderers under "WebView2 Manager" (Microsoft's system binary `msedgewebview2.exe` metadata).
+    - Added Chromium/WebView2 browser flags `--disable-features=AudioServiceOutOfProcess` and `--disable-crash-reporter` to merge audio service and remove crashpad process.
+    - Switched wallpaper window creation from eager launch-time pre-creation to on-demand creation upon wallpaper application.
+    - Added `EmptyWorkingSet(GetCurrentProcess())` when minimizing/closing control panel to system tray to reclaim unused memory down to ~15MB.
+- **Build status:** ✅ `npm run build` (815ms) and `cargo check` passing with 0 errors
 
 ---

@@ -146,6 +146,7 @@ npm run tauri:dev
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Wallpaper Engine UI/UX overhaul: direct apply from Library, unified Home custom wallpapers, '+ Add Wallpaper' button & drag-drop, card quick actions & double click |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved black previews; added wallpaper naming & renaming modals; established Library as master catalog and Home as curated favorites with Pin to Home toggles |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed 1GB-2.5GB RAM leak: stopped running 15+ concurrent live 60fps canvas engines in grid cards, implemented WallpaperThumbnail, and fixed async unmount race condition |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Process & memory reduction: on-demand wallpaper window creation, merged audio & crashpad utility processes, and EmptyWorkingSet memory trimming on minimize |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
