@@ -7,6 +7,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { BUILTIN_THEMES, WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
+import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
 import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
@@ -32,6 +33,7 @@ export default function LibraryPage() {
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
   const [applyingId, setApplyingId] = useState(null)
+  const [hoveredId, setHoveredId]   = useState(null)
 
   // Filters & Search
   const [filterCategory, setFilterCategory] = useState('all') // 'all' | 'builtin' | 'custom' | 'pinned'
@@ -312,11 +314,13 @@ export default function LibraryPage() {
               <div
                 key={item.id}
                 className={`card wp-card ${isLive ? 'card-active' : ''}`}
+                onMouseEnter={() => setHoveredId(item.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 onDoubleClick={() => handleApply(item)}
               >
                 {/* Thumbnail Preview */}
                 <div style={{ height: 118, position: 'relative', background: '#000' }}>
-                  <WallpaperPlayer engineId={engineIdToLoad} config={item.config ?? {}} preview />
+                  <WallpaperThumbnail wallpaper={item} isHovered={hoveredId === item.id} />
 
                   {/* Active Indicator Badge */}
                   {isLive && (

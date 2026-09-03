@@ -13,9 +13,10 @@ import { useStore } from '../../store/useStore.js'
  *   style      — extra style overrides
  */
 export default function WallpaperPlayer({ engineId, config = {}, preview = false, style = {} }) {
-  const canvasRef = useRef(null)
-  const engineRef = useRef(null)
-  const activeIdRef = useRef(null)
+  const canvasRef     = useRef(null)
+  const engineRef     = useRef(null)
+  const bootSeqRef    = useRef(0)
+  const isMountedRef  = useRef(true)
 
   const wallpaperOpacity    = useStore(s => s.wallpaperOpacity)
   const wallpaperBrightness = useStore(s => s.wallpaperBrightness)
@@ -52,11 +53,12 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
 
   // ── Boot / swap engine ─────────────────────────────────────────────────────
   const bootEngine = useCallback(async () => {
+    const seq = ++bootSeqRef.current
     if (!canvasRef.current || !engineId) return
 
     // Stop previous engine cleanly
     if (engineRef.current) {
-      engineRef.current.stop()
+      try { engineRef.current.stop() } catch (e) {}
       engineRef.current = null
     }
 
@@ -65,34 +67,36 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     const descriptor = ENGINES[engineId]
     if (!descriptor) return
 
-    // Ensure canvas has valid dimensions immediately
-    if (canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect()
-      const w = rect.width || canvasRef.current.offsetWidth || canvasRef.current.parentElement?.offsetWidth || 320
-      const h = rect.height || canvasRef.current.offsetHeight || canvasRef.current.parentElement?.offsetHeight || 180
-      canvasRef.current.width = Math.max(Math.round(w), 100)
-      canvasRef.current.height = Math.max(Math.round(h), 60)
-    }
-
     try {
       const factory = await descriptor.load()
-      // Don't start if engine changed while loading
-      if (activeIdRef.current !== engineId) return
+      // If unmounted or a newer boot arrived while loading, abort!
+      if (!isMountedRef.current || seq !== bootSeqRef.current) return
 
-      const engine = factory(canvasRef.current, mergedConfig)
-      engineRef.current = engine
-      engine.start()
+      // Ensure canvas has valid dimensions immediately
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect()
+        const w = rect.width || canvasRef.current.offsetWidth || canvasRef.current.parentElement?.offsetWidth || 320
+        const h = rect.height || canvasRef.current.offsetHeight || canvasRef.current.parentElement?.offsetHeight || 180
+        canvasRef.current.width = Math.max(Math.round(w), 100)
+        canvasRef.current.height = Math.max(Math.round(h), 60)
+
+        const engine = factory(canvasRef.current, mergedConfig)
+        engineRef.current = engine
+        engine.start()
+      }
     } catch (err) {
       console.error('AuraOS: Failed to load engine', engineId, err)
     }
   }, [engineId, silenceLocalMedia]) // Re-mount only when engine ID changes
 
   useEffect(() => {
-    activeIdRef.current = engineId
+    isMountedRef.current = true
     bootEngine()
     return () => {
+      isMountedRef.current = false
+      bootSeqRef.current++
       if (engineRef.current) {
-        engineRef.current.stop()
+        try { engineRef.current.stop() } catch (e) {}
         engineRef.current = null
       }
       silenceLocalMedia()

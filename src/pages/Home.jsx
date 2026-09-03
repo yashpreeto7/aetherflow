@@ -8,6 +8,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
+import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
 import ThemeEditor from '../components/ThemeEditor/index.jsx'
 import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
 import {
@@ -23,6 +24,7 @@ export default function HomePage() {
   const [applying, setApplying]               = useState(false)
   const [searchQuery, setSearchQuery]         = useState('')
   const [filterCategory, setFilterCategory]   = useState('all') // 'all' | 'builtin' | 'custom'
+  const [hoveredId, setHoveredId]             = useState(null)
 
   // Modals state
   const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
@@ -510,6 +512,8 @@ export default function HomePage() {
                 key={wallpaper.id}
                 className={`card wp-card ${isSelected ? 'card-active' : ''}`}
                 onClick={() => selectWallpaper(wallpaper)}
+                onMouseEnter={() => setHoveredId(wallpaper.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 onDoubleClick={() => {
                   selectWallpaper(wallpaper)
                   handleApply(wallpaper)
@@ -517,7 +521,7 @@ export default function HomePage() {
               >
                 {/* Preview area */}
                 <div style={{ height: 110, background: '#000', position: 'relative' }}>
-                  <WallpaperPlayer engineId={engineIdToLoad} config={wallpaper.config} preview />
+                  <WallpaperThumbnail wallpaper={wallpaper} isHovered={hoveredId === wallpaper.id} />
 
                   {/* Badges */}
                   {isLive && (
