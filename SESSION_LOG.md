@@ -100,4 +100,17 @@
     - Killed lingering hidden background process so fresh `npm run tauri:dev` runs cleanly.
 - **Build status:** ✅ `npm run build` (497ms) and `cargo check` (1.10s) passing with 0 errors
 
+## Session: 2026-09-03 17:28 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~15 minutes
+- **Completed:**
+  - Diagnosed and resolved the runtime display change / hot-plug bug:
+    - Root cause: Hot-plugged second monitor was not pre-initialized on display extend; when user clicked "Apply", `WebviewWindowBuilder` was invoked on the fly, emitting `aura:set-engine` before `wallpaper.html` finished loading React, dropping the event and leaving an unpinned white window.
+    - Added reactive background display change & hot-plug watcher in `src-tauri/src/main.rs`: automatically detects monitor additions/removals every 800ms and executes the EXACT working startup code path (`ensure_wallpaper_windows`) to create, pin, and initialize the wallpaper host for the new monitor.
+    - Implemented clean monitor teardown on disconnect (`win.destroy()`) to prevent stale/invalid HWND reuse on reconnect.
+    - Added thread-safe `ACTIVE_WALLPAPERS` cache and `get_monitor_active_wallpaper` IPC query in `wallpaper.jsx` to completely eliminate race conditions between window loading and wallpaper application.
+    - Added user-specified logging in stdout and `desktop_debug.log`: `[DISPLAY CHANGE]`, `[NEW MONITOR]`, `[WALLPAPER HOST]`.
+    - Updated `Home.jsx` and `Library.jsx` to listen for `aura:monitors-changed` to automatically update monitor selectors.
+- **Build status:** ✅ `npm run build` (424ms) and `cargo check` (1.95s) passing with 0 errors
+
 ---
