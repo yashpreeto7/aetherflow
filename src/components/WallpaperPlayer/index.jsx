@@ -103,6 +103,23 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     }
   }, [engineId, bootEngine, silenceLocalMedia])
 
+  // ── Auto-pause preview engine when window is hidden / in background ──────
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (engineRef.current?.pause) {
+          try { engineRef.current.pause() } catch (e) {}
+        }
+      } else {
+        if (engineRef.current?.resume) {
+          try { engineRef.current.resume() } catch (e) {}
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
   // ── Live-update config without remounting ──────────────────────────────────
   useEffect(() => {
     if (engineRef.current?.updateOptions) {

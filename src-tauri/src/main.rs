@@ -689,6 +689,8 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
             let _ = win.emit_to(label.as_str(), "aura:stop", payload);
         }
     }
+    #[cfg(windows)]
+    trim_all_process_memory();
 }
 
 /// Query active wallpaper state for a specific monitor window upon mounting
@@ -781,9 +783,77 @@ async fn read_local_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| e.to_string())
 }
 
+#[cfg(windows)]
+fn trim_all_process_memory() {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, GetCurrentProcessId, OpenProcess, PROCESS_SET_QUOTA, PROCESS_QUERY_INFORMATION
+    };
+    use windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS
+    };
+    use windows_sys::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        // 1. Trim host process working set
+        EmptyWorkingSet(GetCurrentProcess());
+
+        // 2. Enumerate and trim all child msedgewebview2.exe processes
+        let current_pid = GetCurrentProcessId();
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+
+            if Process32First(snapshot, &mut entry) != 0 {
+                loop {
+                    if entry.th32ParentProcessID == current_pid {
+                        let child_h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, 0, entry.th32ProcessID);
+                        if !child_h.is_null() {
+                            EmptyWorkingSet(child_h);
+                            CloseHandle(child_h);
+                        }
+                    }
+                    if Process32Next(snapshot, &mut entry) == 0 {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+        }
+    }
+}
+
+#[tauri::command]
+fn trim_memory() {
+    #[cfg(windows)]
+    trim_all_process_memory();
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
+    #[cfg(windows)]
+    {
+        // Consolidate renderers, cap V8 heap per isolate, disable non-essential Chromium services,
+        // and limit disk/media cache sizes. This dramatically lowers RAM footprint to rival Lively (~250MB total).
+        std::env::set_var(
+            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--process-per-site \
+             --renderer-process-limit=2 \
+             --disable-features=AudioServiceOutOfProcess,MediaFoundationD3D11VideoCapture,Translate,OptimizationHints,MediaRouter \
+             --js-flags=\"--max-old-space-size=64\" \
+             --disk-cache-size=2097152 \
+             --media-cache-size=2097152 \
+             --disable-background-networking \
+             --disable-component-update \
+             --disable-domain-reliability \
+             --disable-sync \
+             --disable-breakpad \
+             --disable-extensions"
+        );
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -813,6 +883,7 @@ fn main() {
             read_local_file,
             get_monitors,
             get_monitor_active_wallpaper,
+            trim_memory,
         ])
         .setup(|app| {
             // Show the main window
@@ -842,13 +913,9 @@ fn main() {
                             let _ = w_clone.hide();
                             api.prevent_close();
 
-                            // Trim process memory working set when minimized/closed to tray
+                            // Trim process memory working set of host and all child WebView2 processes
                             #[cfg(windows)]
-                            unsafe {
-                                windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet(
-                                    windows_sys::Win32::System::Threading::GetCurrentProcess()
-                                );
-                            }
+                            trim_all_process_memory();
                         }
                     });
 
@@ -859,6 +926,15 @@ fn main() {
                     println!("AuraOS: ERROR creating main window - {}", e);
                 }
             }
+
+            // Periodic background memory trimmer: reclaims unused V8 / WebView2 working set every 45s
+            std::thread::spawn(|| {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(45));
+                    #[cfg(windows)]
+                    trim_all_process_memory();
+                }
+            });
 
             // Pre-create and pin the wallpaper windows in the background so applying is instant
             ensure_wallpaper_windows(app.handle());
