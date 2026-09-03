@@ -152,6 +152,7 @@ npm run tauri:dev
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed runtime display change / hot-plug bug: implemented reactive display watcher reusing exact startup initialization path, auto window cleanup on disconnect, and get_monitor_active_wallpaper sync |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved display change transition border artifact: debounced watcher, 10-step controlled reconciliation (re-aligning existing hosts, InvalidateRect/RedrawWindow), and [WALLPAPER STATE] logging |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Memory optimization: Chromium process consolidation, deep child WebView2 working-set trimming, hover-only video decoder mounting, and visibility auto-pause |
+| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Built MPV-only video wallpaper backend on branch feat/mpv-wallpaper-engine: embedded into desktop HWND via --wid, named pipe IPC, and recorded ~70% RAM reduction (275MB total vs ~1GB) |
 
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

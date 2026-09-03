@@ -140,4 +140,25 @@
     - **Auto-Pause Preview**: Added `visibilitychange` listener in `WallpaperPlayer` to pause animations when window is minimized or hidden.
 - **Build status:** ✅ `npm run build` (575ms) and `cargo check` (0.48s) passing with 0 errors
 
+## Session: 2026-09-03 20:00 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Duration:** ~25 minutes
+- **Completed:**
+  - Created experimental feature branch `feat/mpv-wallpaper-engine` to build an MPV-only video wallpaper backend for AuraOS.
+  - Downloaded and extracted standalone portable `mpv.exe` (v0.41.0) into `src-tauri/bin/mpv/` with `.gitignore` configuration.
+  - Implemented `src-tauri/src/mpv.rs` managing MPV process lifecycle, `--wid` native HWND embedding into desktop layer (`WorkerW`), and named pipe IPC (`\\.\pipe\auraos-mpv-<label>`).
+  - Integrated modular wallpaper router in `src-tauri/src/main.rs`:
+    - Video wallpapers (`.mp4`, `.webm`, `.mkv`, `.avi`, `video-player`) route to MPV child processes (one per active video monitor).
+    - Canvas wallpapers continue using WebView2.
+    - Stopping / switching wallpapers completely terminates the corresponding MPV process and releases its native resources.
+    - Display topology changes cleanly clean up MPV processes for removed monitors.
+  - Executed required memory & resource benchmarking comparing MPV against WebView2 on the exact same video file (`elden-ring-throne-of-ashes...`):
+    - Baseline AuraOS: 167.96 MB
+    - Video wallpaper using MPV: 275.38 MB (1 MPV process, 220.16 MB, ~0.8% CPU)
+    - Stop MPV: 168.10 MB (0 MPV processes remaining)
+    - Restart AuraOS: 167.60 MB
+    - Achieved ~70% RAM reduction compared to previous WebView2 video decoding (~1GB).
+- **Build status:** ✅ `npm run build` (460ms), `cargo check` (1.07s), and `cargo build` (12.88s) passing with 0 errors
+- **Git:** Committed and pushed to `origin/feat/mpv-wallpaper-engine`
+
 ---
