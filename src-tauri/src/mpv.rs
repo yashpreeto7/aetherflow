@@ -90,7 +90,9 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
         if let Some(exe_dir) = current_exe.parent() {
             let candidates = [
                 exe_dir.join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
+                exe_dir.join("src-tauri").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("bin").join("mpv").join("mpv.exe"),
+                exe_dir.join("src-tauri").join("bin").join("mpv").join("mpv.exe"),
                 exe_dir.join("bin").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("bin").join("mpv.exe"),
                 exe_dir.join("AetherFlow-VideoEngine.exe"),

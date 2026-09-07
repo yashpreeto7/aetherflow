@@ -218,3 +218,33 @@
   - WebView2 GPU Process RAM dropped from **725.6 MB down to 19.6 MB**.
   - Total application suite RAM dropped from **957 MB down to ~80 MB** (91% reduction).
 ---
+
+## Session: 2026-09-08 02:30 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved unexpected microphone permission prompt ("tauri.localhost wants to Use your microphones"):
+    - Isolated cause to `audio-spectrum.js` running `navigator.mediaDevices.getUserMedia({ audio: true })` synchronously inside `start()`.
+    - Set `useMic: false` by default in `src/engines/index.js` and `src/engines/audio-spectrum.js`.
+    - Made the render loop start immediately using beat simulation without blocking on audio permissions.
+    - Made microphone reactivity opt-in through configuration; initializations now occur asynchronously in the background with graceful fallback on denial.
+  - Resolved issue with wallpapers not displaying on desktop (desktop occlusion bug):
+    - Identified that `pin_hwnd_as_wallpaper` in `src-tauri/src/main.rs` skipped sending `0x052C` to `Progman` when `progman_shell` was detected, failing to spawn the Windows `WorkerW` background layer and placing wallpaper windows directly inside `Progman` where Windows 11 wallpaper drawing covered them.
+    - Updated `pin_hwnd_as_wallpaper` to always send message `0x052C` to `Progman` and prioritize `WorkerW` as the wallpaper host parent.
+    - Enhanced `enum_window` and `DesktopWindows` with fallback detection for standalone `WorkerW` instances.
+- **Build status:** ✅ `npm run build` (435ms) and `cargo check` (0 errors) passing.
+## Session: 2026-09-08 03:45 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and resolved the "wallpaper flashes above desktop apps for a second and stops / custom and canvas wallpapers not applying":
+    - **Root Cause 1 (Flashing Above Apps)**: `WebviewWindowBuilder` in `reconcile_wallpaper_windows` and `CreateWindowExW` in `get_or_create_native_wallpaper_window` were built with `.visible(true)` / `WS_VISIBLE` before Win32 desktop reparenting, and an 800ms delayed background thread was used before pinning. This allowed the unpinned window to display over active desktop applications before reparenting.
+    - **Root Cause 2 (Wrong WorkerW Parent Fallback)**: A previous experimental fallback matched a 148x0 tooltip/tray `WorkerW` window (`0x20808`), parenting the wallpaper to a floating layer above apps.
+    - **Root Cause 3 (MPV Binary Search Missing Root Candidates)**: When launching `AetherFlow.exe` directly from the project root, candidate paths in `find_mpv_binary` did not include `exe_dir\src-tauri\bin\mpv` or `exe_dir\bin\mpv`.
+    - **Root Cause 4 (Tauri Event Emission Scope)**: Wallpaper apply events emitted solely via `win.emit_to` could be missed if the webview listener attached to window vs global scopes.
+  - **Implemented Fixes**:
+    - Set `.visible(false)` and removed `WS_VISIBLE` on initial window creation for both Canvas and MPV host windows; windows are pinned to the desktop layer (`Progman` / behind `SHELLDLL_DefView`) immediately while hidden, and only shown after anchoring.
+    - Reverted `fallback_workerw` so `Progman` is used as the verified desktop parent in Windows 11 Raised Desktop mode, placed directly behind `SHELLDLL_DefView` (desktop icons).
+    - Copied MPV engine files into `.\bin\mpv` and added `exe_dir.join("src-tauri").join("bin").join("mpv")` and `exe_dir.join("bin").join("mpv")` to `find_mpv_binary`.
+    - Broadened wallpaper event dispatch to emit on `win.emit`, `win.emit_to`, and `app.emit`, and added global event listener fallback in `src/wallpaper.jsx`.
+    - Built clean production standalone release with `npm run tauri:build` and copied binary to `.\AetherFlow.exe`.
+- **Build status:** ✅ `npm run build` (444ms) and `npm run tauri:build` passing with 0 errors. Verified running cleanly on `WinSta0\Default`.
+---

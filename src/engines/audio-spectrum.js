@@ -16,6 +16,7 @@ export function createAudioSpectrum(canvas, options = {}) {
     mirror = true,
     speedMultiplier = 1,
     preview = false,  // true = thumbnail card mode, skip mic request
+    useMic = false,   // true = request mic for live sound, false = beat simulation
   } = options
 
   const ctx = canvas.getContext('2d')
@@ -25,7 +26,7 @@ export function createAudioSpectrum(canvas, options = {}) {
   let dataArray = null
   let stream = null
 
-  // Idle simulation (used in preview mode and when mic is denied)
+  // Idle simulation (used in preview mode, default simulation, and when mic is denied)
   let idleTime = 0
 
   function resize() {
@@ -34,8 +35,8 @@ export function createAudioSpectrum(canvas, options = {}) {
   }
 
   async function initAudio() {
-    // Skip mic request entirely in preview/thumbnail mode
-    if (preview) return false
+    // Skip mic request entirely in preview/thumbnail mode or if microphone input is not enabled
+    if (preview || !options.useMic) return false
 
     try {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)()
@@ -121,23 +122,47 @@ export function createAudioSpectrum(canvas, options = {}) {
     animId = requestAnimationFrame(frame)
   }
 
-  async function start() {
+  function start() {
     resize()
     window.addEventListener('resize', resize)
-    await initAudio()   // no-op in preview mode — no mic prompt
     animId = requestAnimationFrame(frame)
+    if (options.useMic && !preview) {
+      initAudio().catch(e => console.warn('AuraOS Audio init error:', e))
+    }
   }
 
   function stop() {
     if (animId) cancelAnimationFrame(animId)
     window.removeEventListener('resize', resize)
-    if (stream) stream.getTracks().forEach(t => t.stop())
-    if (audioCtx) audioCtx.close()
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop())
+      stream = null
+    }
+    if (audioCtx) {
+      audioCtx.close().catch(() => {})
+      audioCtx = null
+    }
+    analyser = null
+    dataArray = null
   }
 
   function updateOptions(newOpts) {
+    const prevUseMic = options.useMic
     Object.assign(options, newOpts)
     if (analyser) analyser.smoothingTimeConstant = options.smoothing ?? smoothing
+
+    if (!prevUseMic && options.useMic && !stream && !preview) {
+      initAudio().catch(e => console.warn('AuraOS Audio init error:', e))
+    } else if (prevUseMic && !options.useMic && stream) {
+      stream.getTracks().forEach(t => t.stop())
+      stream = null
+      if (audioCtx) {
+        audioCtx.close().catch(() => {})
+        audioCtx = null
+      }
+      analyser = null
+      dataArray = null
+    }
   }
 
   return { start, stop, updateOptions }

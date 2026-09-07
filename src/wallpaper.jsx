@@ -110,14 +110,19 @@ function WallpaperCanvas() {
         const appWindow = getCurrentWindow()
         const myLabel = appWindow.label
 
-        unlisteners.push(
-          await appWindow.listen('aura:set-engine', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            bootEngine(payload.engineId, payload.config || {})
-          })
-        )
+        const handleSetEngine = ({ payload }) => {
+          if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+            return
+          }
+          bootEngine(payload.engineId, payload.config || {})
+        }
+
+        unlisteners.push(await appWindow.listen('aura:set-engine', handleSetEngine))
+
+        try {
+          const { listen: globalListen } = await import('@tauri-apps/api/event')
+          unlisteners.push(await globalListen('aura:set-engine', handleSetEngine))
+        } catch (e) {}
 
         unlisteners.push(
           await appWindow.listen('aura:update-config', ({ payload }) => {

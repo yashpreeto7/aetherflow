@@ -138,7 +138,7 @@ fn get_or_create_native_wallpaper_window(name: &str, mon_x: i32, mon_y: i32, mon
                         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
                         class_name.as_ptr(),
                         title.as_ptr(),
-                        WS_POPUP | WS_VISIBLE,
+                        WS_POPUP,
                         mon_x, mon_y, mon_w, mon_h,
                         std::ptr::null_mut(),
                         std::ptr::null_mut(),
@@ -723,7 +723,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                     .title(&format!("AetherFlow Wallpaper - {}", name))
                     .decorations(false)
                     .transparent(true)
-                    .visible(true)
+                    .visible(false)
                     .skip_taskbar(true)
                     .resizable(false)
                     .inner_size(logical_w, logical_h)
@@ -734,7 +734,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                     Ok(win) => {
                         #[cfg(windows)]
                         if let Ok(hwnd) = win.hwnd() {
-                            let raw_hwnd = hwnd.0 as isize;
+                            let raw_hwnd = hwnd.0 as HWND;
                             let host_log = format!(
                                 "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
                                 raw_hwnd as usize
@@ -742,10 +742,8 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                             log_msg(&host_log);
                             println!("{}", host_log);
 
-                            std::thread::spawn(move || {
-                                std::thread::sleep(std::time::Duration::from_millis(800));
-                                pin_hwnd_as_wallpaper(raw_hwnd as *mut std::ffi::c_void);
-                            });
+                            pin_hwnd_as_wallpaper(raw_hwnd);
+                            let _ = win.show();
                         }
                     }
                     Err(err) => {
@@ -988,8 +986,12 @@ async fn apply_wallpaper(
                     "config": config.clone(),
                     "target": target.clone(),
                 });
-                let _ = win.emit_to(label.as_str(), "aura:set-engine", payload);
+                let _ = win.emit("aura:set-engine", payload.clone());
+                let _ = win.emit_to(label.as_str(), "aura:set-engine", payload.clone());
+                let _ = app.emit("aura:set-engine", payload.clone());
+                let _ = win.emit("aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
+                let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
             }
         }
@@ -1774,8 +1776,8 @@ fn main() {
                 }
             });
 
-            // Note: Wallpaper WebView windows are lazily created on-demand in apply_wallpaper
-            // when a canvas wallpaper is chosen, saving ~350MB RAM and 2 WebView2 instances at boot.
+            // Pre-create and pin the wallpaper windows in the background so applying is instant
+            ensure_wallpaper_windows(app.handle());
 
             // Check if --apply-video was supplied on initial cold launch
             let args: Vec<String> = std::env::args().collect();

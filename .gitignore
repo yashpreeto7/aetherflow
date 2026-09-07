@@ -31,7 +31,8 @@ src-tauri/bin/
 bin/
 *.exe
 
-# Environment
+# Scratch / temporary debug scripts
+scratch/
 .env
 .env.*
 !.env.example

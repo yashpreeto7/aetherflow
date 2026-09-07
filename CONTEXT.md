@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-03 14:58 IST — Session: Wallpaper Engine-style UI/UX overhaul (direct apply from Library, unified Home grid, + Add Wallpaper, double click)
+2026-09-08 03:45 IST — Resolved window layering flash, Progman pinning, MPV candidate paths, and event broadcasting. Standalone binary verified.
 
 ---
 

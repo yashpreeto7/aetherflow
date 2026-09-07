@@ -93,15 +93,16 @@ export const ENGINES = {
   'audio-spectrum': {
     id: 'audio-spectrum',
     name: 'Audio Spectrum',
-    description: 'CAVA-style frequency bars reacting to microphone audio',
+    description: 'CAVA-style frequency bars with beat simulation and optional mic reactivity',
     preview: '/previews/audio-spectrum.svg',
     tags: ['audio', 'music', 'reactive', 'bars'],
-    defaultConfig: { barCount: 80, mirror: true, speedMultiplier: 1 },
+    defaultConfig: { barCount: 80, mirror: true, speedMultiplier: 1, useMic: false },
     properties: {
       color: { type: 'color', label: 'Primary Color', default: '#00d4ff' },
       accentColor: { type: 'color', label: 'Accent Color', default: '#ff2d78' },
       barCount: { type: 'range', label: 'Bar Count', min: 20, max: 128, step: 4, default: 80 },
       mirror: { type: 'toggle', label: 'Mirror Mode', default: true },
+      useMic: { type: 'toggle', label: 'Microphone Input (Real-time sound)', default: false },
     },
     load: () => import('./audio-spectrum.js').then(m => m.createAudioSpectrum),
   },
