@@ -248,3 +248,16 @@
     - Built clean production standalone release with `npm run tauri:build` and copied binary to `.\AetherFlow.exe`.
 - **Build status:** ✅ `npm run build` (444ms) and `npm run tauri:build` passing with 0 errors. Verified running cleanly on `WinSta0\Default`.
 ---
+
+## Session: 2026-09-08 04:00 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and fixed the white vertical border artifact on the second monitor when applying custom wallpapers:
+    - **Root Cause**: `pin_hwnd_as_wallpaper` in `src-tauri/src/main.rs` applied an artificial frame padding (`pad_left = 9`, `pad_right = 9`, `adj_w = mon_w + 18`). For Monitor 1 (1920x1080) at x=0, this expanded the window width to 1938 and positioned it at x=-9, extending its right edge to x=1929. Monitor 2 starts at x=1920, so Monitor 1's window overflowed by 9 pixels over Monitor 2. Because the wallpaper canvas content only rendered up to 1920, the overlapping non-client border area showed up as a white vertical stripe on Monitor 2.
+    - **Fix 1 (`src-tauri/src/main.rs`)**: Removed artificial border padding calculations from `pin_hwnd_as_wallpaper`. The child window is mapped 1:1 to exact monitor pixel boundaries (`adj_x = client_x`, `adj_y = client_y`, `adj_w = mon_w`, `adj_h = mon_h`). Monitor 1 ends at 1920 and Monitor 2 begins at 1920 with zero overlap.
+    - **Fix 2 (`src-tauri/src/mpv.rs`)**: Added `--no-border` and `--background-color=#000000` to MPV startup parameters to prevent MPV from drawing any internal window frame or default white background.
+    - **Fix 3 (`wallpaper.html`)**: Explicitly styled `html, body { background: #000; }` so that any unrendered areas fallback to pure black instead of the browser default white.
+  - Rebuilt production release binary (`npm run tauri:build`), updated `AetherFlow.exe`, and launched on `WinSta0\Default`.
+  - Pushed all commits to GitHub branch `dev`.
+- **Build status:** ✅ `npm run build` (449ms) and `npm run tauri:build` passing with 0 errors.
+---
