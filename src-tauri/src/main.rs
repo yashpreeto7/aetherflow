@@ -491,6 +491,22 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
 
+        // Clip the window region strictly to the monitor client rectangle so non-client frame padding
+        // never spills across monitor boundaries onto adjacent screens
+        if pad_left > 0 || pad_right > 0 || pad_top > 0 || pad_bottom > 0 {
+            let rgn = windows_sys::Win32::Graphics::Gdi::CreateRectRgn(
+                pad_left,
+                pad_top,
+                pad_left + mon_w,
+                pad_top + mon_h,
+            );
+            windows_sys::Win32::Graphics::Gdi::SetWindowRgn(hwnd, rgn, 1);
+            log_msg(&format!(
+                "[AuraOS WP] SetWindowRgn: clipped non-client frame to ({},{})-({},{})",
+                pad_left, pad_top, pad_left + mon_w, pad_top + mon_h
+            ));
+        }
+
         // Force immediate DWM composition update and desktop client area invalidation
         InvalidateRect(hwnd, std::ptr::null(), 1);
         UpdateWindow(hwnd);

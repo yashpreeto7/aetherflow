@@ -244,15 +244,16 @@ function WallpaperCanvas() {
     <canvas
       ref={canvasRef}
       style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100vw',
-        height: '100vh',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
         display: 'block',
         opacity,
         filter: `brightness(${brightness})`,
         pointerEvents: 'none',
-        background: activeId ? '#000' : 'transparent',
+        background: '#000',
       }}
       aria-hidden="true"
     />
