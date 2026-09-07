@@ -89,9 +89,13 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
             let candidates = [
+                exe_dir.join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("bin").join("mpv").join("mpv.exe"),
+                exe_dir.join("bin").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("bin").join("mpv.exe"),
+                exe_dir.join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("mpv.exe"),
+                exe_dir.join("..").join("..").join("src-tauri").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("..").join("..").join("src-tauri").join("bin").join("mpv").join("mpv.exe"),
             ];
             for candidate in &candidates {
@@ -104,10 +108,12 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
 
     // 2. Try development path in project root
     let dev_paths = [
+        PathBuf::from("src-tauri/bin/mpv/AetherFlow-VideoEngine.exe"),
         PathBuf::from("src-tauri/bin/mpv/mpv.exe"),
+        PathBuf::from("bin/mpv/AetherFlow-VideoEngine.exe"),
         PathBuf::from("bin/mpv/mpv.exe"),
+        PathBuf::from(r"C:\Users\Yashpreet_o7\Desktop\AetherFlow\src-tauri\bin\mpv\AetherFlow-VideoEngine.exe"),
         PathBuf::from(r"C:\Users\Yashpreet_o7\Desktop\AetherFlow\src-tauri\bin\mpv\mpv.exe"),
-        PathBuf::from(r"C:\Users\Yashpreet_o7\Desktop\AURAOS\src-tauri\bin\mpv\mpv.exe"),
     ];
     for p in &dev_paths {
         if p.exists() {
@@ -116,7 +122,7 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
     }
 
     // 3. Fall back to system PATH
-    Ok(PathBuf::from("mpv.exe"))
+    Ok(PathBuf::from("AetherFlow-VideoEngine.exe"))
 }
 
 /// Check if a given wallpaper configuration represents a video wallpaper

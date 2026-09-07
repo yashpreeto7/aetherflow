@@ -1760,8 +1760,13 @@ fn main() {
                 }
             }
 
-            // Periodic background memory trimmer: reclaims unused V8 / WebView2 working set every 45s
+            // Periodic background memory trimmer: reclaims unused V8 / WebView2 working set
+            // Runs an initial trim at 2.5s to collapse startup Chromium allocation, then every 45s
             std::thread::spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(2500));
+                #[cfg(windows)]
+                trim_all_process_memory();
+
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(45));
                     #[cfg(windows)]
@@ -1769,8 +1774,8 @@ fn main() {
                 }
             });
 
-            // Pre-create and pin the wallpaper windows in the background so applying is instant
-            ensure_wallpaper_windows(app.handle());
+            // Note: Wallpaper WebView windows are lazily created on-demand in apply_wallpaper
+            // when a canvas wallpaper is chosen, saving ~350MB RAM and 2 WebView2 instances at boot.
 
             // Check if --apply-video was supplied on initial cold launch
             let args: Vec<String> = std::env::args().collect();
