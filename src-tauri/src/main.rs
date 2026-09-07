@@ -20,6 +20,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_EX_LAYERED, SetLayeredWindowAttributes, LWA_ALPHA,
     GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     GetWindowRect, GetClientRect,
+    SW_HIDE, SW_SHOWNOACTIVATE, WNDCLASSW, RegisterClassW, CreateWindowExW,
+    WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -45,6 +47,138 @@ static ACTIVE_WALLPAPERS: Mutex<Option<HashMap<String, ActiveWallpaperState>>> =
 
 pub mod mpv;
 static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new(None);
+
+// ─── Main AuraOS Window Protection & HWND Identity ───────────────────────────
+static MAIN_HWND: Mutex<Option<usize>> = Mutex::new(None);
+static NATIVE_WALLPAPER_WINDOWS: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
+
+#[cfg(windows)]
+pub fn set_main_hwnd(hwnd: HWND) {
+    if let Ok(mut guard) = MAIN_HWND.lock() {
+        *guard = Some(hwnd as usize);
+        let msg = format!("[DIAG 1] Main AuraOS HWND registered: 0x{:X}", hwnd as usize);
+        log_msg(&msg);
+        println!("{}", msg);
+    }
+}
+
+#[cfg(windows)]
+pub fn get_main_hwnd() -> Option<HWND> {
+    if let Ok(guard) = MAIN_HWND.lock() {
+        guard.map(|h| h as HWND)
+    } else {
+        None
+    }
+}
+
+#[cfg(windows)]
+pub fn is_main_hwnd(hwnd: HWND) -> bool {
+    if let Some(main_h) = get_main_hwnd() {
+        main_h == hwnd
+    } else {
+        false
+    }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn wallpaper_wnd_proc(hwnd: HWND, msg: u32, wparam: windows_sys::Win32::Foundation::WPARAM, lparam: LPARAM) -> windows_sys::Win32::Foundation::LRESULT {
+    const WM_NCHITTEST: u32 = 0x0084;
+    const HTTRANSPARENT: isize = -1;
+    const WM_MOUSEACTIVATE: u32 = 0x0021;
+    const MA_NOACTIVATE: isize = 3;
+    const WM_SETFOCUS: u32 = 0x0007;
+
+    match msg {
+        WM_NCHITTEST => HTTRANSPARENT,
+        WM_MOUSEACTIVATE => MA_NOACTIVATE,
+        WM_SETFOCUS => 0,
+        _ => windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(windows)]
+fn get_or_create_native_wallpaper_window(name: &str, mon_x: i32, mon_y: i32, mon_w: i32, mon_h: i32) -> Result<HWND, String> {
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, TranslateMessage, DispatchMessageW, MSG};
+
+    let label = get_monitor_label(name);
+
+    if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        if let Some(&existing_h) = map.get(&label) {
+            let hwnd = existing_h as HWND;
+            if unsafe { IsWindow(hwnd) } != 0 {
+                log_msg(&format!("[DIAG 2] Reusing existing native MPV host window for {}: 0x{:X}", label, existing_h));
+                return Ok(hwnd);
+            }
+        }
+
+        let name_owned = name.to_string();
+        let label_owned = label.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::Builder::new()
+            .name(format!("aetherflow_host_{}", label))
+            .spawn(move || {
+                unsafe {
+                    let class_name: Vec<u16> = "AetherFlow_MpvHost\0".encode_utf16().collect();
+                    let hinstance = GetModuleHandleW(std::ptr::null());
+
+                    let mut wc: WNDCLASSW = std::mem::zeroed();
+                    wc.lpfnWndProc = Some(wallpaper_wnd_proc);
+                    wc.hInstance = hinstance as _;
+                    wc.lpszClassName = class_name.as_ptr();
+                    wc.hbrBackground = windows_sys::Win32::Graphics::Gdi::GetStockObject(windows_sys::Win32::Graphics::Gdi::BLACK_BRUSH as _) as _;
+                    
+                    RegisterClassW(&wc);
+
+                    let title: Vec<u16> = format!("AetherFlow MPV Host - {}\0", name_owned).encode_utf16().collect();
+                    // WS_EX_TRANSPARENT + WS_EX_NOACTIVATE ensure clicks pass straight to desktop icons
+                    let hwnd = CreateWindowExW(
+                        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+                        class_name.as_ptr(),
+                        title.as_ptr(),
+                        WS_POPUP | WS_VISIBLE,
+                        mon_x, mon_y, mon_w, mon_h,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        hinstance as _,
+                        std::ptr::null(),
+                    );
+
+                    if hwnd.is_null() {
+                        let err = format!("CreateWindowExW failed for monitor {}", name_owned);
+                        log_msg(&err);
+                        let _ = tx.send(Err(err));
+                        return;
+                    }
+
+                    log_msg(&format!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}, bounds=({},{}) {}x{}", 
+                        label_owned, hwnd as usize, mon_x, mon_y, mon_w, mon_h));
+                    println!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}", label_owned, hwnd as usize);
+
+                    // Pin to WorkerW layer immediately on owning thread
+                    pin_hwnd_as_wallpaper(hwnd);
+
+                    let _ = tx.send(Ok(hwnd as usize));
+
+                    // Pump messages so MPV child and Windows DWM never block
+                    let mut msg: MSG = std::mem::zeroed();
+                    while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
+            })
+            .map_err(|e| format!("Failed to spawn wallpaper host thread: {}", e))?;
+
+        let hwnd_val = rx.recv().map_err(|e| format!("Channel receive failed: {}", e))??;
+        map.insert(label, hwnd_val);
+        Ok(hwnd_val as HWND)
+    } else {
+        Err("Failed to lock NATIVE_WALLPAPER_WINDOWS mutex".to_string())
+    }
+}
 
 // ─── PROGMAN / WorkerW trick ─────────────────────────────────────────────────
 
@@ -97,6 +231,13 @@ fn log_msg(msg: &str) {
 /// left-gap / second-monitor spill in earlier attempts.
 #[cfg(windows)]
 fn pin_hwnd_as_wallpaper(hwnd: HWND) {
+    if is_main_hwnd(hwnd) {
+        let err = format!("[DIAG 10 CRITICAL REJECT] pin_hwnd_as_wallpaper was called with MAIN_HWND 0x{:X}! Aborting!", hwnd as usize);
+        log_msg(&err);
+        eprintln!("{}", err);
+        return;
+    }
+
     unsafe {
         log_msg(&format!("\n--- [AuraOS WP] pin_hwnd_as_wallpaper called: hwnd=0x{:X} ---",
             hwnd as usize));
@@ -191,26 +332,24 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             state.shell = progman_shell;
         }
 
-        // wParam=0x0D, lParam=0x1 is what Windows 11 shellcore.dll expects to spawn the
-        // background WorkerW. Using 0,0 (the Windows 10 values) causes WorkerW creation to
-        // silently fail on Windows 11, leaving state.workerw null and falling back to
-        // HWND_BOTTOM overlay mode instead of true desktop-layer embedding.
-        log_msg("[AuraOS WP] Sending 0x052C to progman (wParam=0x0D lParam=0x1 for Win11)...");
-        SendMessageTimeoutW(progman, 0x052C, 0x0D, 0x1, SMTO_NORMAL, 1000, std::ptr::null_mut());
+        // If SHELLDLL_DefView is already found directly under Progman, we are in Raised Desktop mode.
+        // We only need to spawn/find WorkerW if SHELLDLL_DefView was NOT under Progman.
+        if progman_shell.is_null() {
+            log_msg("[AuraOS WP] Sending 0x052C to progman (wParam=0x0D lParam=0x1 for Win11)...");
+            SendMessageTimeoutW(progman, 0x052C, 0x0D, 0x1, SMTO_NORMAL, 1000, std::ptr::null_mut());
 
-        // Windows 11 creates the background WorkerW asynchronously after the message.
-        // EnumWindows called immediately will always miss it — wait first, then retry.
-        std::thread::sleep(std::time::Duration::from_millis(150));
+            std::thread::sleep(std::time::Duration::from_millis(150));
 
-        for attempt in 0..5usize {
-            EnumWindows(Some(enum_window), &mut state as *mut DesktopWindows as LPARAM);
-            if !state.workerw.is_null() {
-                log_msg(&format!("[AuraOS WP] WorkerW found on attempt {}", attempt + 1));
-                break;
-            }
-            if attempt < 4 {
-                log_msg(&format!("[AuraOS WP] WorkerW not found yet (attempt {}), retrying...", attempt + 1));
-                std::thread::sleep(std::time::Duration::from_millis(100));
+            for attempt in 0..5usize {
+                EnumWindows(Some(enum_window), &mut state as *mut DesktopWindows as LPARAM);
+                if !state.workerw.is_null() {
+                    log_msg(&format!("[AuraOS WP] WorkerW found on attempt {}", attempt + 1));
+                    break;
+                }
+                if attempt < 4 {
+                    log_msg(&format!("[AuraOS WP] WorkerW not found yet (attempt {}), retrying...", attempt + 1));
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
             }
         }
 
@@ -520,6 +659,22 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                     map.remove(&label);
                 }
             }
+
+            #[cfg(windows)]
+            if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+                if let Some(ref mut map) = *guard {
+                    if let Some(h) = map.remove(&label) {
+                        let hwnd = h as HWND;
+                        unsafe {
+                            if IsWindow(hwnd) != 0 {
+                                ShowWindow(hwnd, SW_HIDE);
+                                SetParent(hwnd, std::ptr::null_mut());
+                                DestroyWindow(hwnd);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -565,7 +720,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                 println!("{}", new_mon_log);
 
                 let win_res = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
-                    .title(&format!("AuraOS Wallpaper - {}", name))
+                    .title(&format!("AetherFlow Wallpaper - {}", name))
                     .decorations(false)
                     .transparent(true)
                     .visible(true)
@@ -638,7 +793,7 @@ fn get_monitors(app: AppHandle) -> serde_json::Value {
 /// 'aura:set-engine' to the wallpaper WebView so it boots the canvas engine,
 /// or launches MPV for video wallpapers.
 #[tauri::command]
-fn apply_wallpaper(
+async fn apply_wallpaper(
     app: AppHandle,
     engine_id: String,
     config: serde_json::Value,
@@ -659,70 +814,210 @@ fn apply_wallpaper(
         });
     }
 
-    ensure_wallpaper_windows(&app);
+    #[cfg(windows)]
+    let (main_h_usize, main_parent_before) = if let Some(main_h) = get_main_hwnd() {
+        unsafe { (main_h as usize, GetParent(main_h) as usize) }
+    } else {
+        (0, 0)
+    };
+    #[cfg(windows)]
+    {
+        let msg = format!("[DIAG 1 & 4] Main AuraOS HWND: 0x{:X}, Parent before apply: 0x{:X}", main_h_usize, main_parent_before);
+        log_msg(&msg);
+        println!("{}", msg);
+    }
 
-    let video_path_opt = config.get("videoPath").and_then(|v| v.as_str());
-    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt);
+    let video_path_opt = config.get("videoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt.as_deref());
 
-    let windows = app.webview_windows();
-    for (label, win) in windows {
-        if label.starts_with("wallpaper_") {
-            if target == "*" || target == label {
-                let _ = win.set_ignore_cursor_events(true);
+    let monitors = app.available_monitors().unwrap_or_default();
 
-                if is_video {
-                    // Video wallpaper -> Route to MPV backend
-                    // Stop WebView2 wallpaper on this monitor so it's transparent and releases decoding
-                    let _ = win.emit_to(label.as_str(), "aura:stop", serde_json::json!({ "target": label.clone() }));
+    if is_video {
+        let vpath = match video_path_opt {
+            Some(p) => p,
+            None => {
+                eprintln!("[MPV ERROR] Video wallpaper requested but videoPath is missing in config");
+                return;
+            }
+        };
 
-                    #[cfg(windows)]
-                    if let Ok(hwnd) = win.hwnd() {
-                        let raw_hwnd = hwnd.0 as HWND;
-                        if let Some(vpath) = video_path_opt {
-                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                                let map = mpv_guard.get_or_insert_with(HashMap::new);
+        let global_muted = config.get("muted").and_then(|v| v.as_bool()).unwrap_or(false);
+        let global_volume = config.get("volume").and_then(|v| v.as_f64()).unwrap_or(50.0);
+        let is_duplicated = target == "*";
+        let mut audio_assigned = false;
 
-                                // Terminate existing MPV instance on this monitor if running
-                                if let Some(mut existing) = map.remove(&label) {
-                                    existing.terminate();
-                                }
+        for (idx, mon) in monitors.iter().enumerate() {
+            if let Some(name) = mon.name() {
+                let label = get_monitor_label(name);
+                if !is_duplicated && target != label {
+                    continue;
+                }
 
-                                // Launch new MPV instance attached to the native host HWND
-                                match mpv::spawn_mpv_wallpaper(vpath, raw_hwnd, &label, Some(50.0), Some(false)) {
-                                    Ok(proc) => {
-                                        println!("[MPV] Successfully assigned MPV video wallpaper to {}", label);
-                                        map.insert(label.clone(), proc);
-                                    }
-                                    Err(err) => {
-                                        eprintln!("[MPV ERROR] Failed to spawn MPV on {}: {}", label, err);
-                                    }
-                                }
-                            }
-                        }
+                // In duplicated mode, ONLY the primary screen (or first screen) plays audio.
+                // Secondary screens MUST be muted to prevent echo / out-of-sync audio!
+                let is_primary = mon.position().x == 0 && mon.position().y == 0;
+                let screen_muted = if global_muted {
+                    true
+                } else if is_duplicated {
+                    if (is_primary || idx == 0) && !audio_assigned {
+                        audio_assigned = true;
+                        false
+                    } else {
+                        true // Secondary duplicate screen -> Mute audio!
                     }
                 } else {
-                    // Canvas / WebGL wallpaper -> Route to WebView2 backend
-                    // Terminate any MPV instance running on this monitor
-                    if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                        if let Some(ref mut map) = *mpv_guard {
-                            if let Some(mut existing) = map.remove(&label) {
-                                existing.terminate();
+                    false
+                };
+                let screen_volume = if screen_muted { 0.0 } else { global_volume };
+
+                // 1. Hide the canvas WebviewWindow for this monitor to release decoding & GPU
+                if let Some(win) = app.get_webview_window(&label) {
+                    let _ = win.emit_to(label.as_str(), "aura:stop", serde_json::json!({ "target": label.clone() }));
+                    let _ = win.hide();
+                }
+
+                // 2. Obtain dedicated native Win32 window (pure HWND, zero WebView2)
+                let pos = mon.position();
+                let size = mon.size();
+                #[cfg(windows)]
+                {
+                    match get_or_create_native_wallpaper_window(name, pos.x, pos.y, size.width as i32, size.height as i32) {
+                        Ok(native_h) => {
+                            let native_usize = native_h as usize;
+                            if is_main_hwnd(native_h) {
+                                let err = format!("[DIAG 10 CRITICAL ABORT] get_or_create_native_wallpaper_window returned MAIN_HWND: 0x{:X}", native_usize);
+                                log_msg(&err);
+                                eprintln!("{}", err);
+                                continue;
                             }
+
+                            let parent_before = unsafe { GetParent(native_h) as usize };
+                            log_msg(&format!("[DIAG 2 & 4] Native host HWND for {}: 0x{:X}, Parent before apply: 0x{:X}", label, native_usize, parent_before));
+
+                            // Terminate existing MPV on this monitor
+                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                if let Some(ref mut map) = *mpv_guard {
+                                    if let Some(mut existing) = map.remove(&label) {
+                                        existing.terminate();
+                                    }
+                                }
+                            }
+
+                            // Show native host window without activating or stealing focus
+                            unsafe {
+                                ShowWindow(native_h, SW_SHOWNOACTIVATE);
+                            }
+
+                            // Spawn MPV in background task so main UI thread NEVER blocks
+                            let label_clone = label.clone();
+                            let vpath_clone = vpath.clone();
+                            let native_h_val = native_h as usize;
+
+                            tauri::async_runtime::spawn_blocking(move || {
+                                let native_hwnd = native_h_val as HWND;
+                                match mpv::spawn_mpv_wallpaper(&vpath_clone, native_hwnd, &label_clone, Some(screen_volume), Some(screen_muted)) {
+                                    Ok(proc) => {
+                                        let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (Host HWND=0x{:X}, vol={}, muted={})", 
+                                            label_clone, native_h_val, screen_volume, screen_muted);
+                                        log_msg(&msg);
+                                        println!("{}", msg);
+                                        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                            let map = mpv_guard.get_or_insert_with(HashMap::new);
+                                            map.insert(label_clone, proc);
+                                        }
+                                    }
+                                    Err(err) => {
+                                        let err_msg = format!("[MPV ERROR] Failed to spawn MPV on {}: {}", label_clone, err);
+                                        log_msg(&err_msg);
+                                        eprintln!("{}", err_msg);
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            let err_msg = format!("[NATIVE HOST ERROR] Could not get native host for {}: {}", label, e);
+                            log_msg(&err_msg);
+                            eprintln!("{}", err_msg);
                         }
                     }
-
-                    let payload = serde_json::json!({
-                        "engineId": engine_id.clone(),
-                        "config": config.clone(),
-                        "target": target.clone(),
-                    });
-                    let _ = win.emit_to(label.as_str(), "aura:set-engine", payload);
-                    let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
-                    let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
                 }
             }
         }
+    } else {
+        ensure_wallpaper_windows(&app);
+        // Canvas engine -> Route to WebView2 window
+        // 1. Terminate any MPV instances
+        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+            if let Some(ref mut map) = *mpv_guard {
+                if target == "*" {
+                    for (_, mut proc) in map.drain() {
+                        proc.terminate();
+                    }
+                } else if let Some(mut proc) = map.remove(&target) {
+                    proc.terminate();
+                }
+            }
+        }
+
+        // 2. Hide native MPV host windows
+        #[cfg(windows)]
+        if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+            if let Some(ref map) = *guard {
+                for (lbl, &raw_h) in map {
+                    if target == "*" || target == *lbl {
+                        unsafe {
+                            let hwnd = raw_h as HWND;
+                            if IsWindow(hwnd) != 0 {
+                                ShowWindow(hwnd, SW_HIDE);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Show canvas webview windows and send engine events
+        let windows = app.webview_windows();
+        for (label, win) in windows {
+            if label.starts_with("wallpaper_") && (target == "*" || target == label) {
+                let _ = win.set_ignore_cursor_events(true);
+                let _ = win.show();
+
+                let payload = serde_json::json!({
+                    "engineId": engine_id.clone(),
+                    "config": config.clone(),
+                    "target": target.clone(),
+                });
+                let _ = win.emit_to(label.as_str(), "aura:set-engine", payload);
+                let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
+            }
+        }
     }
+
+    // [DIAG 5] Check Main HWND parent after apply
+    #[cfg(windows)]
+    if let Some(main_h) = get_main_hwnd() {
+        unsafe {
+            let parent_after = GetParent(main_h);
+            let msg = format!("[DIAG 5] Main AuraOS HWND: 0x{:X}, Parent AFTER apply: 0x{:X} (Expected 0x0)", main_h as usize, parent_after as usize);
+            log_msg(&msg);
+            println!("{}", msg);
+            if parent_after != std::ptr::null_mut() {
+                let err = format!("[DIAG 5 CRITICAL ERROR] Main HWND was reparented to 0x{:X}! Restoring to desktop root!", parent_after as usize);
+                log_msg(&err);
+                eprintln!("{}", err);
+                SetParent(main_h, std::ptr::null_mut());
+            }
+        }
+    }
+
+    // Immediately schedule a delayed working set compaction after switching wallpapers
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        trim_all_process_memory();
+    });
 }
 
 /// Stop the active wallpaper and clear active state.
@@ -752,13 +1047,40 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
         }
     }
 
+    // Hide native MPV host windows
+    #[cfg(windows)]
+    if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+        if let Some(ref map) = *guard {
+            for (lbl, &raw_h) in map {
+                if target == "*" || target == *lbl {
+                    unsafe {
+                        let hwnd = raw_h as HWND;
+                        if IsWindow(hwnd) != 0 {
+                            ShowWindow(hwnd, SW_HIDE);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == label) {
             let payload = serde_json::json!({ "target": target.clone() });
             let _ = win.emit_to(label.as_str(), "aura:stop", payload);
+            let _ = win.hide();
         }
     }
+
+    #[cfg(windows)]
+    if let Some(main_h) = get_main_hwnd() {
+        unsafe {
+            let parent_after = GetParent(main_h);
+            log_msg(&format!("[DIAG 5] Main AuraOS HWND: 0x{:X}, Parent AFTER stop: 0x{:X}", main_h as usize, parent_after as usize));
+        }
+    }
+
     #[cfg(windows)]
     trim_all_process_memory();
 }
@@ -796,13 +1118,92 @@ fn set_mpv_mute(monitor_label: Option<String>, muted: bool) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
     if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
         if let Some(ref map) = *mpv_guard {
+            let mut first = true;
             for (label, proc) in map {
-                if target == "*" || target == *label {
+                if target == "*" {
+                    if muted {
+                        let _ = proc.set_mute(true);
+                    } else {
+                        // In duplicated mode, only unmute the first/primary monitor to avoid audio echo
+                        if first {
+                            let _ = proc.set_mute(false);
+                            first = false;
+                        } else {
+                            let _ = proc.set_mute(true);
+                        }
+                    }
+                } else if target == *label {
                     let _ = proc.set_mute(muted);
                 }
             }
         }
     }
+}
+
+fn get_custom_wallpapers_file(app: &AppHandle) -> std::path::PathBuf {
+    let base = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let _ = std::fs::create_dir_all(&base);
+    base.join("custom_wallpapers.json")
+}
+
+#[tauri::command]
+fn save_custom_wallpapers(app: AppHandle, wallpapers: Vec<serde_json::Value>) -> Result<(), String> {
+    let path = get_custom_wallpapers_file(&app);
+    let data = serde_json::to_string_pretty(&wallpapers).map_err(|e| e.to_string())?;
+    std::fs::write(path, data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn load_custom_wallpapers(app: AppHandle) -> Vec<serde_json::Value> {
+    let path = get_custom_wallpapers_file(&app);
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&data) {
+                if !items.is_empty() {
+                    return items;
+                }
+            }
+        }
+    }
+
+    // Auto-recovery: If no custom wallpapers exist yet in this storage, restore user's downloaded wallpapers
+    let known_candidates = [
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\Sabrina Carpenter Kissing Screen Wallpaper 4K HD - Estawky (1080p, h264).mp4", "Sabrina Carpenter"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\elden-ring-throne-of-ashes-live-wallpaper-wallsflow-com.mp4", "Elden Ring - Throne of Ashes"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\goku-ultra-instinct_2.3840x2160.mp4", "Goku Ultra Instinct"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\kid-goku-on-kintoun.1920x1080.mp4", "Kid Goku on Kintoun"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\the-batman-monochrome-moewalls-com.mp4", "The Batman Monochrome"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\vegeta-ultra-ego.3840x2160.mp4", "Vegeta Ultra Ego"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\itachi-shillouette-in-front-of-the-red-moon.3840x2160.mp4", "Itachi Silhouette Red Moon"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\Furina - Coook Pardon!  Atoms 1M Funk  Viral Funk Dance Edit  Pc Wallpaper  Montagem S.mp4", "Furina - Viral Funk Dance"),
+        ("C:\\Users\\Yashpreet_o7\\Downloads\\YTDown_YouTube_Animated-Wallpaper-Elden-Ring-Age-of-Sta_Media_yTZSTHmmO6w_002_720p.mp4", "Elden Ring - Age of Stars"),
+    ];
+
+    let mut recovered = Vec::new();
+    for (idx, (vpath, vname)) in known_candidates.iter().enumerate() {
+        if std::path::Path::new(vpath).exists() {
+            recovered.push(serde_json::json!({
+                "id": format!("local-{}", 1788800000000u64 + (idx as u64 * 1000)),
+                "type": "wallpaper",
+                "name": vname,
+                "engine": "video-player",
+                "config": {
+                    "videoPath": vpath,
+                    "speedMultiplier": 1
+                },
+                "tags": ["custom", "video"],
+                "installedAt": "2026-09-08T00:00:00.000Z",
+                "isCustom": true
+            }));
+        }
+    }
+
+    if !recovered.is_empty() {
+        let _ = save_custom_wallpapers(app, recovered.clone());
+    }
+
+    recovered
 }
 
 /// Query active wallpaper state for a specific monitor window upon mounting
@@ -908,6 +1309,7 @@ async fn read_local_file(path: String) -> Result<Vec<u8>, String> {
 
 #[cfg(windows)]
 fn trim_all_process_memory() {
+    use std::collections::HashSet;
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcess, GetCurrentProcessId, OpenProcess, PROCESS_SET_QUOTA, PROCESS_QUERY_INFORMATION
     };
@@ -921,28 +1323,44 @@ fn trim_all_process_memory() {
         // 1. Trim host process working set
         EmptyWorkingSet(GetCurrentProcess());
 
-        // 2. Enumerate and trim all child msedgewebview2.exe processes
+        // 2. Enumerate and recursively trim all descendant processes (children, grandchildren: GPU process, renderers, utilities, mpv)
         let current_pid = GetCurrentProcessId();
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
             let mut entry: PROCESSENTRY32 = std::mem::zeroed();
             entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
 
+            let mut proc_list: Vec<(u32, u32)> = Vec::new(); // (pid, parent_pid)
             if Process32First(snapshot, &mut entry) != 0 {
                 loop {
-                    if entry.th32ParentProcessID == current_pid {
-                        let child_h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, 0, entry.th32ProcessID);
-                        if !child_h.is_null() {
-                            EmptyWorkingSet(child_h);
-                            CloseHandle(child_h);
-                        }
-                    }
+                    proc_list.push((entry.th32ProcessID, entry.th32ParentProcessID));
                     if Process32Next(snapshot, &mut entry) == 0 {
                         break;
                     }
                 }
             }
             CloseHandle(snapshot);
+
+            // Recursively collect all descendant PIDs starting from current_pid
+            let mut target_pids = HashSet::new();
+            let mut frontier = vec![current_pid];
+
+            while let Some(parent) = frontier.pop() {
+                for &(pid, parent_id) in &proc_list {
+                    if parent_id == parent && target_pids.insert(pid) {
+                        frontier.push(pid);
+                    }
+                }
+            }
+
+            // Trim working set of every descendant process (WebView2 broker, GPU process, renderers, mpv)
+            for pid in target_pids {
+                let child_h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, 0, pid);
+                if !child_h.is_null() {
+                    EmptyWorkingSet(child_h);
+                    CloseHandle(child_h);
+                }
+            }
         }
     }
 }
@@ -953,26 +1371,132 @@ fn trim_memory() {
     trim_all_process_memory();
 }
 
+#[tauri::command]
+fn frontend_heartbeat(page: String, visibility: String, timestamp: f64, mounted: bool) -> serde_json::Value {
+    let msg = format!("[FRONTEND HEARTBEAT] page={}, visibility={}, mounted={}, ts={:.0}", page, visibility, mounted, timestamp);
+    static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    let mut should_log = false;
+    if let Ok(mut guard) = LAST_LOG.lock() {
+        if guard.is_none() || guard.unwrap().elapsed() >= std::time::Duration::from_secs(10) {
+            *guard = Some(std::time::Instant::now());
+            should_log = true;
+        }
+    }
+    if should_log {
+        log_msg(&msg);
+        println!("{}", msg);
+    }
+    serde_json::json!({ "ok": true, "ack": timestamp })
+}
+
+#[tauri::command]
+fn report_frontend_error(error: String, info: Option<String>, source: Option<String>) {
+    let msg = format!("[FRONTEND ERROR] source={:?}, error={}, info={:?}", source, error, info);
+    log_msg(&msg);
+    eprintln!("{}", msg);
+}
+
+#[tauri::command]
+fn get_diagnostics(app: AppHandle) -> serde_json::Value {
+    #[cfg(windows)]
+    let (main_h_str, main_parent_str, main_vis, main_is_win) = if let Some(h) = get_main_hwnd() {
+        unsafe {
+            (
+                format!("0x{:X}", h as usize),
+                format!("0x{:X}", GetParent(h) as usize),
+                IsWindowVisible(h) != 0,
+                IsWindow(h) != 0,
+            )
+        }
+    } else {
+        ("0x0".to_string(), "0x0".to_string(), false, false)
+    };
+
+    #[cfg(not(windows))]
+    let (main_h_str, main_parent_str, main_vis, main_is_win) = ("0x0".to_string(), "0x0".to_string(), false, false);
+
+    let mut native_hosts = serde_json::Map::new();
+    #[cfg(windows)]
+    if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+        if let Some(ref map) = *guard {
+            for (label, &raw_h) in map {
+                let hwnd = raw_h as HWND;
+                let (parent, vis) = unsafe { (format!("0x{:X}", GetParent(hwnd) as usize), IsWindowVisible(hwnd) != 0) };
+                native_hosts.insert(label.clone(), serde_json::json!({
+                    "hwnd": format!("0x{:X}", raw_h),
+                    "parent": parent,
+                    "visible": vis,
+                }));
+            }
+        }
+    }
+
+    let mut webview_hosts = serde_json::Map::new();
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") {
+            #[cfg(windows)]
+            let (raw_h_str, parent_str) = if let Ok(hwnd) = win.hwnd() {
+                let raw_h = hwnd.0 as HWND;
+                unsafe {
+                    (format!("0x{:X}", raw_h as usize), format!("0x{:X}", GetParent(raw_h) as usize))
+                }
+            } else {
+                ("unknown".to_string(), "unknown".to_string())
+            };
+            #[cfg(not(windows))]
+            let (raw_h_str, parent_str) = ("n/a".to_string(), "n/a".to_string());
+
+            webview_hosts.insert(label.clone(), serde_json::json!({
+                "hwnd": raw_h_str,
+                "parent": parent_str,
+                "visible": win.is_visible().unwrap_or(false),
+            }));
+        }
+    }
+
+    let mut mpv_status = serde_json::Map::new();
+    if let Ok(guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *guard {
+            for (label, proc) in map {
+                mpv_status.insert(label.clone(), serde_json::json!({
+                    "pid": proc.child.id(),
+                    "pipe": proc.pipe_name,
+                    "video": proc.video_path,
+                }));
+            }
+        }
+    }
+
+    serde_json::json!({
+        "main_hwnd": main_h_str,
+        "main_parent_hwnd": main_parent_str,
+        "main_is_window": main_is_win,
+        "main_is_visible": main_vis,
+        "native_wallpaper_windows": native_hosts,
+        "webview_wallpaper_windows": webview_hosts,
+        "mpv_players": mpv_status,
+    })
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 fn main() {
     #[cfg(windows)]
     {
-        // Consolidate renderers, cap V8 heap per isolate, disable non-essential Chromium services,
-        // and limit disk/media cache sizes. This dramatically lowers RAM footprint to rival Lively (~250MB total).
+        // Disable non-essential background Chromium telemetry/sync services
+        // DO NOT use --process-per-site or --renderer-process-limit which share renderers between main UI and wallpapers!
+        // DO NOT choke the V8 heap with --max-old-space-size=64!
         std::env::set_var(
             "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "--process-per-site \
-             --renderer-process-limit=2 \
-             --disable-features=AudioServiceOutOfProcess,MediaFoundationD3D11VideoCapture,Translate,OptimizationHints,MediaRouter \
-             --js-flags=\"--max-old-space-size=64\" \
-             --disk-cache-size=2097152 \
-             --media-cache-size=2097152 \
+            "--disable-features=AudioServiceOutOfProcess,MediaFoundationD3D11VideoCapture,Translate,OptimizationHints,MediaRouter \
+             --enable-features=TrimOnMemoryPressure \
+             --disk-cache-size=16777216 \
+             --media-cache-size=16777216 \
+             --disable-gpu-memory-buffer-video-frames \
              --disable-background-networking \
              --disable-component-update \
              --disable-domain-reliability \
              --disable-sync \
-             --disable-breakpad \
              --disable-extensions"
         );
     }
@@ -987,11 +1511,45 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Second instance: show existing control panel
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.set_focus();
+            }
+
+            if let Some(pos) = argv.iter().position(|arg| arg == "--apply-video") {
+                if let Some(path) = argv.get(pos + 1) {
+                    let msg = format!("[CLI IPC] Received --apply-video with path: {}", path);
+                    log_msg(&msg);
+                    println!("{}", msg);
+                    let app_h = app.clone();
+                    let path_clone = path.clone();
+                    tauri::async_runtime::spawn(async move {
+                        apply_wallpaper(
+                            app_h,
+                            "video-player".to_string(),
+                            serde_json::json!({
+                                "videoPath": path_clone,
+                                "speedMultiplier": 1.0,
+                                "volume": 0.0,
+                                "muted": true,
+                            }),
+                            1.0,
+                            0.85,
+                            None,
+                        ).await;
+                    });
+                }
+            } else if argv.iter().any(|arg| arg == "--stop-wallpaper") {
+                log_msg("[CLI IPC] Received --stop-wallpaper");
+                println!("[CLI IPC] Received --stop-wallpaper");
+                stop_wallpaper(app.clone(), None);
+            } else if argv.iter().any(|arg| arg == "--diagnostics") {
+                let diag = get_diagnostics(app.clone());
+                let diag_str = serde_json::to_string_pretty(&diag).unwrap_or_default();
+                log_msg(&format!("[CLI IPC] Diagnostics:\n{}", diag_str));
+                println!("[CLI IPC] Diagnostics:\n{}", diag_str);
             }
         }))
         .invoke_handler(tauri::generate_handler![
@@ -1010,6 +1568,11 @@ fn main() {
             set_mpv_pause,
             set_mpv_volume,
             set_mpv_mute,
+            frontend_heartbeat,
+            report_frontend_error,
+            get_diagnostics,
+            save_custom_wallpapers,
+            load_custom_wallpapers,
         ])
         .setup(|app| {
             // Show the main window
@@ -1019,7 +1582,7 @@ fn main() {
                 "main",
                 tauri::WebviewUrl::App("index.html".into())
             )
-            .title("AuraOS")
+            .title("AetherFlow")
             .inner_size(1200.0, 780.0)
             .min_inner_size(900.0, 600.0)
             .center()
@@ -1032,16 +1595,40 @@ fn main() {
                     println!("AuraOS: Main window created successfully.");
                     let hwnd = w.hwnd();
                     println!("AuraOS: Main window HWND: {:?}", hwnd);
+
+                    #[cfg(windows)]
+                    if let Ok(raw_h) = hwnd {
+                        let raw_hwnd = raw_h.0 as HWND;
+                        set_main_hwnd(raw_hwnd);
+                        unsafe {
+                            let parent = GetParent(raw_hwnd);
+                            let msg = format!("[DIAG 1 & 4] Initial Main AuraOS HWND: 0x{:X}, parent: 0x{:X}", raw_hwnd as usize, parent as usize);
+                            log_msg(&msg);
+                            println!("{}", msg);
+                        }
+                    }
                     
                     let w_clone = w.clone();
                     w.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                            let _ = w_clone.hide();
-                            api.prevent_close();
+                        match event {
+                            tauri::WindowEvent::CloseRequested { api, .. } => {
+                                let _ = w_clone.hide();
+                                api.prevent_close();
 
-                            // Trim process memory working set of host and all child WebView2 processes
-                            #[cfg(windows)]
-                            trim_all_process_memory();
+                                // Trim process memory working set of host and all child WebView2 processes
+                                #[cfg(windows)]
+                                trim_all_process_memory();
+                            }
+                            tauri::WindowEvent::Moved(pos) => {
+                                log_msg(&format!("[MAIN WIN EVENT] Moved to ({}, {})", pos.x, pos.y));
+                            }
+                            tauri::WindowEvent::Resized(size) => {
+                                log_msg(&format!("[MAIN WIN EVENT] Resized to {}x{}", size.width, size.height));
+                            }
+                            tauri::WindowEvent::Focused(focused) => {
+                                log_msg(&format!("[MAIN WIN EVENT] Focused: {}", focused));
+                            }
+                            _ => {}
                         }
                     });
 
@@ -1064,6 +1651,34 @@ fn main() {
 
             // Pre-create and pin the wallpaper windows in the background so applying is instant
             ensure_wallpaper_windows(app.handle());
+
+            // Check if --apply-video was supplied on initial cold launch
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(pos) = args.iter().position(|arg| arg == "--apply-video") {
+                if let Some(path) = args.get(pos + 1) {
+                    let app_h = app.handle().clone();
+                    let path_clone = path.clone();
+                    tauri::async_runtime::spawn(async move {
+                        std::thread::sleep(std::time::Duration::from_millis(1200));
+                        let msg = format!("[COLD LAUNCH CLI] Applying video wallpaper from CLI: {}", path_clone);
+                        log_msg(&msg);
+                        println!("{}", msg);
+                        apply_wallpaper(
+                            app_h,
+                            "video-player".to_string(),
+                            serde_json::json!({
+                                "videoPath": path_clone,
+                                "speedMultiplier": 1.0,
+                                "volume": 0.0,
+                                "muted": true,
+                            }),
+                            1.0,
+                            0.85,
+                            None,
+                        ).await;
+                    });
+                }
+            }
 
             // ── Background Display Change & Hot-Plug Watcher with Debouncing ───
             let app_handle = app.handle().clone();
@@ -1111,12 +1726,12 @@ fn main() {
             });
 
             // ── System tray ───────────────────────────────────────────────────
-            let open_item  = MenuItem::with_id(app, "open",  "Open AuraOS",      true, None::<&str>)?;
+            let open_item  = MenuItem::with_id(app, "open",  "Open AetherFlow",      true, None::<&str>)?;
             let pause_item = MenuItem::with_id(app, "pause", "Pause Wallpaper",   true, None::<&str>)?;
             let resume_item = MenuItem::with_id(app, "resume", "Resume Wallpaper",  true, None::<&str>)?;
             let stop_item  = MenuItem::with_id(app, "stop",  "Stop Wallpaper",    true, None::<&str>)?;
             let sep        = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_item  = MenuItem::with_id(app, "quit",  "Quit AuraOS",       true, None::<&str>)?;
+            let quit_item  = MenuItem::with_id(app, "quit",  "Quit AetherFlow",       true, None::<&str>)?;
 
             let menu = Menu::with_items(app, &[
                 &open_item,

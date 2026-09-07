@@ -124,7 +124,7 @@ export default function SettingsPage() {
       icon: Power, title: 'System',
       content: (
         <>
-          <ToggleRow label="Launch at Startup" desc="Start AuraOS when Windows boots" value={autoStart} toggle={toggleAutoStart} />
+          <ToggleRow label="Launch at Startup" desc="Start AetherFlow when Windows boots" value={autoStart} toggle={toggleAutoStart} />
           <ToggleRow label="Minimize to Tray" desc="Keep running in system tray when closed" value={runInTray} toggle={toggleRunInTray} />
         </>
       ),
@@ -135,7 +135,7 @@ export default function SettingsPage() {
     <div className="animate-fadeIn" style={{ maxWidth: 640, margin: '0 auto' }}>
       <div style={{ marginBottom: 28 }}>
         <h1 className="font-display font-bold text-2xl" style={{ letterSpacing: '-0.5px' }}>Settings</h1>
-        <p className="text-muted text-sm" style={{ marginTop: 4 }}>Configure AuraOS performance and behavior</p>
+        <p className="text-muted text-sm" style={{ marginTop: 4 }}>Configure AetherFlow performance and behavior</p>
       </div>
 
       {sections.map(({ icon: Icon, title, content }) => (
@@ -155,7 +155,7 @@ export default function SettingsPage() {
       ))}
 
       <div className="text-xs text-muted" style={{ textAlign: 'center', marginTop: 20, paddingBottom: 20 }}>
-        AuraOS v1.0.0 · MIT License · Built with Tauri + React
+        AetherFlow v1.0.0 · MIT License · Built with Tauri + React
       </div>
     </div>
   )

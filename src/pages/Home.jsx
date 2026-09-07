@@ -211,6 +211,10 @@ export default function HomePage() {
       config: { ...(wallpaper.config || {}), speedMultiplier: wallpaperSpeed },
       isCustom: wallpaper.isCustom,
     })
+    // Asynchronously request native memory trim to reclaim any dormant video decoder cache
+    setTimeout(() => {
+      tauriInvoke('trim_memory').catch(() => {})
+    }, 400)
   }
 
   // ── Apply to desktop ─────────────────────────────────────────────────────
@@ -281,7 +285,7 @@ export default function HomePage() {
       <div className="flex items-center justify-between" style={{ marginBottom: 24 }}>
         <div>
           <h1 className="font-display font-bold text-2xl" style={{ letterSpacing: '-0.5px' }}>
-            Welcome to <span className="text-brand">AuraOS</span>
+            Welcome to <span className="text-brand">AetherFlow</span>
           </h1>
           <p className="text-muted text-sm" style={{ marginTop: 4 }}>
             Your curated desktop dashboard — pick or double-click any favorite wallpaper below

@@ -102,7 +102,7 @@ export default function App() {
             </div>
             {!sidebarCollapsed && (
               <span className="font-display font-bold text-lg" style={{ letterSpacing: '-0.5px' }}>
-                AuraOS
+                AetherFlow
               </span>
             )}
           </div>

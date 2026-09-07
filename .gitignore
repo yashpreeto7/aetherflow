@@ -28,6 +28,8 @@ target/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/bin/
+bin/
+*.exe
 
 # Environment
 .env

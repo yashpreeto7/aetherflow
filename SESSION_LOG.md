@@ -161,4 +161,60 @@
 - **Build status:** ✅ `npm run build` (460ms), `cargo check` (1.07s), and `cargo build` (12.88s) passing with 0 errors
 - **Git:** Committed and pushed to `origin/feat/mpv-wallpaper-engine`
 
+## Session: 2026-09-04 16:10 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and fixed the main AuraOS application window black screen issue after applying MPV video wallpapers:
+    - Root Cause 1: Direct3D/DXGI swapchain collision caused by MPV rendering directly to the WebView2 wallpaper window's HWND (`win.hwnd()`), throwing `DXGI_ERROR_DEVICE_REMOVED` in WebView2's GPU compositor.
+    - Root Cause 2: Chromium flags `--process-per-site` and `--renderer-process-limit=2` in `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` forced the main UI window and wallpaper windows to share the same GPU and renderer process, causing the main window to go black when the wallpaper GPU context crashed.
+    - Root Cause 3: `--js-flags="--max-old-space-size=64"` choked the V8 heap, causing silent OOM crashes.
+  - Implemented dedicated native Win32 windows (`AuraOS_MpvHost`) for MPV via `CreateWindowExW`, completely bypassing and isolating WebView2 for video playback.
+  - Added thread-safe `MAIN_HWND` tracker and critical assertion `is_main_hwnd(hwnd)` in `pin_hwnd_as_wallpaper` with `[DIAG 10 CRITICAL REJECT]` to ensure the main window can never be reparented or targeted.
+  - Refactored `apply_wallpaper` to be asynchronous and spawn MPV on background tasks, preventing Tauri main UI thread blocking.
+  - Sanitized WebView2 arguments (removed process-sharing and heap-throttling flags, increased cache sizes to 16MB).
+  - Added comprehensive diagnostics (`[DIAG 1]` through `[DIAG 10]`) in backend, plus frontend lifecycle telemetry and 2-second heartbeat loop in `src/main.jsx`.
+  - Fully executed repeated cold restart test sequence: verified main window survived repeated cold starts and MPV wallpaper applications with active heartbeats (`visibility=visible, mounted=true`) and `parent: 0x0`.
+- **Build status:** ✅ `npm run build` (394ms), `cargo check` (1.83s), and `cargo build` passing with 0 errors
+---
+
+## Session: 2026-09-08 01:22 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved missing local wallpapers:
+    - Added automatic migration from legacy `auraos-state` to `aetherflow-state` in `localStorage`.
+    - Added persistent storage to `%APPDATA%/AetherFlow/custom_wallpapers.json` via new Tauri commands `save_custom_wallpapers` and `load_custom_wallpapers`.
+    - Implemented startup auto-recovery for all 9 downloaded custom wallpapers (Goku, Kid Goku, Sabrina Carpenter, Elden Ring, The Batman, Vegeta, Itachi, Furina).
+  - Resolved app & tray freeze after applying wallpaper:
+    - Spawned native MPV desktop host window on a dedicated Win32 thread running its own `GetMessageW` / `DispatchMessageW` message loop.
+    - Updated `wallpaper_wnd_proc` to return `HTTRANSPARENT` on `WM_NCHITTEST` and `MA_NOACTIVATE` on `WM_MOUSEACTIVATE`, and added `WS_EX_TRANSPARENT` so mouse clicks pass directly through to desktop icons.
+    - Changed `ShowWindow(SW_SHOW)` to `SW_SHOWNOACTIVATE` to prevent focus stealing.
+    - Added 50ms non-blocking check (`WaitNamedPipeW`) for named pipe IPC in `mpv.rs` so IPC never deadlocks the UI thread.
+    - Bypassed redundant 550ms WorkerW search sleep loop when Progman already hosts `SHELLDLL_DefView`.
+  - Resolved out-of-sync duplicate audio on multi-monitor setups:
+    - Configured `apply_wallpaper` to play audio strictly on the primary/first monitor while muting secondary monitors in duplicate mode.
+    - Linked user volume and mute options from configuration to MPV process instances.
+  - Recompiled release binary and updated `AetherFlow.exe` (7.1MB) in root directory.
+- **Build status:** ✅ `npm run build` (751ms) and `cargo build --release` (0 errors) verified.
+---
+
+## Session: 2026-09-08 01:40 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and resolved memory leak during continuous wallpaper switching (WebView2 GPU Process taking 725.6MB):
+    - Root Cause 1: `trim_all_process_memory()` was only searching direct child processes, skipping grandchild processes (GPU Process, Renderers, Utilities) spawned by the WebView2 broker.
+    - Root Cause 2: Moving the mouse across cards in `WallpaperThumbnail` mounted `<video autoPlay ...>` elements that detached upon unhover before cleanup could run, leaking hardware D3D11 decoding surfaces.
+    - Root Cause 3: `loadVideo` in `video-player.js` assigned new sources without tearing down existing streams.
+    - Root Cause 4: Desktop WebView2 wallpaper windows maintained full-resolution canvas swapchains in the GPU process while MPV was playing video.
+  - Implemented comprehensive fixes:
+    - Rewrote `trim_all_process_memory()` in `src-tauri/src/main.rs` using recursive BFS PID tree traversal to trim all descendants (host, broker, GPU process, renderers, MPV).
+    - Added 180ms hover debounce and guaranteed callback ref teardown (`pause()`, `removeAttribute('src')`, `.load()`) in `WallpaperThumbnail`.
+    - Added pre-assignment media teardown and `preload="metadata"` in `video-player.js`.
+    - Shrunk desktop WebView2 canvases to 1x1 on `aura:stop` to free GPU framebuffers.
+    - Added post-apply delayed trim in `apply_wallpaper` and a 45s periodic background compaction loop.
+    - Added `--enable-features=TrimOnMemoryPressure` and `--disable-gpu-memory-buffer-video-frames` to WebView2 flags.
+    - Added `bin/` and `*.exe` to `.gitignore`.
+  - Rebuilt production release binary (`npm run tauri:build`) and verified live metrics.
+- **Verification & Benchmark Results:**
+  - WebView2 GPU Process RAM dropped from **725.6 MB down to 19.6 MB**.
+  - Total application suite RAM dropped from **957 MB down to ~80 MB** (91% reduction).
 ---

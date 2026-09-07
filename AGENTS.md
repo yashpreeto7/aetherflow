@@ -1,4 +1,4 @@
-# AGENTS.md — AuraOS AI Agent Instructions
+# AGENTS.md — AetherFlow AI Agent Instructions
 <!-- This file is automatically read by ALL AI agents (Gemini, Claude, GPT, Codex, etc.) -->
 <!-- Written to be maximally explicit. Assume the agent has NO prior context. -->
 
@@ -10,11 +10,11 @@
 
 ## What This Project Is
 
-**AuraOS** is a standalone Windows desktop application. Think of it like "Wallpaper Engine" — it shows live animated wallpapers on the Windows desktop and lets users switch themes.
+**AetherFlow** is a standalone Windows desktop application. Think of it like "Wallpaper Engine" — it shows live animated wallpapers on the Windows desktop and lets users switch themes.
 
 It is **NOT** part of the Personal AI OS project. It lives here:
 ```
-C:\Users\Yashpreet_o7\Desktop\AURAOS\
+C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 ```
 
 The Personal AI OS is at:
@@ -30,7 +30,7 @@ Run these commands **in order** before writing a single line of code:
 
 ```powershell
 # 1. Go to the project folder
-cd C:\Users\Yashpreet_o7\Desktop\AURAOS
+cd C:\Users\Yashpreet_o7\Desktop\AetherFlow
 
 # 2. Read the handoff file to know current status
 # (Open and read HANDOFF.md in this folder)

@@ -1,6 +1,54 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+// ── Legacy Storage Migration ────────────────────────────────────────────────
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const aether = localStorage.getItem('aetherflow-state')
+    const aura = localStorage.getItem('auraos-state')
+    if (!aether && aura) {
+      localStorage.setItem('aetherflow-state', aura)
+    }
+  }
+} catch {
+  // ignore
+}
+
+async function persistCustomWallpapersToDisk(installed) {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const customs = (installed || []).filter(i => i.isCustom || i.engine === 'video-player')
+    await invoke('save_custom_wallpapers', { wallpapers: customs })
+  } catch {
+    // ignore
+  }
+}
+
+export async function syncCustomWallpapersFromDisk() {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const diskItems = await invoke('load_custom_wallpapers')
+    if (Array.isArray(diskItems) && diskItems.length > 0) {
+      const state = useStore.getState()
+      const currentInstalled = state.installed || []
+      const currentIds = new Set(currentInstalled.map(i => i.id))
+      const toAdd = diskItems.filter(i => !currentIds.has(i.id))
+      if (toAdd.length > 0) {
+        const merged = [...currentInstalled, ...toAdd]
+        const homeList = state.homeWallpaperIds || []
+        const homeIds = new Set(homeList)
+        toAdd.forEach(i => homeIds.add(i.id))
+        useStore.setState({
+          installed: merged,
+          homeWallpaperIds: Array.from(homeIds)
+        })
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * AuraOS Global State (Zustand)
  * Persisted to localStorage so settings survive restarts.
@@ -75,12 +123,20 @@ export const useStore = create(
       customNames: {},                 // { [id]: string } user-edited wallpaper names
 
       installItem: (item) =>
-        set((s) => ({ installed: [...s.installed.filter(i => i.id !== item.id), item] })),
+        set((s) => {
+          const installed = [...s.installed.filter(i => i.id !== item.id), item]
+          persistCustomWallpapersToDisk(installed)
+          return { installed }
+        }),
       uninstallItem: (id) =>
-        set((s) => ({
-          installed: s.installed.filter(i => i.id !== id),
-          homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id),
-        })),
+        set((s) => {
+          const installed = s.installed.filter(i => i.id !== id)
+          persistCustomWallpapersToDisk(installed)
+          return {
+            installed,
+            homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id),
+          }
+        }),
 
       // ── Home Curation (Pin / Unpin) ──────────────────────────────────────
       togglePinToHome: (id) => set((s) => {
@@ -102,6 +158,7 @@ export const useStore = create(
         const installed = (s.installed || []).map(item =>
           item.id === id ? { ...item, name: newName } : item
         )
+        persistCustomWallpapersToDisk(installed)
         const activeWallpaper = s.activeWallpaper?.id === id
           ? { ...s.activeWallpaper, name: newName }
           : s.activeWallpaper
@@ -142,7 +199,7 @@ export const useStore = create(
       setSidebarOpacity: (v) => set({ sidebarOpacity: v }),
     }),
     {
-      name: 'auraos-state',
+      name: 'aetherflow-state',
       // Only persist these keys
       partialize: (s) => ({
         activeWallpaper: s.activeWallpaper,

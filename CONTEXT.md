@@ -24,10 +24,10 @@ A **standalone Windows desktop application** that:
 
 | Check | Result |
 |-------|--------|
-| `npm run build` | ✅ Passes in ~400ms |
+| `npm run build` | ✅ Passes in ~1s |
 | `npm run dev` | ✅ Runs at http://localhost:1420/ |
-| `npm run tauri:dev` | ❌ Not yet tested (needs Rust installed) |
-| Windows .exe installer | ❌ Not yet built |
+| `npm run tauri:dev` | ✅ Passes (Rust installed & verified) |
+| Windows .exe / standalone | ✅ Built: `AetherFlow.exe`, `run.bat`, and `AetherFlow_1.0.0_x64-setup.exe` |
 
 ---
 
@@ -96,7 +96,14 @@ Video wallpaper engine              MP4/WebM backend command and frontend player
 ### ❌ Not Done
 ```
 Supabase DB tables                   marketplace SQL (optional)
-npm run tauri:build                  Windows .exe installer (optional)
+```
+
+### 🚀 Direct Launchers Available
+```
+AetherFlow.exe                       Direct standalone desktop app (root)
+run.bat                              One-click batch launcher (root)
+AetherFlow.bat                       Alternative batch launcher (root)
+src-tauri/target/release/bundle/nsis/AetherFlow_1.0.0_x64-setup.exe  NSIS Windows Installer
 ```
 
 ---
@@ -140,19 +147,10 @@ npm run tauri:dev
 |------|-------|--------------|
 | 2026-09-02 | Antigravity (Claude Sonnet 4.6) | Initial build: full frontend (all engines, themes, pages, components, Tauri config) |
 | 2026-09-02 | Antigravity (Claude Sonnet 4.6) | Added .agents/ skills, AGENTS.md, GEMINI.md, REMAINING_TASKS.md, CONTEXT.md, hooks |
-
 | 2026-09-02 | Antigravity (Gemini 3.1 Pro) | Rust configured, previews generated, Theme Editor implemented, Video Wallpaper Engine implemented, backend command added |
 | 2026-09-02 | Antigravity (Gemini 3.8 Flash) | Multi-monitor geometry, frame offsets, Windows 11 desktop icon Z-order behind SHELLDLL_DefView resolved |
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Wallpaper Engine UI/UX overhaul: direct apply from Library, unified Home custom wallpapers, '+ Add Wallpaper' button & drag-drop, card quick actions & double click |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved black previews; added wallpaper naming & renaming modals; established Library as master catalog and Home as curated favorites with Pin to Home toggles |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed 1GB-2.5GB RAM leak: stopped running 15+ concurrent live 60fps canvas engines in grid cards, implemented WallpaperThumbnail, and fixed async unmount race condition |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Process & memory reduction: on-demand wallpaper window creation, merged audio & crashpad utility processes, and EmptyWorkingSet memory trimming on minimize |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed wallpaper apply issue and second screen white window popup by restoring launch-time window pre-creation & WorkerW pinning |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Added persistent Stop Wallpaper button in StatusBar across all pages, improved tray click restore, and killed lingering processes |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Fixed runtime display change / hot-plug bug: implemented reactive display watcher reusing exact startup initialization path, auto window cleanup on disconnect, and get_monitor_active_wallpaper sync |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Resolved display change transition border artifact: debounced watcher, 10-step controlled reconciliation (re-aligning existing hosts, InvalidateRect/RedrawWindow), and [WALLPAPER STATE] logging |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Memory optimization: Chromium process consolidation, deep child WebView2 working-set trimming, hover-only video decoder mounting, and visibility auto-pause |
-| 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Built MPV-only video wallpaper backend on branch feat/mpv-wallpaper-engine: embedded into desktop HWND via --wid, named pipe IPC, and recorded ~70% RAM reduction (275MB total vs ~1GB) |
-
+| 2026-09-04 | Antigravity (Gemini 3.8 Flash) | Resolved main window black screen with dedicated native Win32 MPV host, sanitized WebView2 arguments |
+| 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed missing custom wallpapers (disk persistence & auto-recovery), app/tray freeze on apply (dedicated message pump thread + transparent hit testing), and multi-monitor audio desync |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

@@ -1,12 +1,12 @@
 [package]
-name = "auraos"
+name = "aetherflow"
 version = "1.0.0"
-description = "AuraOS — Lightweight Windows Wallpaper & Theme Engine"
-authors = ["AuraOS"]
+description = "AetherFlow — High-Performance Windows Desktop Engine & Live Visuals Platform"
+authors = ["AetherFlow"]
 license = "MIT"
-repository = "https://github.com/auraos/auraos"
+repository = "https://github.com/aetherflow/aetherflow"
 edition = "2021"
-default-run = "auraos"
+default-run = "aetherflow"
 
 [[bin]]
 name = "desktop_debug"
@@ -45,5 +45,7 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Graphics_Dwm",
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
-    "Win32_System_Diagnostics_ToolHelp"
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes"
 ] }

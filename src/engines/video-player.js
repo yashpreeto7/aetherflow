@@ -15,6 +15,13 @@ export default function createVideoPlayer(canvas, options) {
     if (!path) return;
     try {
       if (videoEl) {
+        // Explicitly tear down previous hardware video decoding pipeline before allocating new one
+        try {
+          videoEl.pause();
+          videoEl.removeAttribute('src');
+          videoEl.load();
+        } catch (e) {}
+
         // Use Tauri asset protocol if it's an absolute local path
         videoEl.src = path.startsWith('http') || path.startsWith('data:') 
           ? path 
@@ -36,7 +43,7 @@ export default function createVideoPlayer(canvas, options) {
     videoEl.autoplay = false;
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
-    videoEl.preload = 'auto';
+    videoEl.preload = options.preview ? 'metadata' : 'auto';
     
     // Always mute in preview mode
     if (options.preview) {

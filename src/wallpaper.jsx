@@ -63,6 +63,8 @@ function WallpaperCanvas() {
       if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d')
         ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+        canvasRef.current.width = 1
+        canvasRef.current.height = 1
       }
       return
     }
@@ -143,6 +145,8 @@ function WallpaperCanvas() {
             if (canvasRef.current) {
               const ctx = canvasRef.current.getContext('2d')
               ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+              canvasRef.current.width = 1
+              canvasRef.current.height = 1
             }
           })
         )

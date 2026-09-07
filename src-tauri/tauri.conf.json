@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AuraOS",
+  "productName": "AetherFlow",
   "version": "1.0.0",
-  "identifier": "com.auraos.app",
+  "identifier": "com.aetherflow.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",

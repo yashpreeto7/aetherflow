@@ -31,7 +31,7 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
 
   try {
     await tauriInvoke('apply_wallpaper', {
-      engineId: wallpaper.engine,
+      engineId: wallpaper.engine || wallpaper.id,
       config: {
         ...(wallpaper.config || {}),
         speedMultiplier: speed,

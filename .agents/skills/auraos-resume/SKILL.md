@@ -11,7 +11,7 @@ user-invocable: true
 Do not skip any of these. Read each file completely before proceeding.
 
 ### File 1: HANDOFF.md
-Location: `C:\Users\Yashpreet_o7\Desktop\AURAOS\HANDOFF.md`
+Location: `C:\Users\Yashpreet_o7\Desktop\AetherFlow\HANDOFF.md`
 
 This file tells you:
 - Current build status (is it 🟡 in progress or ✅ complete?)
@@ -19,7 +19,7 @@ This file tells you:
 - What the next thing to work on is
 
 ### File 2: REMAINING_TASKS.md
-Location: `C:\Users\Yashpreet_o7\Desktop\AURAOS\REMAINING_TASKS.md`
+Location: `C:\Users\Yashpreet_o7\Desktop\AetherFlow\REMAINING_TASKS.md`
 
 This file tells you:
 - Exact step-by-step instructions for each remaining task
@@ -27,7 +27,7 @@ This file tells you:
 - How to verify each task is complete
 
 ### File 3: AGENTS.md
-Location: `C:\Users\Yashpreet_o7\Desktop\AURAOS\AGENTS.md`
+Location: `C:\Users\Yashpreet_o7\Desktop\AetherFlow\AGENTS.md`
 
 This file tells you:
 - Full file structure
@@ -41,7 +41,7 @@ This file tells you:
 
 Run this command:
 ```powershell
-cd C:\Users\Yashpreet_o7\Desktop\AURAOS
+cd C:\Users\Yashpreet_o7\Desktop\AetherFlow
 npm run build
 ```
 
@@ -81,7 +81,7 @@ Look at the "Completion Checklist" at the bottom of `REMAINING_TASKS.md`. Pick t
 A standalone Windows desktop wallpaper + theme engine. Like Wallpaper Engine but free and open source.
 
 **Where is it?**
-`C:\Users\Yashpreet_o7\Desktop\AURAOS\`
+`C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
 (NOT in PERSONALAGENT — that's a different project, don't touch it)
 
 **Tech stack:**

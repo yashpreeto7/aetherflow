@@ -1,5 +1,5 @@
 {
-  "name": "auraos",
+  "name": "aetherflow",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "dev:tauri": "tauri dev",
     "tauri:build": "tauri build"
   },
   "dependencies": {

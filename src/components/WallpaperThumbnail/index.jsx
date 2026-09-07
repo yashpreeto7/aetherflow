@@ -20,21 +20,49 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
   const engineId = wallpaper.engine || wallpaper.id
   const descriptor = ENGINES[engineId]
   const isVideo = wallpaper.isCustom || engineId === 'video-player'
-  const videoRef = useRef(null)
-  const [videoLoaded, setVideoLoaded] = useState(false)
+  const videoNodeRef = useRef(null)
+  const [debouncedHover, setDebouncedHover] = useState(false)
 
-  // Clean up video decoder on unmount / hover exit
+  // Debounce hover activation by 180ms: Prevents sweeping the mouse across 9 cards
+  // from instantly spinning up 9 concurrent 4K hardware video decoders in the GPU process!
+  useEffect(() => {
+    if (!isHovered) {
+      setDebouncedHover(false)
+      return
+    }
+    const timer = setTimeout(() => setDebouncedHover(true), 180)
+    return () => clearTimeout(timer)
+  }, [isHovered])
+
+  // Guaranteed hardware decoder teardown via callback ref:
+  // When React unmounts the <video>, node is null. We immediately pause, strip src, and call .load()
+  // to force Chromium/Direct3D to release the hardware video decoding surface.
+  const handleVideoRef = (node) => {
+    if (node) {
+      videoNodeRef.current = node
+    } else if (videoNodeRef.current) {
+      try {
+        videoNodeRef.current.pause()
+        videoNodeRef.current.removeAttribute('src')
+        videoNodeRef.current.load()
+      } catch (e) {}
+      videoNodeRef.current = null
+    }
+  }
+
+  // Also clean up on component unmount
   useEffect(() => {
     return () => {
-      if (videoRef.current) {
+      if (videoNodeRef.current) {
         try {
-          videoRef.current.pause()
-          videoRef.current.removeAttribute('src')
-          videoRef.current.load()
+          videoNodeRef.current.pause()
+          videoNodeRef.current.removeAttribute('src')
+          videoNodeRef.current.load()
         } catch (e) {}
+        videoNodeRef.current = null
       }
     }
-  }, [isHovered])
+  }, [])
 
   // Custom Video Wallpaper Thumbnail:
   // Render static poster or placeholder when not hovered.
@@ -48,14 +76,15 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
 
     return (
       <div style={{ width: '100%', height: '100%', position: 'relative', background: '#090a0f', overflow: 'hidden' }}>
-        {isHovered && videoSrc ? (
+        {debouncedHover && videoSrc ? (
           <video
-            ref={videoRef}
+            ref={handleVideoRef}
             src={videoSrc}
             autoPlay
             muted
             loop
             playsInline
+            preload="metadata"
             style={{
               width: '100%',
               height: '100%',

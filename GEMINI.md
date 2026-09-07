@@ -1,4 +1,4 @@
-# GEMINI.md — Gemini-Specific Instructions for AuraOS
+# GEMINI.md — Gemini-Specific Instructions for AetherFlow
 
 <!-- This file is automatically read by Gemini at the start of every session. -->
 <!-- It supplements AGENTS.md with Gemini-specific behavioral rules. -->
@@ -11,25 +11,25 @@ Every single time you start a session in this workspace, you MUST do ALL of thes
 
 ### 1. Read CONTEXT.md (fastest way to get full project state)
 ```
-Read the file: C:\Users\Yashpreet_o7\Desktop\AURAOS\CONTEXT.md
+Read the file: C:\Users\Yashpreet_o7\Desktop\AetherFlow\CONTEXT.md
 ```
 This gives you the current build status, what's done, what's not done, and next action.
 
 ### 2. Read AGENTS.md
 ```
-Read the file: C:\Users\Yashpreet_o7\Desktop\AURAOS\AGENTS.md
+Read the file: C:\Users\Yashpreet_o7\Desktop\AetherFlow\AGENTS.md
 ```
 Full project context, file structure, rules, step-by-step instructions.
 
 ### 3. Read REMAINING_TASKS.md
 ```
-Read the file: C:\Users\Yashpreet_o7\Desktop\AURAOS\REMAINING_TASKS.md
+Read the file: C:\Users\Yashpreet_o7\Desktop\AetherFlow\REMAINING_TASKS.md
 ```
 Pick up the first unchecked task.
 
 ### 4. Run the build
 ```powershell
-cd C:\Users\Yashpreet_o7\Desktop\AURAOS
+cd C:\Users\Yashpreet_o7\Desktop\AetherFlow
 npm run build
 ```
 - ✅ If "built in Xms" → healthy, proceed
