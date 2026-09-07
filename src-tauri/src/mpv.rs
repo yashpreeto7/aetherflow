@@ -171,6 +171,8 @@ pub fn spawn_mpv_wallpaper(
         .arg("--no-osd-bar")
         .arg("--no-input-default-bindings")
         .arg("--input-cursor=no") // Prevent MPV from intercepting or grabbing desktop mouse cursor
+        .arg("--no-border")       // Ensure zero window frame or borders drawn by MPV
+        .arg("--background-color=#000000") // Black background
         .arg("--hwdec=auto")
         .arg("--idle=yes")
         .arg("--force-window=yes")

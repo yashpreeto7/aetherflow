@@ -452,20 +452,16 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             client_origin[0].x, client_origin[0].y
         ));
 
-        // Use measured insets if plausible (0..50px), otherwise fallback to 9px horizontal
-        let pad_left = if left_frame >= 0 && left_frame < 50 { left_frame } else { 9 };
-        let pad_top = if top_frame >= 0 && top_frame < 50 { top_frame } else { 0 };
-        let pad_right = if right_frame >= 0 && right_frame < 50 { right_frame } else { 9 };
-        let pad_bottom = if bottom_frame >= 0 && bottom_frame < 50 { bottom_frame } else { 10 - pad_top };
-
-        let adj_x = client_x - pad_left;
-        let adj_y = client_y - pad_top;
-        let adj_w = mon_w + pad_left + pad_right;
-        let adj_h = mon_h + pad_top + pad_bottom;
+        // Borderless WS_CHILD windows inside Progman/WorkerW have zero non-client insets.
+        // Size and position must match monitor dimensions exactly (1:1 pixel mapping)
+        // to prevent boundary spillover onto adjacent screens.
+        let adj_x = client_x;
+        let adj_y = client_y;
+        let adj_w = mon_w;
+        let adj_h = mon_h;
 
         log_msg(&format!(
-            "[AuraOS WP] Target client pos=({},{}) size={}x{} -> HWND pos=({},{}) size={}x{}",
-            client_x, client_y, mon_w, mon_h,
+            "[AuraOS WP] Exact pixel placement: pos=({},{}) size={}x{}",
             adj_x, adj_y, adj_w, adj_h
         ));
 
