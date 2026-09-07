@@ -1372,6 +1372,102 @@ fn trim_memory() {
 }
 
 #[tauri::command]
+fn get_detailed_memory_usage() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        use std::collections::HashSet;
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, GetCurrentProcessId, OpenProcess, PROCESS_QUERY_INFORMATION
+        };
+        use windows_sys::Win32::System::ProcessStatus::{K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS
+        };
+        use windows_sys::Win32::Foundation::CloseHandle;
+
+        unsafe {
+            let mut host_bytes = 0usize;
+            let mut webview_bytes = 0usize;
+            let mut mpv_bytes = 0usize;
+
+            // 1. Host process
+            let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+            pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+            if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut pmc, pmc.cb) != 0 {
+                host_bytes = pmc.WorkingSetSize;
+            }
+
+            // 2. Discover all descendant processes
+            let current_pid = GetCurrentProcessId();
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+                let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+                entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+
+                let mut proc_list: Vec<(u32, u32, String)> = Vec::new();
+                if Process32First(snapshot, &mut entry) != 0 {
+                    loop {
+                        let name_len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                        let name_str: String = entry.szExeFile[..name_len].iter().map(|&c| c as u8 as char).collect();
+                        proc_list.push((entry.th32ProcessID, entry.th32ParentProcessID, name_str.to_lowercase()));
+                        if Process32Next(snapshot, &mut entry) == 0 {
+                            break;
+                        }
+                    }
+                }
+                CloseHandle(snapshot);
+
+                let mut target_pids = HashSet::new();
+                let mut frontier = vec![current_pid];
+
+                while let Some(parent) = frontier.pop() {
+                    for &(pid, parent_id, _) in &proc_list {
+                        if parent_id == parent && target_pids.insert(pid) {
+                            frontier.push(pid);
+                        }
+                    }
+                }
+
+                for &(pid, _, ref name) in &proc_list {
+                    if target_pids.contains(&pid) {
+                        let child_h = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+                        if !child_h.is_null() {
+                            let mut c_pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+                            c_pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+                            if K32GetProcessMemoryInfo(child_h, &mut c_pmc, c_pmc.cb) != 0 {
+                                if name.contains("mpv") {
+                                    mpv_bytes += c_pmc.WorkingSetSize;
+                                } else {
+                                    webview_bytes += c_pmc.WorkingSetSize;
+                                }
+                            }
+                            CloseHandle(child_h);
+                        }
+                    }
+                }
+            }
+
+            let total_bytes = host_bytes + webview_bytes + mpv_bytes;
+            serde_json::json!({
+                "host_mb": (host_bytes as f64 / 1_048_576.0 * 10.0).round() / 10.0,
+                "webview_mb": (webview_bytes as f64 / 1_048_576.0 * 10.0).round() / 10.0,
+                "mpv_mb": (mpv_bytes as f64 / 1_048_576.0 * 10.0).round() / 10.0,
+                "total_mb": (total_bytes as f64 / 1_048_576.0 * 10.0).round() / 10.0,
+            })
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!({
+            "host_mb": 0.0,
+            "webview_mb": 0.0,
+            "mpv_mb": 0.0,
+            "total_mb": 0.0,
+        })
+    }
+}
+
+#[tauri::command]
 fn frontend_heartbeat(page: String, visibility: String, timestamp: f64, mounted: bool) -> serde_json::Value {
     let msg = format!("[FRONTEND HEARTBEAT] page={}, visibility={}, mounted={}, ts={:.0}", page, visibility, mounted, timestamp);
     static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
@@ -1483,6 +1579,29 @@ fn get_diagnostics(app: AppHandle) -> serde_json::Value {
 fn main() {
     #[cfg(windows)]
     {
+        // 1. Link all child processes (WebView2, MPV) into a Windows Job Object so they form a single managed unit
+        unsafe {
+            use windows_sys::Win32::System::JobObjects::{
+                CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject,
+                JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            };
+            use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if !job.is_null() {
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                AssignProcessToJobObject(job, GetCurrentProcess());
+            }
+        }
+
         // Disable non-essential background Chromium telemetry/sync services
         // DO NOT use --process-per-site or --renderer-process-limit which share renderers between main UI and wallpapers!
         // DO NOT choke the V8 heap with --max-old-space-size=64!
@@ -1573,6 +1692,7 @@ fn main() {
             get_diagnostics,
             save_custom_wallpapers,
             load_custom_wallpapers,
+            get_detailed_memory_usage,
         ])
         .setup(|app| {
             // Show the main window

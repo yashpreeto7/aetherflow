@@ -1,6 +1,6 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore.js'
-import { Monitor, Zap, Battery, Mic, Power, Layers } from 'lucide-react'
+import { Monitor, Zap, Battery, Mic, Power, Layers, Activity, RefreshCw } from 'lucide-react'
 
 function SliderRow({ label, value, set, min, max, step, fmt }) {
   return (
@@ -32,6 +32,35 @@ function ToggleRow({ label, desc, value, toggle }) {
 }
 
 export default function SettingsPage() {
+  const [memData, setMemData] = useState(null)
+  const [trimming, setTrimming] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    let timer
+    async function fetchMem() {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const res = await invoke('get_detailed_memory_usage')
+        if (active && res) setMemData(res)
+      } catch {}
+    }
+    fetchMem()
+    timer = setInterval(fetchMem, 2000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+
+  async function handleTrim() {
+    setTrimming(true)
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('trim_memory')
+      const res = await invoke('get_detailed_memory_usage')
+      if (res) setMemData(res)
+    } catch {}
+    setTimeout(() => setTrimming(false), 500)
+  }
+
   const fps = useStore(s => s.fps)
   const setFps = useStore(s => s.setFps)
   const autoStart = useStore(s => s.autoStart)
@@ -60,6 +89,51 @@ export default function SettingsPage() {
   const setSidebarOpacity = useStore(s => s.setSidebarOpacity)
 
   const sections = [
+    {
+      icon: Activity, title: 'Resource & Memory Monitor',
+      content: (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
+              <div className="text-xs text-muted">Total Suite RAM</div>
+              <div className="text-xl font-bold font-mono" style={{ color: 'var(--color-brand)', marginTop: 4 }}>
+                {memData ? `${memData.total_mb} MB` : 'Loading…'}
+              </div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
+              <div className="text-xs text-muted">App Shell</div>
+              <div className="text-base font-semibold font-mono" style={{ marginTop: 4 }}>
+                {memData ? `${memData.host_mb} MB` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
+              <div className="text-xs text-muted">UI & Graphics</div>
+              <div className="text-base font-semibold font-mono" style={{ marginTop: 4 }}>
+                {memData ? `${memData.webview_mb} MB` : '—'}
+              </div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--bg-card)', border: '1px solid var(--border-main)' }}>
+              <div className="text-xs text-muted">Video Engine (MPV)</div>
+              <div className="text-base font-semibold font-mono" style={{ marginTop: 4 }}>
+                {memData ? `${memData.mpv_mb} MB` : '—'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+            <span className="text-xs text-muted">All child processes (Host, WebView2, and MPV) are managed under a Windows Job Object.</span>
+            <button
+              className="btn btn-ghost"
+              onClick={handleTrim}
+              disabled={trimming}
+              style={{ fontSize: 11, padding: '5px 12px', height: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={12} className={trimming ? 'animate-spin' : ''} />
+              {trimming ? 'Compacting…' : 'Trim Working Set'}
+            </button>
+          </div>
+        </div>
+      ),
+    },
     {
       icon: Monitor, title: 'Performance',
       content: (

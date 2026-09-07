@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Zap, Palette, Cpu, Mic, Settings, ChevronLeft, Square } from 'lucide-react'
+import { Zap, Palette, Cpu, Mic, Settings, ChevronLeft, Square, Activity } from 'lucide-react'
 import { useStore } from '../../store/useStore.js'
 import { stopDesktopWallpaper } from '../../lib/wallpaperActions.js'
 import { useNavigate } from 'react-router-dom'
@@ -13,6 +13,36 @@ export default function StatusBar() {
   const toggleSidebar      = useStore(s => s.toggleSidebar)
   const navigate           = useNavigate()
   const [stopping, setStopping] = useState(false)
+  const [memUsage, setMemUsage] = useState(null)
+  const [trimming, setTrimming] = useState(false)
+
+  // Live memory polling (every 2.5s)
+  useEffect(() => {
+    let active = true
+    let timer
+    async function fetchMem() {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const data = await invoke('get_detailed_memory_usage')
+        if (active && data) setMemUsage(data)
+      } catch {}
+    }
+    fetchMem()
+    timer = setInterval(fetchMem, 2500)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+
+  async function handleTrim(e) {
+    e.stopPropagation()
+    setTrimming(true)
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('trim_memory')
+      const data = await invoke('get_detailed_memory_usage')
+      if (data) setMemUsage(data)
+    } catch {}
+    setTimeout(() => setTrimming(false), 500)
+  }
 
   // Live FPS counter
   const [fps, setFps] = useState(0)
@@ -133,6 +163,28 @@ export default function StatusBar() {
           <Cpu size={11} />
           <span className="font-mono">{fps} fps</span>
         </div>
+
+        {memUsage && (
+          <div
+            className="flex items-center gap-1.5"
+            onClick={handleTrim}
+            title={`AetherFlow Total Suite Memory: ${memUsage.total_mb} MB\n• Main App: ${memUsage.host_mb} MB\n• UI & Graphics (WebView2): ${memUsage.webview_mb} MB\n• Video Player (MPV): ${memUsage.mpv_mb} MB\n\nClick to Trim / Compact Memory`}
+            style={{
+              cursor: 'pointer',
+              padding: '2px 8px',
+              borderRadius: 6,
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--border-main)',
+              fontSize: 10,
+              fontWeight: 600,
+              color: memUsage.total_mb > 350 ? 'var(--color-amber)' : 'var(--text-main)',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <Activity size={10} style={{ color: 'var(--color-brand)' }} />
+            <span className="font-mono">{trimming ? 'Trimming…' : `${memUsage.total_mb} MB`}</span>
+          </div>
+        )}
 
         <button className="btn-icon" onClick={() => navigate('/settings')} style={{ padding: 4 }}>
           <Settings size={13} />
