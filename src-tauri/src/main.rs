@@ -20,8 +20,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_EX_LAYERED, SetLayeredWindowAttributes, LWA_ALPHA,
     GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     GetWindowRect, GetClientRect,
-    SW_HIDE, SW_SHOWNOACTIVATE, WNDCLASSW, RegisterClassW, CreateWindowExW,
-    WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
+    SW_HIDE,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -80,105 +79,6 @@ pub fn is_main_hwnd(hwnd: HWND) -> bool {
     }
 }
 
-#[cfg(windows)]
-unsafe extern "system" fn wallpaper_wnd_proc(hwnd: HWND, msg: u32, wparam: windows_sys::Win32::Foundation::WPARAM, lparam: LPARAM) -> windows_sys::Win32::Foundation::LRESULT {
-    const WM_NCHITTEST: u32 = 0x0084;
-    const HTTRANSPARENT: isize = -1;
-    const WM_MOUSEACTIVATE: u32 = 0x0021;
-    const MA_NOACTIVATE: isize = 3;
-    const WM_SETFOCUS: u32 = 0x0007;
-
-    match msg {
-        WM_NCHITTEST => HTTRANSPARENT,
-        WM_MOUSEACTIVATE => MA_NOACTIVATE,
-        WM_SETFOCUS => 0,
-        _ => windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-#[cfg(windows)]
-fn get_or_create_native_wallpaper_window(name: &str, mon_x: i32, mon_y: i32, mon_w: i32, mon_h: i32) -> Result<HWND, String> {
-    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, TranslateMessage, DispatchMessageW, MSG};
-
-    let label = get_monitor_label(name);
-
-    if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
-        let map = guard.get_or_insert_with(HashMap::new);
-        if let Some(&existing_h) = map.get(&label) {
-            let hwnd = existing_h as HWND;
-            if unsafe { IsWindow(hwnd) } != 0 {
-                log_msg(&format!("[DIAG 2] Reusing existing native MPV host window for {}: 0x{:X}", label, existing_h));
-                return Ok(hwnd);
-            }
-        }
-
-        let name_owned = name.to_string();
-        let label_owned = label.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        std::thread::Builder::new()
-            .name(format!("aetherflow_host_{}", label))
-            .spawn(move || {
-                unsafe {
-                    let class_name: Vec<u16> = "AetherFlow_MpvHost\0".encode_utf16().collect();
-                    let hinstance = GetModuleHandleW(std::ptr::null());
-
-                    let mut wc: WNDCLASSW = std::mem::zeroed();
-                    wc.lpfnWndProc = Some(wallpaper_wnd_proc);
-                    wc.hInstance = hinstance as _;
-                    wc.lpszClassName = class_name.as_ptr();
-                    wc.hbrBackground = windows_sys::Win32::Graphics::Gdi::GetStockObject(windows_sys::Win32::Graphics::Gdi::BLACK_BRUSH as _) as _;
-                    
-                    RegisterClassW(&wc);
-
-                    let title: Vec<u16> = format!("AetherFlow MPV Host - {}\0", name_owned).encode_utf16().collect();
-                    // WS_EX_TRANSPARENT + WS_EX_NOACTIVATE ensure clicks pass straight to desktop icons
-                    let hwnd = CreateWindowExW(
-                        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-                        class_name.as_ptr(),
-                        title.as_ptr(),
-                        WS_POPUP,
-                        mon_x, mon_y, mon_w, mon_h,
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        hinstance as _,
-                        std::ptr::null(),
-                    );
-
-                    if hwnd.is_null() {
-                        let err = format!("CreateWindowExW failed for monitor {}", name_owned);
-                        log_msg(&err);
-                        let _ = tx.send(Err(err));
-                        return;
-                    }
-
-                    log_msg(&format!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}, bounds=({},{}) {}x{}", 
-                        label_owned, hwnd as usize, mon_x, mon_y, mon_w, mon_h));
-                    println!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}", label_owned, hwnd as usize);
-
-                    // Pin to WorkerW layer immediately on owning thread
-                    pin_hwnd_as_wallpaper(hwnd);
-
-                    let _ = tx.send(Ok(hwnd as usize));
-
-                    // Pump messages so MPV child and Windows DWM never block
-                    let mut msg: MSG = std::mem::zeroed();
-                    while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                }
-            })
-            .map_err(|e| format!("Failed to spawn wallpaper host thread: {}", e))?;
-
-        let hwnd_val = rx.recv().map_err(|e| format!("Channel receive failed: {}", e))??;
-        map.insert(label, hwnd_val);
-        Ok(hwnd_val as HWND)
-    } else {
-        Err("Failed to lock NATIVE_WALLPAPER_WINDOWS mutex".to_string())
-    }
-}
 
 // ─── PROGMAN / WorkerW trick ─────────────────────────────────────────────────
 
@@ -828,7 +728,25 @@ async fn apply_wallpaper(
     let video_path_opt = config.get("videoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
     let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt.as_deref());
 
+    ensure_wallpaper_windows(&app);
+
     let monitors = app.available_monitors().unwrap_or_default();
+
+    // Clean up any legacy separate native host windows to avoid overlapping layers
+    #[cfg(windows)]
+    if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+        if let Some(ref mut map) = *guard {
+            for (_, raw_h) in map.drain() {
+                unsafe {
+                    let hwnd = raw_h as HWND;
+                    if IsWindow(hwnd) != 0 {
+                        ShowWindow(hwnd, SW_HIDE);
+                        DestroyWindow(hwnd);
+                    }
+                }
+            }
+        }
+    }
 
     if is_video {
         let vpath = match video_path_opt {
@@ -868,75 +786,50 @@ async fn apply_wallpaper(
                 };
                 let screen_volume = if screen_muted { 0.0 } else { global_volume };
 
-                // 1. Hide the canvas WebviewWindow for this monitor to release decoding & GPU
+                // Route MPV directly to the properly pinned, borderless wallpaper WebviewWindow
                 if let Some(win) = app.get_webview_window(&label) {
+                    let _ = win.show();
                     let _ = win.emit_to(label.as_str(), "aura:stop", serde_json::json!({ "target": label.clone() }));
-                    let _ = win.hide();
-                }
+                    let _ = win.set_ignore_cursor_events(true);
 
-                // 2. Obtain dedicated native Win32 window (pure HWND, zero WebView2)
-                let pos = mon.position();
-                let size = mon.size();
-                #[cfg(windows)]
-                {
-                    match get_or_create_native_wallpaper_window(name, pos.x, pos.y, size.width as i32, size.height as i32) {
-                        Ok(native_h) => {
-                            let native_usize = native_h as usize;
-                            if is_main_hwnd(native_h) {
-                                let err = format!("[DIAG 10 CRITICAL ABORT] get_or_create_native_wallpaper_window returned MAIN_HWND: 0x{:X}", native_usize);
-                                log_msg(&err);
-                                eprintln!("{}", err);
-                                continue;
-                            }
+                    #[cfg(windows)]
+                    if let Ok(hwnd) = win.hwnd() {
+                        let raw_hwnd = hwnd.0 as HWND;
+                        let raw_usize = raw_hwnd as usize;
 
-                            let parent_before = unsafe { GetParent(native_h) as usize };
-                            log_msg(&format!("[DIAG 2 & 4] Native host HWND for {}: 0x{:X}, Parent before apply: 0x{:X}", label, native_usize, parent_before));
-
-                            // Terminate existing MPV on this monitor
-                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                                if let Some(ref mut map) = *mpv_guard {
-                                    if let Some(mut existing) = map.remove(&label) {
-                                        existing.terminate();
-                                    }
+                        // Terminate existing MPV on this monitor
+                        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                            if let Some(ref mut map) = *mpv_guard {
+                                if let Some(mut existing) = map.remove(&label) {
+                                    existing.terminate();
                                 }
                             }
+                        }
 
-                            // Show native host window without activating or stealing focus
-                            unsafe {
-                                ShowWindow(native_h, SW_SHOWNOACTIVATE);
-                            }
+                        // Spawn MPV in background task so main UI thread NEVER blocks
+                        let label_clone = label.clone();
+                        let vpath_clone = vpath.clone();
 
-                            // Spawn MPV in background task so main UI thread NEVER blocks
-                            let label_clone = label.clone();
-                            let vpath_clone = vpath.clone();
-                            let native_h_val = native_h as usize;
-
-                            tauri::async_runtime::spawn_blocking(move || {
-                                let native_hwnd = native_h_val as HWND;
-                                match mpv::spawn_mpv_wallpaper(&vpath_clone, native_hwnd, &label_clone, Some(screen_volume), Some(screen_muted)) {
-                                    Ok(proc) => {
-                                        let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (Host HWND=0x{:X}, vol={}, muted={})", 
-                                            label_clone, native_h_val, screen_volume, screen_muted);
-                                        log_msg(&msg);
-                                        println!("{}", msg);
-                                        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                                            let map = mpv_guard.get_or_insert_with(HashMap::new);
-                                            map.insert(label_clone, proc);
-                                        }
-                                    }
-                                    Err(err) => {
-                                        let err_msg = format!("[MPV ERROR] Failed to spawn MPV on {}: {}", label_clone, err);
-                                        log_msg(&err_msg);
-                                        eprintln!("{}", err_msg);
+                        tauri::async_runtime::spawn_blocking(move || {
+                            let target_hwnd = raw_usize as HWND;
+                            match mpv::spawn_mpv_wallpaper(&vpath_clone, target_hwnd, &label_clone, Some(screen_volume), Some(screen_muted)) {
+                                Ok(proc) => {
+                                    let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (Host HWND=0x{:X}, vol={}, muted={})", 
+                                        label_clone, raw_usize, screen_volume, screen_muted);
+                                    log_msg(&msg);
+                                    println!("{}", msg);
+                                    if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                        let map = mpv_guard.get_or_insert_with(HashMap::new);
+                                        map.insert(label_clone, proc);
                                     }
                                 }
-                            });
-                        }
-                        Err(e) => {
-                            let err_msg = format!("[NATIVE HOST ERROR] Could not get native host for {}: {}", label, e);
-                            log_msg(&err_msg);
-                            eprintln!("{}", err_msg);
-                        }
+                                Err(err) => {
+                                    let err_msg = format!("[MPV ERROR] Failed to spawn MPV on {}: {}", label_clone, err);
+                                    log_msg(&err_msg);
+                                    eprintln!("{}", err_msg);
+                                }
+                            }
+                        });
                     }
                 }
             }

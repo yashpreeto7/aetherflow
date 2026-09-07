@@ -248,3 +248,14 @@
     - Built clean production standalone release with `npm run tauri:build` and copied binary to `.\AetherFlow.exe`.
 - **Build status:** ✅ `npm run build` (444ms) and `npm run tauri:build` passing with 0 errors. Verified running cleanly on `WinSta0\Default`.
 ---
+
+## Session: 2026-09-08 04:15 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and resolved the issue of the original desktop wallpaper leaking through as a white vertical line on the left side of the second monitor:
+    - **Root Cause**: An earlier attempt to create a dedicated Win32 window (`AetherFlow_MpvHost`) for MPV on a separate thread spawned a second window per monitor. This second window lacked the DWM frame compensation and started at physical coordinate `x = 1920`. Meanwhile, Monitor 1's transparent `WebviewWindow` (with DWM frame padding) extended 9 pixels over onto Monitor 2 (`x = 1920..1929`). Because this 9-pixel strip was in front and transparent, Progman's underlying background (the original Windows desktop wallpaper) showed through as a vertical white line.
+    - **Implemented Fix**: Restored direct `--wid` embedding into the dedicated, pre-aligned wallpaper `WebviewWindow` (`win.hwnd()`), exactly as in the original MPV integration. Removed the duplicate `AetherFlow_MpvHost` thread/window creation and cleaned up legacy windows.
+  - Rebuilt production standalone release (`npm run tauri:build`), updated `AetherFlow.exe`, and restarted the application on `WinSta0\Default`.
+  - Pushed all commits to GitHub branch `dev`.
+- **Build status:** ✅ `npm run build` (419ms) and `npm run tauri:build` passing with 0 errors. Verified running on `WinSta0\Default`.
+---
