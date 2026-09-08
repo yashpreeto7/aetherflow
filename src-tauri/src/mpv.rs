@@ -106,6 +106,10 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
             let candidates = [
+                exe_dir.join("resources").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
+                exe_dir.join("resources").join("bin").join("mpv").join("mpv.exe"),
+                exe_dir.join("resources").join("bin").join("AetherFlow-VideoEngine.exe"),
+                exe_dir.join("resources").join("bin").join("mpv.exe"),
                 exe_dir.join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("src-tauri").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
                 exe_dir.join("bin").join("mpv").join("mpv.exe"),
@@ -140,18 +144,31 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
         }
     }
 
-    // 3. Fall back to system PATH if installed globally
-    for name in &["AetherFlow-VideoEngine.exe", "mpv.exe"] {
-        #[cfg(windows)]
-        if let Ok(output) = std::process::Command::new("where.exe").arg(name).output() {
-            if output.status.success() {
-                if let Ok(text) = String::from_utf8(output.stdout) {
-                    if let Some(first_line) = text.lines().next() {
-                        let p = PathBuf::from(first_line.trim());
-                        if p.exists() {
-                            return Ok(p);
-                        }
-                    }
+    // 3. Try LocalAppData locations
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let lad = PathBuf::from(local_app_data);
+        let appdata_paths = [
+            lad.join("AetherFlow").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
+            lad.join("AetherFlow").join("bin").join("mpv").join("mpv.exe"),
+            lad.join("Programs").join("AetherFlow").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
+            lad.join("Programs").join("AetherFlow").join("bin").join("mpv").join("mpv.exe"),
+            lad.join("Programs").join("AetherFlow").join("resources").join("bin").join("mpv").join("AetherFlow-VideoEngine.exe"),
+            lad.join("Programs").join("AetherFlow").join("resources").join("bin").join("mpv").join("mpv.exe"),
+        ];
+        for p in &appdata_paths {
+            if p.exists() {
+                return Ok(p.canonicalize().unwrap_or_else(|_| p.clone()));
+            }
+        }
+    }
+
+    // 4. Fall back to system PATH if installed globally (pure Rust, NO console popups)
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            for name in &["AetherFlow-VideoEngine.exe", "mpv.exe"] {
+                let candidate = dir.join(name);
+                if candidate.exists() {
+                    return Ok(candidate);
                 }
             }
         }

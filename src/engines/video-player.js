@@ -23,10 +23,31 @@ export default function createVideoPlayer(canvas, options) {
         } catch (e) {}
 
         // Use Tauri asset protocol if it's an absolute local path
-        videoEl.src = path.startsWith('http') || path.startsWith('data:') 
-          ? path 
-          : convertFileSrc(path);
+        const normalized = path.replace(/\\/g, '/');
+        videoEl.src = (normalized.startsWith('http') || normalized.startsWith('data:') || normalized.startsWith('blob:')) 
+          ? normalized 
+          : convertFileSrc(normalized);
           
+        videoEl.onerror = async (err) => {
+          console.warn('[AuraOS] convertFileSrc video load failed, attempting fs blob fallback:', path, err);
+          try {
+            const { readFile } = await import('@tauri-apps/plugin-fs');
+            const bytes = await readFile(path);
+            const mime = path.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4';
+            const blob = new Blob([bytes], { type: mime });
+            const blobUrl = URL.createObjectURL(blob);
+            if (videoEl) {
+              videoEl.src = blobUrl;
+              videoEl.load();
+              if (isRunning) {
+                videoEl.play().catch(e => console.error("AuraOS: Auto-play blocked on fallback", e));
+              }
+            }
+          } catch (fsErr) {
+            console.error('[AuraOS] All video load strategies failed for:', path, fsErr);
+          }
+        };
+
         videoEl.load();
         if (isRunning) {
           videoEl.play().catch(e => console.error("AuraOS: Auto-play blocked", e));
@@ -66,7 +87,7 @@ export default function createVideoPlayer(canvas, options) {
     videoEl.style.width = '100%';
     videoEl.style.height = '100%';
     videoEl.style.objectFit = 'cover';
-    videoEl.style.zIndex = options.preview ? '1' : '-2';
+    videoEl.style.zIndex = '1';
     
     container.insertBefore(videoEl, canvas);
     

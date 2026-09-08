@@ -17,7 +17,7 @@ try {
 async function persistCustomWallpapersToDisk(installed) {
   try {
     const { invoke } = await import('@tauri-apps/api/core')
-    const customs = (installed || []).filter(i => i.isCustom || i.engine === 'video-player')
+    const customs = (installed || []).filter(i => i.isCustom || i.engine === 'video-player' || i.engine === 'image-player')
     await invoke('save_custom_wallpapers', { wallpapers: customs })
   } catch {
     // ignore

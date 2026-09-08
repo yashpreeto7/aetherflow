@@ -58,17 +58,30 @@ export function createImagePlayer(canvas, options = {}) {
     currentPath = path
     isLoaded = false
 
-    const src = (path.startsWith('http') || path.startsWith('data:'))
-      ? path
-      : convertFileSrc(path)
+    const normalized = path.replace(/\\/g, '/')
+    const src = (normalized.startsWith('http') || normalized.startsWith('data:') || normalized.startsWith('blob:'))
+      ? normalized
+      : convertFileSrc(normalized)
 
     img = new Image()
     img.onload = () => {
       isLoaded = true
       render()
     }
-    img.onerror = (err) => {
-      console.error('[AetherFlow] Failed to load image wallpaper:', path, err)
+    img.onerror = async (err) => {
+      console.warn('[AetherFlow] convertFileSrc image load failed, attempting fs fallback:', path, err)
+      try {
+        const { readFile } = await import('@tauri-apps/plugin-fs')
+        const bytes = await readFile(path)
+        const mime = path.endsWith('.png') ? 'image/png' : path.endsWith('.webp') ? 'image/webp' : 'image/jpeg'
+        const blob = new Blob([bytes], { type: mime })
+        const blobUrl = URL.createObjectURL(blob)
+        if (img) {
+          img.src = blobUrl
+        }
+      } catch (fsErr) {
+        console.error('[AetherFlow] All image load strategies failed for:', path, fsErr)
+      }
     }
     img.src = src
   }

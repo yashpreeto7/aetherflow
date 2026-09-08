@@ -9,6 +9,8 @@
     "core:window:default",
     "dialog:default",
     "fs:default",
+    "fs:read-all",
+    "core:image:default",
     "autostart:default"
   ]
 }

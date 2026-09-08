@@ -69,14 +69,20 @@ function WallpaperCanvas() {
       return
     }
 
-    const descriptor = ENGINES[engineId]
+    let resolvedEngineId = engineId
+    if (!ENGINES[resolvedEngineId]) {
+      if (config?.videoPath) resolvedEngineId = 'video-player'
+      else if (config?.imagePath) resolvedEngineId = 'image-player'
+    }
+
+    const descriptor = ENGINES[resolvedEngineId]
     if (!descriptor) {
       console.error('[AuraOS Wallpaper] Unknown engine:', engineId)
       return
     }
 
-    activeIdRef.current = engineId
-    setActiveId(engineId)
+    activeIdRef.current = resolvedEngineId
+    setActiveId(resolvedEngineId)
 
     try {
       const factory = await descriptor.load()

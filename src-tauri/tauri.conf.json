@@ -15,7 +15,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": ["**", "*:\\**", "*/**", "\\\\?\\**"]
       }
     }
   },
@@ -39,6 +39,9 @@
         "displayLanguageSelector": false
       }
     },
-    "resources": []
+    "resources": [
+      "bin/mpv/mpv.exe",
+      "bin/mpv/AetherFlow-VideoEngine.exe"
+    ]
   }
 }

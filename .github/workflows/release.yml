@@ -31,6 +31,16 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Download & Setup MPV Video Engine
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "src-tauri\bin\mpv" -Force
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/zhongfly/mpv-winbuild/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -like "mpv-x86_64-*.7z" -and $_.name -notlike "*v3*" } | Select-Object -First 1
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "mpv.7z"
+          7z e mpv.7z -o"src-tauri\bin\mpv" mpv.exe -r -y
+          Copy-Item -Path "src-tauri\bin\mpv\mpv.exe" -Destination "src-tauri\bin\mpv\AetherFlow-VideoEngine.exe" -Force
+
       - name: Build frontend bundle
         run: npm run build
 
@@ -50,6 +60,11 @@ jobs:
           if ($nsis) {
             Copy-Item -Path $nsis.FullName -Destination "release-artifacts\AetherFlow-Setup.exe" -Force
           }
+          # Package portable bundle with MPV
+          New-Item -ItemType Directory -Path "portable-staging\bin\mpv" -Force
+          Copy-Item -Path "src-tauri\target\release\aetherflow.exe" -Destination "portable-staging\AetherFlow.exe" -Force
+          Copy-Item -Path "src-tauri\bin\mpv\*" -Destination "portable-staging\bin\mpv\" -Recurse -Force
+          Compress-Archive -Path "portable-staging\*" -DestinationPath "release-artifacts\AetherFlow-v1.0.0-Portable.zip" -Force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

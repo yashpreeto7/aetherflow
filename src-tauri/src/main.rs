@@ -942,11 +942,21 @@ async fn apply_wallpaper(
 ) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
 
+    let resolved_engine_id = if engine_id == "video-player" || engine_id == "image-player" {
+        engine_id.clone()
+    } else if config.get("videoPath").and_then(|v| v.as_str()).is_some() {
+        "video-player".to_string()
+    } else if config.get("imagePath").and_then(|v| v.as_str()).is_some() {
+        "image-player".to_string()
+    } else {
+        engine_id.clone()
+    };
+
     // Record desired state per monitor for immediate recovery upon window mount
     if let Ok(mut guard) = ACTIVE_WALLPAPERS.lock() {
         let map = guard.get_or_insert_with(HashMap::new);
         map.insert(target.clone(), ActiveWallpaperState {
-            engine_id: engine_id.clone(),
+            engine_id: resolved_engine_id.clone(),
             config: config.clone(),
             opacity,
             brightness,
@@ -967,8 +977,8 @@ async fn apply_wallpaper(
     }
 
     let video_path_opt = config.get("videoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let is_mpv_ready = mpv::find_mpv_binary().is_ok();
-    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt.as_deref()) && is_mpv_ready;
+    let wants_video = mpv::is_video_wallpaper(&resolved_engine_id, video_path_opt.as_deref());
+    let is_video = wants_video && mpv::find_mpv_binary().is_ok();
 
     let monitors = app.available_monitors().unwrap_or_default();
 
@@ -1116,7 +1126,7 @@ async fn apply_wallpaper(
                 }
 
                 let payload = serde_json::json!({
-                    "engineId": engine_id.clone(),
+                    "engineId": resolved_engine_id.clone(),
                     "config": config.clone(),
                     "target": target.clone(),
                 });

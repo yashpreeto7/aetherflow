@@ -30,8 +30,13 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
   const brightness = options.brightness ?? state.wallpaperBrightness ?? 0.85
 
   try {
+    const resolvedEngine = wallpaper.engine
+      || (wallpaper.config?.videoPath ? 'video-player' : null)
+      || (wallpaper.config?.imagePath ? 'image-player' : null)
+      || wallpaper.id
+
     await tauriInvoke('apply_wallpaper', {
-      engineId: wallpaper.engine || wallpaper.id,
+      engineId: resolvedEngine,
       config: {
         ...(wallpaper.config || {}),
         speedMultiplier: speed,
