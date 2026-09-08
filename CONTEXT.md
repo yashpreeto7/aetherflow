@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 18:55 IST — Fixed real-time audio volume/mute sync (direct MPV named pipe IPC & canvas/video option sync), system monitor for battery & fullscreen auto-pause, and native Windows registry autostart (`HKCU\...\Run` with `--autostart --minimized` silent tray launch). Working strictly on dedicated branch `fix/audio-power-fullscreen-startup`.
+2026-09-08 19:22 IST — Official v1.0.0 Release published! Merged to `main`, tagged `v1.0.0`, pushed to GitHub repo (https://github.com/yashpreeto7/aetherflow). Standalone executable (`release/AetherFlow.exe`), installer, portable zip, comprehensive README with 6 screenshots, and automated GitHub Actions workflow all deployed.
 
 ---
 
