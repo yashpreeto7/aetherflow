@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 18:20 IST — Committed built-in border scaling fix (ac56812); added full support for normal background pictures (.png, .jpg, .jpeg, .webp, .bmp) with Canvas 2D image-player engine, aspect-ratio scaling (cover/contain/stretch), Win32 set_system_wallpaper integration, and media import dialogs.
+2026-09-08 18:33 IST — Fixed multi-monitor border bleed during video to canvas/image transitions: re-asserted pin_hwnd_as_wallpaper and monitor region clipping upon unhiding WebView2 wallpaper hosts; rebuilt release executable.
 
 ---
 
@@ -155,5 +155,6 @@ npm run tauri:dev
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed missing custom wallpapers (disk persistence & auto-recovery), app/tray freeze on apply (dedicated message pump thread + transparent hit testing), and multi-monitor audio desync |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Resolved "localhost refused to connect" error: enabled default custom-protocol in Cargo.toml, embedded all web assets, and rebuilt standalone AetherFlow.exe |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor custom video wallpaper pinning across screens and eliminated white boundary line artifact between displays |
+| 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor border bleed on transition from video to canvas/image: re-asserted pin_hwnd_as_wallpaper with monitor clipping after unhiding WebView2 window |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

@@ -196,4 +196,15 @@
   - **Build status:** ✅ `npm run build` (637ms), `cargo check` passing with 0 errors.
 ---
 
+## Session: 2026-09-08 18:35 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved multi-monitor border bleed during video to canvas/image wallpaper transitions:
+    - **Root Cause**: When switching from a video wallpaper to a canvas or image wallpaper, Tauri unhides the WebView2 window (`win.show()`). Windows DWM resets or destroys a window's clipping region (`HRGN`) when a window is unhidden or when sibling windows are destroyed in the desktop Z-order. Because `apply_wallpaper` previously only called `win.show()` without re-asserting `pin_hwnd_as_wallpaper` or `SetWindowRgn`, the primary display's WebView2 window had unclipped 9px DWM non-client margins extending onto the adjacent secondary display (`DISPLAY6` at `x=1920`), visible as a vertical line until a second apply.
+    - **Fix (`src-tauri/src/main.rs`)**: Inside `apply_wallpaper` (`else` branch for canvas & image wallpapers), immediately after calling `win.show()`, matched the window label to its corresponding monitor in `monitors` to get `(mon_x, mon_y, mon_w, mon_h)`. Extracted the raw Win32 HWND (`win.hwnd()`) and re-called `pin_hwnd_as_wallpaper(hwnd, mon_bounds)`. This immediately recalculates frame insets, sets the window position, and reapplies `SetWindowRgn` with the exact monitor boundary clipping.
+    - Recompiled production release binary (`cargo build --release`), generating updated 7.3MB standalone executable at `src-tauri/target/release/aetherflow.exe` and refreshed root `AetherFlow.exe`.
+- **Build status:** ✅ `npm run build` (465ms), `cargo check` passing with 0 errors, `cargo build --release` (2m 04s) clean, `AetherFlow.exe` updated.
+---
+
+
 

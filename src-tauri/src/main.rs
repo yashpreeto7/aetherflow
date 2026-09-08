@@ -915,6 +915,26 @@ async fn apply_wallpaper(
                 let _ = win.set_ignore_cursor_events(true);
                 let _ = win.show();
 
+                #[cfg(windows)]
+                if let Ok(raw_hwnd) = win.hwnd() {
+                    let hwnd = raw_hwnd.0 as HWND;
+                    let mon_bounds = monitors.iter().find_map(|m| {
+                        if let Some(name) = m.name() {
+                            if get_monitor_label(name) == label {
+                                let pos = m.position();
+                                let size = m.size();
+                                return Some((pos.x, pos.y, size.width as i32, size.height as i32));
+                            }
+                        }
+                        None
+                    });
+                    log_msg(&format!(
+                        "[AuraOS WP] Re-pinning and clipping wallpaper window {} (HWND=0x{:X}) after unhide: {:?}",
+                        label, hwnd as usize, mon_bounds
+                    ));
+                    pin_hwnd_as_wallpaper(hwnd, mon_bounds);
+                }
+
                 let payload = serde_json::json!({
                     "engineId": engine_id.clone(),
                     "config": config.clone(),
