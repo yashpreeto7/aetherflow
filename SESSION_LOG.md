@@ -168,5 +168,14 @@
     - **Fix 2**: Stripped artificial padding and `SetWindowRgn` from `pin_hwnd_as_wallpaper`. Child windows are now placed strictly 1:1 against monitor boundaries (`adj_x = client_x, adj_y = client_y, adj_w = mon_w, adj_h = mon_h`). Zero pixels overlap between screens.
     - **Fix 3**: In `src-tauri/src/mpv.rs`, formatted geometry correctly (`--geometry={:+}{:+}`) and added `--background-color=#000000`. In `src/App.jsx`, enhanced startup restoration to re-apply per-screen wallpapers to each monitor when in `per-screen` mode.
     - Recompiled production standalone binary with `cargo build --release --bin aetherflow` and updated `AetherFlow.exe` in the project root (7.3MB).
-- **Build status:** ✅ `npm run build` (783ms), `cargo check` (0 errors), and `AetherFlow.exe` updated.
+## Session: 2026-09-08 18:05 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved "border issue being recreated (border on all sides) for built-in wallpapers / wallpaper does not scale to windows":
+    - **Root Cause**: In commit `573f81e`, frame inset compensation and region clipping were removed from `pin_hwnd_as_wallpaper` in favor of hardcoded 1:1 mapping (`adj_x = client_x`, `adj_w = mon_w`). While native MPV video windows have 0px non-client frame (`--no-border`), Tauri's WebView2 host windows have standard Windows non-client margins (9px left, 9px right, 1px top, 9px bottom). Setting the outer window rect to exact monitor dimensions (1920x1080) caused Windows to shrink the client area to `1902x1070` starting at `(9, 1)`. Because the canvas renders inside the client area, a 9px border appeared around the wallpaper on all sides.
+    - **Fix 1 (`src-tauri/src/main.rs`)**: Dynamically measure the HWND's frame insets (`left_frame = client_origin.x - pre_wr.left`, etc.). When insets exist (Tauri WebView window), expand outer window coordinates (`adj_x = client_x - pad_left`, `adj_w = mon_w + pad_left + pad_right`, etc.) so the client area matches the monitor dimensions 1:1 (`1920x1080` at `(0, 0)`). Then apply `SetWindowRgn` strictly to `(pad_left, pad_top, pad_left + mon_w, pad_top + mon_h)` so the outer non-client frame is clipped and never overlaps adjacent screens. For zero-border windows like MPV, `pad_left = 0`, preserving 1:1 unclipped placement.
+    - **Fix 2 (`src/engines/*.js`)**: Updated `resize()` in all 7 built-in wallpaper engines (`matrix-rain.js`, `cyber-particles.js`, `synthwave-grid.js`, `deep-space.js`, `aurora.js`, `tokyo-rain.js`, `audio-spectrum.js`) to evaluate `canvas.width = canvas.offsetWidth || window.innerWidth` and `canvas.height = canvas.offsetHeight || window.innerHeight` so the canvas reliably scales to the window even if queried before initial DOM layout.
+    - Recompiled production release binary (`npm run tauri:build`), generating updated 7.3MB standalone executable at `AetherFlow.exe`.
+- **Build status:** ✅ `npm run build` (1.16s), `npm run tauri:build` (0 errors), and `AetherFlow.exe` updated.
 ---
+

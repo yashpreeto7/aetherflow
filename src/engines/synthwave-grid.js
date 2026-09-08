@@ -17,8 +17,8 @@ export function createSynthwaveGrid(canvas, options = {}) {
   let offset = 0
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
   }
 
   function frame() {

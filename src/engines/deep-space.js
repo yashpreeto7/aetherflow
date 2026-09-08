@@ -44,8 +44,8 @@ export function createDeepSpace(canvas, options = {}) {
   }
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
     stars = Array.from({ length: starCount }, () => new Star(canvas.width, canvas.height))
   }
 

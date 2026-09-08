@@ -92,8 +92,8 @@ export function createTokyoRain(canvas, options = {}) {
   }
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
     buildingsCache = buildCity(canvas.width, canvas.height)
     drops = Array.from({ length: rainCount }, () => new RainDrop(canvas.width, canvas.height))
   }

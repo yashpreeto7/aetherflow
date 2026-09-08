@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 17:30 IST — Fixed multi-monitor custom wallpaper pinning and white border artifact: passed explicit target monitor bounds to pin_hwnd_as_wallpaper to prevent secondary monitor video from pinning to primary screen; removed artificial 9px frame padding and SetWindowRgn to ensure exact 1:1 pixel boundaries between screens with zero overlap; updated AetherFlow.exe.
+2026-09-08 18:05 IST — Fixed built-in wallpaper border on all sides & scaling issue: dynamically measured frame insets on Tauri WebView2 windows, applied exact coordinate compensation and SetWindowRgn clipping to eliminate 9px window frame borders, and ensured canvas resize in all 7 engines falls back to window.innerWidth/innerHeight; rebuilt standalone AetherFlow.exe.
 
 ---
 

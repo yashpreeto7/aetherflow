@@ -20,8 +20,8 @@ export function createMatrixRain(canvas, options = {}) {
   let lastFrame = 0
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
     const cols = Math.floor(canvas.width / fontSize)
     drops = Array.from({ length: cols }, () => Math.random() * -canvas.height / fontSize)
   }

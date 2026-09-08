@@ -18,8 +18,8 @@ export function createAurora(canvas, options = {}) {
   let stars = []
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
     stars = Array.from({ length: starCount }, () => ({
       x: Math.random() * canvas.width,
       y: Math.random() * canvas.height * 0.5,

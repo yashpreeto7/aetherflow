@@ -30,8 +30,8 @@ export function createAudioSpectrum(canvas, options = {}) {
   let idleTime = 0
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
   }
 
   async function initAudio() {

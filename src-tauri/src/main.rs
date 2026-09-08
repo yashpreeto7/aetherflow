@@ -27,6 +27,7 @@ use windows_sys::Win32::Graphics::Gdi::{
     MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     MapWindowPoints, InvalidateRect, UpdateWindow, RedrawWindow,
     RDW_INVALIDATE, RDW_UPDATENOW, RDW_ERASE, RDW_ALLCHILDREN,
+    CreateRectRgn, SetWindowRgn,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
@@ -370,16 +371,47 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
             mon_screen_x, mon_screen_y, client_x, client_y
         ));
 
-        // Borderless WS_CHILD windows inside Progman/WorkerW have zero non-client insets.
-        // Size and position must match monitor dimensions exactly (1:1 pixel mapping)
-        // to prevent boundary spillover onto adjacent screens.
-        let adj_x = client_x;
-        let adj_y = client_y;
-        let adj_w = mon_w;
-        let adj_h = mon_h;
+        // ── Measure the non-client frame insets dynamically ─────────────────
+        // We map the client area's (0,0) to screen coordinates and compare with
+        // the outer window rect to determine the exact top, left, right, bottom padding.
+        let mut pre_wr: RECT = std::mem::zeroed();
+        let mut pre_cr: RECT = std::mem::zeroed();
+        GetWindowRect(hwnd, &mut pre_wr);
+        GetClientRect(hwnd, &mut pre_cr);
+
+        let mut client_origin = [POINT { x: 0, y: 0 }];
+        MapWindowPoints(hwnd, std::ptr::null_mut(), client_origin.as_mut_ptr(), 1);
+
+        let left_frame = client_origin[0].x - pre_wr.left;
+        let top_frame = client_origin[0].y - pre_wr.top;
+        let right_frame = pre_wr.right - (client_origin[0].x + pre_cr.right);
+        let bottom_frame = pre_wr.bottom - (client_origin[0].y + pre_cr.bottom);
 
         log_msg(&format!(
-            "[AuraOS WP] Exact pixel placement: pos=({},{}) size={}x{}",
+            "[AuraOS WP] Measured frame insets: left={}, top={}, right={}, bottom={}",
+            left_frame, top_frame, right_frame, bottom_frame
+        ));
+        log_msg(&format!(
+            "[AuraOS WP] Pre-positioning: WinRect=({},{})-({},{}) [{}x{}], ClientScreen=({},{})",
+            pre_wr.left, pre_wr.top, pre_wr.right, pre_wr.bottom,
+            pre_wr.right - pre_wr.left, pre_wr.bottom - pre_wr.top,
+            client_origin[0].x, client_origin[0].y
+        ));
+
+        // Use measured insets if plausible (0..50px), otherwise 0
+        let pad_left = if (0..50).contains(&left_frame) { left_frame } else { 0 };
+        let pad_top = if (0..50).contains(&top_frame) { top_frame } else { 0 };
+        let pad_right = if (0..50).contains(&right_frame) { right_frame } else { 0 };
+        let pad_bottom = if (0..50).contains(&bottom_frame) { bottom_frame } else { 0 };
+
+        let adj_x = client_x - pad_left;
+        let adj_y = client_y - pad_top;
+        let adj_w = mon_w + pad_left + pad_right;
+        let adj_h = mon_h + pad_top + pad_bottom;
+
+        log_msg(&format!(
+            "[AuraOS WP] Target client pos=({},{}) size={}x{} -> HWND pos=({},{}) size={}x{}",
+            client_x, client_y, mon_w, mon_h,
             adj_x, adj_y, adj_w, adj_h
         ));
 
@@ -404,6 +436,24 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
             adj_w, adj_h,
             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
+
+        // Clip the window region strictly to the monitor client rectangle so non-client frame padding
+        // never spills across monitor boundaries onto adjacent screens
+        if pad_left > 0 || pad_right > 0 || pad_top > 0 || pad_bottom > 0 {
+            let rgn = CreateRectRgn(
+                pad_left,
+                pad_top,
+                pad_left + mon_w,
+                pad_top + mon_h,
+            );
+            SetWindowRgn(hwnd, rgn, 1);
+            log_msg(&format!(
+                "[AuraOS WP] SetWindowRgn: clipped non-client frame to ({},{})-({},{})",
+                pad_left, pad_top, pad_left + mon_w, pad_top + mon_h
+            ));
+        } else {
+            SetWindowRgn(hwnd, std::ptr::null_mut(), 1);
+        }
 
         // Ensure child WorkerW (if present under Progman) stays at HWND_BOTTOM
         // so Explorer's static wallpaper bitmap never draws over our live wallpaper!

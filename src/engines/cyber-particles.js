@@ -33,8 +33,8 @@ export function createCyberParticles(canvas, options = {}) {
   }
 
   function resize() {
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    canvas.width = canvas.offsetWidth || window.innerWidth
+    canvas.height = canvas.offsetHeight || window.innerHeight
     particles = Array.from({ length: particleCount }, () => new Particle(canvas.width, canvas.height))
   }
 
