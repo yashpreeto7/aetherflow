@@ -93,19 +93,19 @@ Unlike heavy Chromium-based alternatives that consume hundreds of megabytes of R
 ### Option 1: Standalone Executable (Recommended)
 No installation required! Just download and run:
 
-1. Download **[`AetherFlow.exe`](release/AetherFlow.exe?raw=true)** directly from this repository or from the [Latest Releases](https://github.com/yashpreeto7/aetherflow/releases) page.
+1. Download **[`AetherFlow.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow.exe)** directly.
 2. Double-click `AetherFlow.exe` to run.
 3. Choose any wallpaper from the dashboard and enjoy!
 
-| Package | Format | Direct Repo Link |
+| Package | Format | Direct Download Link |
 |---|---|---|
-| **Standalone Executable** | `.exe` (~7.3MB) | [**Download AetherFlow.exe**](release/AetherFlow.exe?raw=true) |
-| **Portable ZIP Archive** | `.zip` (~3.4MB) | [**Download AetherFlow-v1.0.0-Standalone.zip**](release/AetherFlow-v1.0.0-Standalone.zip?raw=true) |
-| **Windows Installer** | `.exe` (~2.7MB) | [**Download AetherFlow-v1.0.0-Installer.exe**](release/AetherFlow-v1.0.0-Installer.exe?raw=true) |
+| **Standalone Executable** | `.exe` (~7.3MB) | [⚡ **Download AetherFlow.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow.exe) |
+| **Windows Installer** | `.exe` (~2.7MB) | [📦 **Download AetherFlow-Setup.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe) |
+| **All Releases & Notes** | GitHub Page | [🚀 **View GitHub Releases**](https://github.com/yashpreeto7/aetherflow/releases/tag/v1.0.0) |
 
 ### Option 2: Windows Installer
 If you prefer a standard Windows installation with Desktop shortcuts and Start Menu integration:
-1. Download **[`AetherFlow-v1.0.0-Installer.exe`](release/AetherFlow-v1.0.0-Installer.exe?raw=true)**.
+1. Download **[`AetherFlow-Setup.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe)**.
 2. Run the installer and launch AetherFlow.
 
 ---
