@@ -102,8 +102,25 @@ export function createImagePlayer(canvas, options = {}) {
     }
   }
 
+  function pause() {
+    if (animId) {
+      cancelAnimationFrame(animId)
+      animId = null
+    }
+  }
+
+  function resume() {
+    if (!animId) {
+      animId = requestAnimationFrame(frame)
+    }
+  }
+
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.paused !== undefined) {
+      if (newOpts.paused) pause()
+      else resume()
+    }
     if (newOpts.imagePath && newOpts.imagePath !== currentPath) {
       loadImage(newOpts.imagePath)
     } else {
@@ -111,7 +128,7 @@ export function createImagePlayer(canvas, options = {}) {
     }
   }
 
-  return { start, stop, updateOptions }
+  return { start, stop, updateOptions, pause, resume }
 }
 
 export default createImagePlayer

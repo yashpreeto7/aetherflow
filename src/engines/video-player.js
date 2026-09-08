@@ -136,7 +136,7 @@ export default function createVideoPlayer(canvas, options) {
           videoEl.play().catch(e => {});
         }
       }
-      options = newOpts;
+      options = { ...options, ...newOpts };
     },
     pause() {
       if (videoEl) videoEl.pause();

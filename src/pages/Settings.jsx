@@ -69,12 +69,16 @@ export default function SettingsPage() {
   useEffect(() => {
     async function checkAutostart() {
       try {
-        const { isEnabled } = await import('@tauri-apps/plugin-autostart')
-        const enabled = await isEnabled()
-        if (enabled !== autoStart) {
-          useStore.setState({ autoStart: enabled })
-        }
-      } catch {}
+        const { invoke } = await import('@tauri-apps/api/core')
+        const enabled = await invoke('is_autostart_enabled')
+        useStore.setState({ autoStart: !!enabled })
+      } catch {
+        try {
+          const { isEnabled } = await import('@tauri-apps/plugin-autostart')
+          const enabled = await isEnabled()
+          useStore.setState({ autoStart: !!enabled })
+        } catch {}
+      }
     }
     checkAutostart()
   }, [])
@@ -83,23 +87,54 @@ export default function SettingsPage() {
     const nextVal = !autoStart
     useStore.setState({ autoStart: nextVal })
     try {
-      const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart')
-      if (nextVal) {
-        await enable()
-      } else {
-        await disable()
-      }
-      const verified = await isEnabled()
-      useStore.setState({ autoStart: verified })
+      const { invoke } = await import('@tauri-apps/api/core')
+      const res = await invoke('set_autostart', { enabled: nextVal })
+      useStore.setState({ autoStart: !!res })
     } catch (err) {
-      console.warn('[AetherFlow] Autostart plugin failed:', err)
+      console.warn('[AetherFlow] Native autostart command failed, trying plugin fallback:', err)
+      try {
+        const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart')
+        if (nextVal) {
+          await enable()
+        } else {
+          await disable()
+        }
+        const verified = await isEnabled()
+        useStore.setState({ autoStart: verified })
+      } catch (pluginErr) {
+        console.warn('[AetherFlow] Autostart plugin failed:', pluginErr)
+      }
     }
   }
+
   const toggleRunInTray = useStore(s => s.toggleRunInTray)
   const pauseOnBattery = useStore(s => s.pauseOnBattery)
   const togglePauseOnBattery = useStore(s => s.togglePauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
   const togglePauseOnFullscreen = useStore(s => s.togglePauseOnFullscreen)
+
+  const handleTogglePauseOnBattery = () => {
+    const nextVal = !pauseOnBattery
+    togglePauseOnBattery()
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('sync_performance_settings', {
+        pauseOnBattery: nextVal,
+        pauseOnFullscreen: pauseOnFullscreen,
+      }).catch(() => {})
+    }).catch(() => {})
+  }
+
+  const handleTogglePauseOnFullscreen = () => {
+    const nextVal = !pauseOnFullscreen
+    togglePauseOnFullscreen()
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('sync_performance_settings', {
+        pauseOnBattery: pauseOnBattery,
+        pauseOnFullscreen: nextVal,
+      }).catch(() => {})
+    }).catch(() => {})
+  }
+
   const audioReactive = useStore(s => s.audioReactive)
   const toggleAudioReactive = useStore(s => s.toggleAudioReactive)
   const audioSource = useStore(s => s.audioSource)
@@ -108,6 +143,23 @@ export default function SettingsPage() {
   const setAudioVolume = useStore(s => s.setAudioVolume)
   const audioMuted = useStore(s => s.audioMuted)
   const toggleAudioMuted = useStore(s => s.toggleAudioMuted)
+
+  const handleVolumeChange = (v) => {
+    setAudioVolume(v)
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('set_mpv_volume', { monitorLabel: null, volume: v }).catch(() => {})
+      invoke('update_wallpaper_config', { config: { volume: v }, monitorLabel: null }).catch(() => {})
+    }).catch(() => {})
+  }
+
+  const handleMuteToggle = () => {
+    const nextMuted = !audioMuted
+    toggleAudioMuted()
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('set_mpv_mute', { monitorLabel: null, muted: nextMuted }).catch(() => {})
+      invoke('update_wallpaper_config', { config: { muted: nextMuted }, monitorLabel: null }).catch(() => {})
+    }).catch(() => {})
+  }
   const screenArrangement = useStore(s => s.screenArrangement)
   const setScreenArrangement = useStore(s => s.setScreenArrangement)
   const cardOpacity = useStore(s => s.cardOpacity)
@@ -168,8 +220,8 @@ export default function SettingsPage() {
       content: (
         <>
           <SliderRow label="FPS Cap" value={fps} set={setFps} min={10} max={120} step={10} fmt={v => v === 120 ? 'Unlimited' : `${v} FPS`} />
-          <ToggleRow label="Pause on Battery" desc="Saves power when unplugged" value={pauseOnBattery} toggle={togglePauseOnBattery} />
-          <ToggleRow label="Pause on Fullscreen Apps" desc="Hides wallpaper when playing games" value={pauseOnFullscreen} toggle={togglePauseOnFullscreen} />
+          <ToggleRow label="Pause on Battery" desc="Saves power when unplugged" value={pauseOnBattery} toggle={handleTogglePauseOnBattery} />
+          <ToggleRow label="Pause on Fullscreen Apps" desc="Hides wallpaper when playing games" value={pauseOnFullscreen} toggle={handleTogglePauseOnFullscreen} />
           
           <div style={{ marginTop: 16 }}>
             <div className="text-sm font-medium" style={{ marginBottom: 10 }}>Screen Arrangement</div>
@@ -194,8 +246,8 @@ export default function SettingsPage() {
       icon: Mic, title: 'Audio (Video Wallpapers)',
       content: (
         <>
-          <SliderRow label="Global Volume" value={audioVolume} set={setAudioVolume} min={0} max={100} step={1} fmt={v => `${v}%`} />
-          <ToggleRow label="Mute All Wallpapers" desc="Silences all active video wallpapers" value={audioMuted} toggle={toggleAudioMuted} />
+          <SliderRow label="Global Volume" value={audioVolume} set={handleVolumeChange} min={0} max={100} step={1} fmt={v => `${v}%`} />
+          <ToggleRow label="Mute All Wallpapers" desc="Silences all active video wallpapers" value={audioMuted} toggle={handleMuteToggle} />
           <ToggleRow label="Audio Reactive Mode" desc="Wallpapers pulse to audio input" value={audioReactive} toggle={toggleAudioReactive} />
           {audioReactive && (
             <div style={{ marginTop: 16 }}>

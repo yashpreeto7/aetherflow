@@ -146,9 +146,26 @@ export function createAudioSpectrum(canvas, options = {}) {
     dataArray = null
   }
 
+  function pause() {
+    if (animId) {
+      cancelAnimationFrame(animId)
+      animId = null
+    }
+  }
+
+  function resume() {
+    if (!animId) {
+      animId = requestAnimationFrame(frame)
+    }
+  }
+
   function updateOptions(newOpts) {
     const prevUseMic = options.useMic
     Object.assign(options, newOpts)
+    if (newOpts.paused !== undefined) {
+      if (newOpts.paused) pause()
+      else resume()
+    }
     if (analyser) analyser.smoothingTimeConstant = options.smoothing ?? smoothing
 
     if (!prevUseMic && options.useMic && !stream && !preview) {
@@ -165,5 +182,5 @@ export function createAudioSpectrum(canvas, options = {}) {
     }
   }
 
-  return { start, stop, updateOptions }
+  return { start, stop, updateOptions, pause, resume }
 }

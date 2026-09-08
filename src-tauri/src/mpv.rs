@@ -4,6 +4,8 @@ use std::io::Write;
 
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::HWND;
+#[cfg(windows)]
+use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
 
 pub struct MpvProcess {
     pub child: Child,
@@ -17,19 +19,20 @@ impl MpvProcess {
     pub fn send_ipc_command(&self, command: serde_json::Value) -> Result<(), String> {
         #[cfg(windows)]
         {
-            use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
-
-            let pipe_wide: Vec<u16> = self.pipe_name.encode_utf16().chain(std::iter::once(0)).collect();
-            // Non-blocking check: wait max 50ms so this never freezes the app or tray
-            let ready = unsafe { WaitNamedPipeW(pipe_wide.as_ptr(), 50) };
-            if ready == 0 {
-                return Err(format!("MPV IPC pipe {} is not ready", self.pipe_name));
-            }
-
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .open(&self.pipe_name)
-                .map_err(|e| format!("Failed to open MPV IPC pipe {}: {}", self.pipe_name, e))?;
+            let mut file = match std::fs::OpenOptions::new().write(true).open(&self.pipe_name) {
+                Ok(f) => f,
+                Err(_) => {
+                    let pipe_wide: Vec<u16> = self.pipe_name.encode_utf16().chain(std::iter::once(0)).collect();
+                    let ready = unsafe { WaitNamedPipeW(pipe_wide.as_ptr(), 50) };
+                    if ready == 0 {
+                        return Err(format!("MPV IPC pipe {} is not ready", self.pipe_name));
+                    }
+                    std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&self.pipe_name)
+                        .map_err(|e| format!("Failed to open MPV IPC pipe {}: {}", self.pipe_name, e))?
+                }
+            };
 
             let mut msg = command.to_string();
             msg.push('\n');

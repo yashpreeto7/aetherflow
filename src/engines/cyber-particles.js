@@ -122,13 +122,31 @@ export function createCyberParticles(canvas, options = {}) {
 
   function stop() {
     if (animId) cancelAnimationFrame(animId)
+    animId = null
     window.removeEventListener('resize', resize)
     canvas.removeEventListener('mousemove', onMouseMove)
   }
 
-  function updateOptions(newOpts) {
-    Object.assign(options, newOpts)
+  function pause() {
+    if (animId) {
+      cancelAnimationFrame(animId)
+      animId = null
+    }
   }
 
-  return { start, stop, updateOptions }
+  function resume() {
+    if (!animId) {
+      animId = requestAnimationFrame(frame)
+    }
+  }
+
+  function updateOptions(newOpts) {
+    Object.assign(options, newOpts)
+    if (newOpts.paused !== undefined) {
+      if (newOpts.paused) pause()
+      else resume()
+    }
+  }
+
+  return { start, stop, updateOptions, pause, resume }
 }

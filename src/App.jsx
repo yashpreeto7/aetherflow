@@ -26,16 +26,20 @@ export default function App() {
   const toggleSidebar    = useStore(s => s.toggleSidebar)
   const audioVolume      = useStore(s => s.audioVolume)
   const audioMuted       = useStore(s => s.audioMuted)
+  const pauseOnBattery   = useStore(s => s.pauseOnBattery)
+  const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
 
-  // Broadcast global volume/mute changes to all active wallpaper windows
+  // Broadcast global volume/mute changes to all active wallpaper windows & MPV
   React.useEffect(() => {
     async function broadcastAudio() {
       try {
         const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('set_mpv_volume', { monitorLabel: null, volume: audioVolume }).catch(() => {})
+        await invoke('set_mpv_mute', { monitorLabel: null, muted: audioMuted }).catch(() => {})
         await invoke('update_wallpaper_config', { 
           config: { volume: audioVolume, muted: audioMuted },
           monitorLabel: null // broadcast to all
-        })
+        }).catch(() => {})
       } catch (err) {
         // Not in Tauri
       }
@@ -43,14 +47,32 @@ export default function App() {
     broadcastAudio()
   }, [audioVolume, audioMuted])
 
-  // Ensure window is visible and focused on mount
+  // Sync battery & fullscreen power management settings with native Rust monitor
+  React.useEffect(() => {
+    async function syncPerformance() {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('sync_performance_settings', {
+          pauseOnBattery: !!pauseOnBattery,
+          pauseOnFullscreen: !!pauseOnFullscreen,
+        }).catch(() => {})
+      } catch (err) {}
+    }
+    syncPerformance()
+  }, [pauseOnBattery, pauseOnFullscreen])
+
+  // Ensure window is visible and focused on mount unless launched minimized at startup
   React.useEffect(() => {
     async function initWindow() {
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window')
-        const win = getCurrentWindow()
-        await win.show()
-        await win.setFocus()
+        const { invoke } = await import('@tauri-apps/api/core')
+        const isMinimized = await invoke('is_minimized_boot').catch(() => false)
+        if (!isMinimized) {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window')
+          const win = getCurrentWindow()
+          await win.show()
+          await win.setFocus()
+        }
       } catch {}
     }
     initWindow()

@@ -161,11 +161,11 @@ function WallpaperCanvas() {
             if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
               return
             }
-            if (engineRef.current && engineRef.current.updateOptions) {
-               engineRef.current.updateOptions({ paused: true });
-            } else {
-               setOpacity(0);
-            }
+            try { engineRef.current?.pause?.() } catch (e) {}
+            try { engineRef.current?.updateOptions?.({ paused: true }) } catch (e) {}
+            document.querySelectorAll('video, audio').forEach(el => {
+              try { el.pause() } catch (e) {}
+            })
           })
         )
 
@@ -174,11 +174,11 @@ function WallpaperCanvas() {
             if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
               return
             }
-            if (engineRef.current && engineRef.current.updateOptions) {
-               engineRef.current.updateOptions({ paused: false });
-            } else {
-               setOpacity(1);
-            }
+            try { engineRef.current?.resume?.() } catch (e) {}
+            try { engineRef.current?.updateOptions?.({ paused: false }) } catch (e) {}
+            document.querySelectorAll('video').forEach(el => {
+              try { el.play().catch(() => {}) } catch (e) {}
+            })
           })
         )
 

@@ -22,6 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetClientRect,
     WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE,
     SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDCHANGE,
+    GetForegroundWindow, IsIconic,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -32,16 +33,43 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct SystemPowerStatus {
+    ac_line_status: u8,
+    battery_flag: u8,
+    battery_life_percent: u8,
+    system_status_flag: u8,
+    battery_life_time: u32,
+    battery_full_life_time: u32,
+}
 
 #[cfg(windows)]
 extern "system" {
     fn OpenDesktopW(lpszDesktop: *const u16, dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
     fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
     fn SetThreadDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+    fn GetSystemPowerStatus(lpSystemPowerStatus: *mut SystemPowerStatus) -> i32;
 }
 
 use std::sync::Mutex;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PerformanceSettings {
+    pub pause_on_battery: bool,
+    pub pause_on_fullscreen: bool,
+}
+
+static PERFORMANCE_SETTINGS: Mutex<PerformanceSettings> = Mutex::new(PerformanceSettings {
+    pause_on_battery: true,
+    pause_on_fullscreen: true,
+});
+
+static IS_SYSTEM_PAUSED: Mutex<bool> = Mutex::new(false);
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActiveWallpaperState {
@@ -86,6 +114,157 @@ pub fn is_main_hwnd(hwnd: HWND) -> bool {
     } else {
         false
     }
+}
+
+#[cfg(windows)]
+pub fn is_running_on_battery() -> bool {
+    let mut sps = SystemPowerStatus {
+        ac_line_status: 255,
+        battery_flag: 255,
+        battery_life_percent: 255,
+        system_status_flag: 0,
+        battery_life_time: 0,
+        battery_full_life_time: 0,
+    };
+    let ret = unsafe { GetSystemPowerStatus(&mut sps) };
+    if ret != 0 {
+        // ac_line_status: 0 = Offline (battery power), 1 = Online (AC), 255 = Unknown
+        sps.ac_line_status == 0
+    } else {
+        false
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_running_on_battery() -> bool {
+    false
+}
+
+#[cfg(windows)]
+pub fn is_foreground_window_fullscreen() -> bool {
+    unsafe {
+        let fg_hwnd = GetForegroundWindow();
+        if fg_hwnd.is_null() {
+            return false;
+        }
+
+        // Filter out desktop shell window
+        let shell_hwnd = GetShellWindow();
+        if fg_hwnd == shell_hwnd {
+            return false;
+        }
+
+        // Filter out our own main control panel window
+        if is_main_hwnd(fg_hwnd) {
+            return false;
+        }
+
+        // Filter out Desktop and Taskbar classes
+        let mut class_buf = [0u16; 256];
+        let len = GetClassNameW(fg_hwnd, class_buf.as_mut_ptr(), 256);
+        if len > 0 {
+            let class_name = String::from_utf16_lossy(&class_buf[..len as usize]);
+            if class_name == "WorkerW"
+                || class_name == "Progman"
+                || class_name == "Shell_TrayWnd"
+                || class_name == "Shell_SecondaryTrayWnd"
+            {
+                return false;
+            }
+        }
+
+        if IsWindowVisible(fg_hwnd) == 0 {
+            return false;
+        }
+        if IsIconic(fg_hwnd) != 0 {
+            return false;
+        }
+
+        let monitor = MonitorFromWindow(fg_hwnd, MONITOR_DEFAULTTONEAREST);
+        if monitor.is_null() {
+            return false;
+        }
+
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(monitor, &mut mi) == 0 {
+            return false;
+        }
+
+        let mut wr: RECT = std::mem::zeroed();
+        if GetWindowRect(fg_hwnd, &mut wr) == 0 {
+            return false;
+        }
+
+        // Window fully covers the active monitor resolution
+        wr.left <= mi.rcMonitor.left
+            && wr.top <= mi.rcMonitor.top
+            && wr.right >= mi.rcMonitor.right
+            && wr.bottom >= mi.rcMonitor.bottom
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_foreground_window_fullscreen() -> bool {
+    false
+}
+
+pub fn start_system_state_monitor(app: AppHandle) {
+    std::thread::spawn(move || {
+        // Wait for startup to settle
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let mut was_paused = false;
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(750));
+
+            let (pause_on_battery, pause_on_fullscreen) = {
+                if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
+                    (guard.pause_on_battery, guard.pause_on_fullscreen)
+                } else {
+                    (true, true)
+                }
+            };
+
+            let on_battery = pause_on_battery && is_running_on_battery();
+            let on_fullscreen = pause_on_fullscreen && is_foreground_window_fullscreen();
+
+            let should_pause = on_battery || on_fullscreen;
+
+            if should_pause != was_paused {
+                was_paused = should_pause;
+                if let Ok(mut p_guard) = IS_SYSTEM_PAUSED.lock() {
+                    *p_guard = should_pause;
+                }
+
+                let reason = if on_battery && on_fullscreen {
+                    "battery & fullscreen"
+                } else if on_battery {
+                    "battery power"
+                } else if on_fullscreen {
+                    "fullscreen application"
+                } else {
+                    "resumed (AC power & normal window focus)"
+                };
+
+                let log = format!("[SYSTEM MONITOR] State transition -> paused: {} (reason: {})", should_pause, reason);
+                log_msg(&log);
+                println!("{}", log);
+
+                // 1. Pause or resume all MPV players
+                set_mpv_pause(None, should_pause);
+
+                // 2. Emit pause/resume to Webview wallpaper windows
+                let event_name = if should_pause { "aura:pause" } else { "aura:resume" };
+                let windows = app.webview_windows();
+                for (label, win) in windows {
+                    if label.starts_with("wallpaper_") {
+                        let _ = win.emit_to(label.as_str(), event_name, serde_json::json!({ "target": "*" }));
+                    }
+                }
+            }
+        }
+    });
 }
 
 // ─── PROGMAN / WorkerW trick ─────────────────────────────────────────────────
@@ -1167,7 +1346,7 @@ fn get_monitor_active_wallpaper(label: String) -> Option<serde_json::Value> {
 /// Hot-update the active engine config without restarting it.
 #[tauri::command]
 fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_label: Option<String>) {
-    let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    let target = monitor_label.clone().unwrap_or_else(|| "*".to_string());
     if let Some(new_vpath) = config.get("videoPath").and_then(|v| v.as_str()) {
         if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
             if let Some(ref mut map) = *mpv_guard {
@@ -1178,6 +1357,12 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
                 }
             }
         }
+    }
+    if let Some(vol) = config.get("volume").and_then(|v| v.as_f64()) {
+        set_mpv_volume(monitor_label.clone(), vol);
+    }
+    if let Some(muted) = config.get("muted").and_then(|v| v.as_bool()) {
+        set_mpv_mute(monitor_label.clone(), muted);
     }
     let windows = app.webview_windows();
     for (label, win) in windows {
@@ -1239,6 +1424,96 @@ fn get_system_info() -> serde_json::Value {
         "os": std::env::consts::OS,
         "arch": std::env::consts::ARCH,
     })
+}
+
+#[tauri::command]
+fn sync_performance_settings(pause_on_battery: bool, pause_on_fullscreen: bool) {
+    if let Ok(mut guard) = PERFORMANCE_SETTINGS.lock() {
+        guard.pause_on_battery = pause_on_battery;
+        guard.pause_on_fullscreen = pause_on_fullscreen;
+    }
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if enabled {
+            let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let exe_str = current_exe.to_string_lossy().to_string();
+            let reg_val = format!("\"{}\" --autostart --minimized", exe_str);
+            let status = std::process::Command::new("reg")
+                .args(&[
+                    "add",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "AetherFlow",
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &reg_val,
+                    "/f",
+                ])
+                .creation_flags(0x08000000)
+                .status()
+                .map_err(|e| e.to_string())?;
+            if status.success() {
+                log_msg(&format!("[AUTOSTART] Registry Run key created: {}", reg_val));
+                println!("[AUTOSTART] Registry Run key created: {}", reg_val);
+                Ok(())
+            } else {
+                Err("Failed to set autostart registry key".to_string())
+            }
+        } else {
+            let _ = std::process::Command::new("reg")
+                .args(&[
+                    "delete",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "AetherFlow",
+                    "/f",
+                ])
+                .creation_flags(0x08000000)
+                .status();
+            log_msg("[AUTOSTART] Registry Run key deleted");
+            println!("[AUTOSTART] Registry Run key deleted");
+            Ok(())
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn is_autostart_enabled() -> bool {
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("reg")
+            .args(&[
+                "query",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "/v",
+                "AetherFlow",
+            ])
+            .creation_flags(0x08000000)
+            .output();
+        if let Ok(out) = output {
+            out.status.success()
+        } else {
+            false
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+#[tauri::command]
+fn is_minimized_boot() -> bool {
+    std::env::args().any(|arg| arg == "--minimized" || arg == "--autostart")
 }
 
 #[tauri::command]
@@ -1671,6 +1946,10 @@ fn main() {
             set_mpv_pause,
             set_mpv_volume,
             set_mpv_mute,
+            sync_performance_settings,
+            set_autostart,
+            is_autostart_enabled,
+            is_minimized_boot,
             frontend_heartbeat,
             report_frontend_error,
             get_diagnostics,
@@ -1680,8 +1959,8 @@ fn main() {
             get_detailed_memory_usage,
         ])
         .setup(|app| {
-            // Show the main window
-            println!("AuraOS: Creating main window manually in setup...");
+            let is_minimized = is_minimized_boot();
+            println!("AuraOS: Creating main window (minimized/autostart={})...", is_minimized);
             let win = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -1691,8 +1970,8 @@ fn main() {
             .inner_size(1200.0, 780.0)
             .min_inner_size(900.0, 600.0)
             .center()
-            .visible(true)
-            .focused(true)
+            .visible(!is_minimized)
+            .focused(!is_minimized)
             .build();
             
             match win {
@@ -1737,13 +2016,18 @@ fn main() {
                         }
                     });
 
-                    let _ = w.show();
-                    let _ = w.set_focus();
+                    if !is_minimized {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
                 }
                 Err(e) => {
                     println!("AuraOS: ERROR creating main window - {}", e);
                 }
             }
+
+            // Start the system state monitor thread (battery & fullscreen pausing)
+            start_system_state_monitor(app.handle().clone());
 
             // Periodic background memory trimmer: reclaims unused V8 / WebView2 working set
             // Runs an initial trim at 2.5s to collapse startup Chromium allocation, then every 45s
