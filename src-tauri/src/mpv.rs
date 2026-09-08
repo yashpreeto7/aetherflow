@@ -10,6 +10,7 @@ pub struct MpvProcess {
     pub pipe_name: String,
     pub monitor_label: String,
     pub video_path: String,
+    pub hwnd: usize,
 }
 
 impl MpvProcess {
@@ -74,6 +75,19 @@ impl MpvProcess {
         let _ = self.send_ipc_command(serde_json::json!({ "command": ["quit"] }));
         let _ = self.child.kill();
         let _ = self.child.wait();
+
+        #[cfg(windows)]
+        if self.hwnd != 0 {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, IsWindow, ShowWindow, SW_HIDE};
+            unsafe {
+                let h = self.hwnd as HWND;
+                if IsWindow(h) != 0 {
+                    ShowWindow(h, SW_HIDE);
+                    DestroyWindow(h);
+                }
+            }
+            self.hwnd = 0;
+        }
     }
 }
 
@@ -145,11 +159,54 @@ pub fn is_video_wallpaper(engine_id: &str, video_path: Option<&str>) -> bool {
     false
 }
 
-/// Launch an MPV instance embedded into a native window handle
+#[cfg(windows)]
+fn find_mpv_hwnd(pid: u32) -> Option<HWND> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, GetClassNameW};
+    use windows_sys::Win32::Foundation::LPARAM;
+
+    struct SearchData {
+        pid: u32,
+        hwnd: Option<HWND>,
+    }
+
+    unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> i32 {
+        let data = &mut *(lparam as *mut SearchData);
+        let mut proc_id = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut proc_id);
+        if proc_id == data.pid {
+            let mut buf = [0u16; 256];
+            let len = GetClassNameW(hwnd, buf.as_mut_ptr(), 256);
+            let class_name = String::from_utf16_lossy(&buf[..len as usize]);
+            if class_name == "mpv" {
+                data.hwnd = Some(hwnd);
+                return 0; // stop enum
+            }
+        }
+        1
+    }
+
+    // Poll for up to 2.5 seconds (50 iterations x 50ms)
+    for _ in 0..50 {
+        let mut data = SearchData { pid, hwnd: None };
+        unsafe {
+            EnumWindows(Some(enum_cb), &mut data as *mut _ as LPARAM);
+        }
+        if let Some(h) = data.hwnd {
+            return Some(h);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    None
+}
+
+/// Launch an MPV instance positioned for a specific monitor
 pub fn spawn_mpv_wallpaper(
     video_path: &str,
-    #[cfg(windows)] host_hwnd: HWND,
     monitor_label: &str,
+    mon_x: i32,
+    mon_y: i32,
+    mon_w: i32,
+    mon_h: i32,
     volume: Option<f64>,
     muted: Option<bool>,
 ) -> Result<MpvProcess, String> {
@@ -159,23 +216,22 @@ pub fn spawn_mpv_wallpaper(
 
     let mut cmd = Command::new(&mpv_exe);
 
-    #[cfg(windows)]
-    {
-        // Embed directly into the desktop host HWND
-        cmd.arg(format!("--wid={}", host_hwnd as usize));
-    }
-
-    // Core wallpaper parameters
-    cmd.arg("--loop-file=inf")
+    // Lively-style standalone borderless window flags:
+    // MPV initializes its own Direct3D 11 swapchain without cross-process --wid restrictions.
+    cmd.arg("--no-border")
         .arg("--no-osc")
         .arg("--no-osd-bar")
-        .arg("--no-input-default-bindings")
-        .arg("--input-cursor=no") // Prevent MPV from intercepting or grabbing desktop mouse cursor
-        .arg("--hwdec=auto")
-        .arg("--idle=yes")
-        .arg("--force-window=yes")
+        .arg("--loop-file=inf")
         .arg("--keep-open=yes")
-        .arg("--panscan=1.0") // Fill exact monitor window without black letterboxing
+        .arg("--media-controls=no")
+        .arg("--cursor-autohide=no")
+        .arg("--input-default-bindings=no")
+        .arg("--input-cursor=no")
+        .arg("--hwdec=auto-safe")
+        .arg("--panscan=1.0")
+        .arg(format!("--geometry={:+}{:+}", mon_x, mon_y))
+        .arg(format!("--autofit={}x{}", mon_w, mon_h))
+        .arg("--background-color=#000000")
         .arg("--cache=no")
         .arg("--demuxer-max-bytes=16M")
         .arg("--demuxer-max-back-bytes=4M")
@@ -208,69 +264,38 @@ pub fn spawn_mpv_wallpaper(
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    println!("[MPV] Launching MPV instance: {:?} with file '{}' on monitor '{}'", mpv_exe, video_path, monitor_label);
-    #[cfg(windows)]
-    log_mpv_msg(&format!("[DIAG 3] Launching MPV instance: target host_hwnd=0x{:X}, label='{}', video='{}'", host_hwnd as usize, monitor_label, video_path));
+    println!("[MPV] Launching standalone MPV instance: {:?} with file '{}' on monitor '{}' bounds=({},{}) {}x{}", 
+        mpv_exe, video_path, monitor_label, mon_x, mon_y, mon_w, mon_h);
+    log_mpv_msg(&format!("[MPV] Spawning standalone MPV: label='{}', bounds=({},{}) {}x{}, video='{}'", 
+        monitor_label, mon_x, mon_y, mon_w, mon_h, video_path));
 
     let child = cmd.spawn().map_err(|e| format!("Failed to spawn MPV process {:?}: {}", mpv_exe, e))?;
     let mpv_pid = child.id();
 
-    // Brief sleep to let MPV initialize window and establish the named pipe
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
     #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, GetParent, GetClassNameW, GetWindowRect};
-        use windows_sys::Win32::Foundation::{LPARAM, RECT};
-
-        struct FindData {
-            pid: u32,
-            found: Vec<(HWND, HWND, String, RECT)>, // (child_hwnd, parent_hwnd, class_name, rect)
+    let mpv_hwnd = match find_mpv_hwnd(mpv_pid) {
+        Some(h) => {
+            log_mpv_msg(&format!("[MPV] Located native MPV HWND: 0x{:X} for PID={}", h as usize, mpv_pid));
+            h
         }
-
-        unsafe extern "system" fn enum_mpv_win(hwnd: HWND, lparam: LPARAM) -> i32 {
-            let data = &mut *(lparam as *mut FindData);
-            let mut proc_id = 0u32;
-            GetWindowThreadProcessId(hwnd, &mut proc_id);
-            if proc_id == data.pid {
-                let parent = GetParent(hwnd);
-                let mut buf = [0u16; 256];
-                let len = GetClassNameW(hwnd, buf.as_mut_ptr(), 256);
-                let class_name = String::from_utf16_lossy(&buf[..len as usize]);
-                let mut wr: RECT = std::mem::zeroed();
-                GetWindowRect(hwnd, &mut wr);
-                data.found.push((hwnd, parent, class_name, wr));
-            }
-            1
+        None => {
+            log_mpv_msg(&format!("[MPV WARN] Could not find HWND for MPV PID={}, falling back to 0", mpv_pid));
+            std::ptr::null_mut()
         }
+    };
 
-        let mut data = FindData { pid: mpv_pid, found: Vec::new() };
-        unsafe {
-            EnumWindows(Some(enum_mpv_win), &mut data as *mut _ as LPARAM);
-        }
-
-        let diag_msg = format!(
-            "[DIAG 3] MPV PID={}: found {} window(s) associated with process",
-            mpv_pid, data.found.len()
-        );
-        log_mpv_msg(&diag_msg);
-        println!("{}", diag_msg);
-
-        for (ch, p, cn, wr) in &data.found {
-            let win_info = format!(
-                "[DIAG 3]   MPV Child HWND=0x{:X}, class='{}', Parent HWND=0x{:X} (expected host=0x{:X}), Rect=({},{})-({},{})",
-                *ch as usize, cn, *p as usize, host_hwnd as usize, wr.left, wr.top, wr.right, wr.bottom
-            );
-            log_mpv_msg(&win_info);
-            println!("{}", win_info);
-        }
-    }
+    #[cfg(not(windows))]
+    let mpv_hwnd = 0usize;
 
     Ok(MpvProcess {
         child,
         pipe_name,
         monitor_label: monitor_label.to_string(),
         video_path: video_path.to_string(),
+        #[cfg(windows)]
+        hwnd: mpv_hwnd as usize,
+        #[cfg(not(windows))]
+        hwnd: 0,
     })
 }
 

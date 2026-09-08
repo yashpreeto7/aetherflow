@@ -225,6 +225,7 @@ export const useStore = create(
         audioMuted: s.audioMuted,
         homeWallpaperIds: s.homeWallpaperIds,
         customNames: s.customNames,
+        isWallpaperRunning: s.isWallpaperRunning,
       }),
     }
   )

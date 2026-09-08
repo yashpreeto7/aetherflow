@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 16:10 IST — Resolved standalone executable offline asset bundling via custom-protocol feature in Cargo.toml. Standalone AetherFlow.exe verified without localhost server.
+2026-09-08 17:30 IST — Fixed multi-monitor custom wallpaper pinning and white border artifact: passed explicit target monitor bounds to pin_hwnd_as_wallpaper to prevent secondary monitor video from pinning to primary screen; removed artificial 9px frame padding and SetWindowRgn to ensure exact 1:1 pixel boundaries between screens with zero overlap; updated AetherFlow.exe.
 
 ---
 
@@ -152,5 +152,7 @@ npm run tauri:dev
 | 2026-09-03 | Antigravity (Gemini 3.8 Flash) | Wallpaper Engine UI/UX overhaul: direct apply from Library, unified Home custom wallpapers, '+ Add Wallpaper' button & drag-drop, card quick actions & double click |
 | 2026-09-04 | Antigravity (Gemini 3.8 Flash) | Resolved main window black screen with dedicated native Win32 MPV host, sanitized WebView2 arguments |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed missing custom wallpapers (disk persistence & auto-recovery), app/tray freeze on apply (dedicated message pump thread + transparent hit testing), and multi-monitor audio desync |
+| 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Resolved "localhost refused to connect" error: enabled default custom-protocol in Cargo.toml, embedded all web assets, and rebuilt standalone AetherFlow.exe |
+| 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor custom video wallpaper pinning across screens and eliminated white boundary line artifact between displays |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

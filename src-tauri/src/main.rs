@@ -15,13 +15,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetWindowPos, HWND_BOTTOM, SWP_SHOWWINDOW, ShowWindow, DestroyWindow, IsWindow, IsWindowVisible, GetParent,
     GetWindowLongW, SetWindowLongW, GWL_STYLE, GWL_EXSTYLE, WS_CHILD, WS_POPUP,
     WS_VISIBLE, WS_THICKFRAME, WS_CAPTION, WS_BORDER,
-    SWP_NOACTIVATE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
     GetClassNameW,
     WS_EX_LAYERED, SetLayeredWindowAttributes, LWA_ALPHA,
     GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     GetWindowRect, GetClientRect,
-    SW_HIDE, SW_SHOWNOACTIVATE, WNDCLASSW, RegisterClassW, CreateWindowExW,
-    WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
+    WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -31,6 +30,13 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+#[cfg(windows)]
+extern "system" {
+    fn OpenDesktopW(lpszDesktop: *const u16, dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
+    fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
+    fn SetThreadDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
+}
 
 use std::sync::Mutex;
 use std::collections::HashMap;
@@ -50,7 +56,6 @@ static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new
 
 // ─── Main AuraOS Window Protection & HWND Identity ───────────────────────────
 static MAIN_HWND: Mutex<Option<usize>> = Mutex::new(None);
-static NATIVE_WALLPAPER_WINDOWS: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
 
 #[cfg(windows)]
 pub fn set_main_hwnd(hwnd: HWND) {
@@ -71,112 +76,13 @@ pub fn get_main_hwnd() -> Option<HWND> {
     }
 }
 
+
 #[cfg(windows)]
 pub fn is_main_hwnd(hwnd: HWND) -> bool {
     if let Some(main_h) = get_main_hwnd() {
         main_h == hwnd
     } else {
         false
-    }
-}
-
-#[cfg(windows)]
-unsafe extern "system" fn wallpaper_wnd_proc(hwnd: HWND, msg: u32, wparam: windows_sys::Win32::Foundation::WPARAM, lparam: LPARAM) -> windows_sys::Win32::Foundation::LRESULT {
-    const WM_NCHITTEST: u32 = 0x0084;
-    const HTTRANSPARENT: isize = -1;
-    const WM_MOUSEACTIVATE: u32 = 0x0021;
-    const MA_NOACTIVATE: isize = 3;
-    const WM_SETFOCUS: u32 = 0x0007;
-
-    match msg {
-        WM_NCHITTEST => HTTRANSPARENT,
-        WM_MOUSEACTIVATE => MA_NOACTIVATE,
-        WM_SETFOCUS => 0,
-        _ => windows_sys::Win32::UI::WindowsAndMessaging::DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-#[cfg(windows)]
-fn get_or_create_native_wallpaper_window(name: &str, mon_x: i32, mon_y: i32, mon_w: i32, mon_h: i32) -> Result<HWND, String> {
-    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetMessageW, TranslateMessage, DispatchMessageW, MSG};
-
-    let label = get_monitor_label(name);
-
-    if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
-        let map = guard.get_or_insert_with(HashMap::new);
-        if let Some(&existing_h) = map.get(&label) {
-            let hwnd = existing_h as HWND;
-            if unsafe { IsWindow(hwnd) } != 0 {
-                log_msg(&format!("[DIAG 2] Reusing existing native MPV host window for {}: 0x{:X}", label, existing_h));
-                return Ok(hwnd);
-            }
-        }
-
-        let name_owned = name.to_string();
-        let label_owned = label.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        std::thread::Builder::new()
-            .name(format!("aetherflow_host_{}", label))
-            .spawn(move || {
-                unsafe {
-                    let class_name: Vec<u16> = "AetherFlow_MpvHost\0".encode_utf16().collect();
-                    let hinstance = GetModuleHandleW(std::ptr::null());
-
-                    let mut wc: WNDCLASSW = std::mem::zeroed();
-                    wc.lpfnWndProc = Some(wallpaper_wnd_proc);
-                    wc.hInstance = hinstance as _;
-                    wc.lpszClassName = class_name.as_ptr();
-                    wc.hbrBackground = windows_sys::Win32::Graphics::Gdi::GetStockObject(windows_sys::Win32::Graphics::Gdi::BLACK_BRUSH as _) as _;
-                    
-                    RegisterClassW(&wc);
-
-                    let title: Vec<u16> = format!("AetherFlow MPV Host - {}\0", name_owned).encode_utf16().collect();
-                    // WS_EX_TRANSPARENT + WS_EX_NOACTIVATE ensure clicks pass straight to desktop icons
-                    let hwnd = CreateWindowExW(
-                        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-                        class_name.as_ptr(),
-                        title.as_ptr(),
-                        WS_POPUP,
-                        mon_x, mon_y, mon_w, mon_h,
-                        std::ptr::null_mut(),
-                        std::ptr::null_mut(),
-                        hinstance as _,
-                        std::ptr::null(),
-                    );
-
-                    if hwnd.is_null() {
-                        let err = format!("CreateWindowExW failed for monitor {}", name_owned);
-                        log_msg(&err);
-                        let _ = tx.send(Err(err));
-                        return;
-                    }
-
-                    log_msg(&format!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}, bounds=({},{}) {}x{}", 
-                        label_owned, hwnd as usize, mon_x, mon_y, mon_w, mon_h));
-                    println!("[DIAG 2] Created dedicated native MPV host window: label={}, HWND=0x{:X}", label_owned, hwnd as usize);
-
-                    // Pin to WorkerW layer immediately on owning thread
-                    pin_hwnd_as_wallpaper(hwnd);
-
-                    let _ = tx.send(Ok(hwnd as usize));
-
-                    // Pump messages so MPV child and Windows DWM never block
-                    let mut msg: MSG = std::mem::zeroed();
-                    while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                }
-            })
-            .map_err(|e| format!("Failed to spawn wallpaper host thread: {}", e))?;
-
-        let hwnd_val = rx.recv().map_err(|e| format!("Channel receive failed: {}", e))??;
-        map.insert(label, hwnd_val);
-        Ok(hwnd_val as HWND)
-    } else {
-        Err("Failed to lock NATIVE_WALLPAPER_WINDOWS mutex".to_string())
     }
 }
 
@@ -230,7 +136,7 @@ fn log_msg(msg: &str) {
 /// (virtual-desktop origin, DPI scaling, primary-monitor bias) that caused the
 /// left-gap / second-monitor spill in earlier attempts.
 #[cfg(windows)]
-fn pin_hwnd_as_wallpaper(hwnd: HWND) {
+fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>) {
     if is_main_hwnd(hwnd) {
         let err = format!("[DIAG 10 CRITICAL REJECT] pin_hwnd_as_wallpaper was called with MAIN_HWND 0x{:X}! Aborting!", hwnd as usize);
         log_msg(&err);
@@ -242,26 +148,37 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
         log_msg(&format!("\n--- [AuraOS WP] pin_hwnd_as_wallpaper called: hwnd=0x{:X} ---",
             hwnd as usize));
 
-        // ── Step 1: exact monitor bounds from Win32 (screen coordinates) ─────────
-        // MonitorFromWindow gives the physical monitor that currently contains the HWND.
-        // GetMonitorInfoW gives rcMonitor (screen coords) — use rcMonitor, NOT rcWork.
-        let monitor_handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        let mut minfo: MONITORINFO = std::mem::zeroed();
-        minfo.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-        GetMonitorInfoW(monitor_handle, &mut minfo);
+        // ── Step 1: exact monitor bounds from target_bounds or Win32 ─────────
+        let (mon_screen_x, mon_screen_y, mon_w, mon_h) = if let Some(bounds) = target_bounds {
+            log_msg(&format!(
+                "[AuraOS WP] Using target monitor bounds: ({},{}) {}x{}",
+                bounds.0, bounds.1, bounds.2, bounds.3
+            ));
+            bounds
+        } else {
+            let monitor_handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut minfo: MONITORINFO = std::mem::zeroed();
+            minfo.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+            GetMonitorInfoW(monitor_handle, &mut minfo);
 
-        let rc = minfo.rcMonitor;
-        let mon_screen_x = rc.left;
-        let mon_screen_y = rc.top;
-        let mon_w         = rc.right  - rc.left;
-        let mon_h         = rc.bottom - rc.top;
+            let rc = minfo.rcMonitor;
+            let x = rc.left;
+            let y = rc.top;
+            let w = rc.right  - rc.left;
+            let h = rc.bottom - rc.top;
+            log_msg(&format!(
+                "[AuraOS WP] Monitor rcMonitor: left={} top={} right={} bottom={} ({}x{})",
+                x, y, rc.right, rc.bottom, w, h
+            ));
+            (x, y, w, h)
+        };
 
         let vscreen_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
         let vscreen_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
 
         log_msg(&format!(
-            "[AuraOS WP] Monitor rcMonitor: left={} top={} right={} bottom={} ({}x{})",
-            rc.left, rc.top, rc.right, rc.bottom, mon_w, mon_h
+            "[AuraOS WP] Monitor screen bounds: ({},{}) {}x{}",
+            mon_screen_x, mon_screen_y, mon_w, mon_h
         ));
         log_msg(&format!("[AuraOS WP] Virtual desktop origin: ({},{})", vscreen_x, vscreen_y));
 
@@ -281,24 +198,38 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
 
         let progman_class: Vec<u16> = "Progman\0".encode_utf16().collect();
         let progman_title: Vec<u16> = "Program Manager\0".encode_utf16().collect();
-        let progman = FindWindowW(progman_class.as_ptr(), progman_title.as_ptr());
-        log_msg(&format!("[AuraOS WP] FindWindowW('Progman','Program Manager') = 0x{:X}", progman as usize));
-        
-        let progman_notitle = FindWindowW(progman_class.as_ptr(), std::ptr::null());
-        log_msg(&format!("[AuraOS WP] FindWindowW('Progman', NULL) = 0x{:X}", progman_notitle as usize));
-        
-        let shell_window = GetShellWindow();
-        log_msg(&format!("[AuraOS WP] GetShellWindow() = 0x{:X}", shell_window as usize));
-        
-        let progman = if !progman.is_null() { 
-            progman 
-        } else if !progman_notitle.is_null() { 
-            progman_notitle
-        } else if !shell_window.is_null() {
-            log_msg("[AuraOS WP] Using GetShellWindow as Progman fallback");
-            shell_window
+        let mut progman = FindWindowW(progman_class.as_ptr(), progman_title.as_ptr());
+        if progman.is_null() {
+            progman = FindWindowW(progman_class.as_ptr(), std::ptr::null());
+        }
+        if progman.is_null() {
+            progman = GetShellWindow();
+        }
+
+        // On cold start / Windows boot after laptop restart, Windows Explorer may still be loading.
+        // Retry for up to 6 seconds (30 attempts x 200ms) to ensure Progman is ready.
+        if progman.is_null() {
+            log_msg("[AuraOS WP] Progman not ready on first attempt (cold boot / reboot). Waiting for Explorer...");
+            for attempt in 0..30 {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                progman = FindWindowW(progman_class.as_ptr(), progman_title.as_ptr());
+                if progman.is_null() {
+                    progman = FindWindowW(progman_class.as_ptr(), std::ptr::null());
+                }
+                if progman.is_null() {
+                    progman = GetShellWindow();
+                }
+                if !progman.is_null() {
+                    log_msg(&format!("[AuraOS WP] Found Progman on cold boot retry #{} ({}ms): 0x{:X}", attempt + 1, (attempt + 1) * 200, progman as usize));
+                    break;
+                }
+            }
+        }
+
+        let progman = if !progman.is_null() {
+            progman
         } else {
-            log_msg("[AuraOS WP] CRITICAL: Cannot find Progman or ShellWindow!");
+            log_msg("[AuraOS WP] CRITICAL: Cannot find Progman or ShellWindow after retry timeout!");
             
             unsafe extern "system" fn dump_cb(h: HWND, _: LPARAM) -> i32 {
                 let mut cls_buf = [0u16; 256];
@@ -326,31 +257,42 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
         log_msg(&format!("[AuraOS WP] Using progman HWND = 0x{:X}", progman as usize));
 
         let shell_class: Vec<u16> = "SHELLDLL_DefView\0".encode_utf16().collect();
+        let worker_class: Vec<u16> = "WorkerW\0".encode_utf16().collect();
+
+        // Check if Progman has WS_EX_NOREDIRECTIONBITMAP (Windows 11 raised desktop mode)
+        let prog_ex = GetWindowLongW(progman, GWL_EXSTYLE) as u32;
+        let is_raised_desktop = (prog_ex & 0x00200000) != 0;
+        log_msg(&format!("[AuraOS WP] Progman exStyle=0x{:08X}, is_raised_desktop={}", prog_ex, is_raised_desktop));
+
+        // Always send 0x052C to progman on Windows so Explorer splits the desktop layer on cold boot
+        log_msg("[AuraOS WP] Sending 0x052C to progman (wParam=0x0D lParam=0x1)...");
+        SendMessageTimeoutW(progman, 0x052C, 0x0D, 0x1, SMTO_NORMAL, 1000, std::ptr::null_mut());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
         let progman_shell = FindWindowExW(progman, std::ptr::null_mut(), shell_class.as_ptr(), std::ptr::null());
         log_msg(&format!("[AuraOS WP] SHELLDLL_DefView under Progman = 0x{:X}", progman_shell as usize));
         if !progman_shell.is_null() {
             state.shell = progman_shell;
-        }
-
-        // If SHELLDLL_DefView is already found directly under Progman, we are in Raised Desktop mode.
-        // We only need to spawn/find WorkerW if SHELLDLL_DefView was NOT under Progman.
-        if progman_shell.is_null() {
-            log_msg("[AuraOS WP] Sending 0x052C to progman (wParam=0x0D lParam=0x1 for Win11)...");
-            SendMessageTimeoutW(progman, 0x052C, 0x0D, 0x1, SMTO_NORMAL, 1000, std::ptr::null_mut());
-
-            std::thread::sleep(std::time::Duration::from_millis(150));
-
+        } else {
             for attempt in 0..5usize {
                 EnumWindows(Some(enum_window), &mut state as *mut DesktopWindows as LPARAM);
-                if !state.workerw.is_null() {
-                    log_msg(&format!("[AuraOS WP] WorkerW found on attempt {}", attempt + 1));
+                if !state.shell.is_null() {
+                    log_msg(&format!("[AuraOS WP] SHELLDLL_DefView found on attempt {}", attempt + 1));
                     break;
                 }
                 if attempt < 4 {
-                    log_msg(&format!("[AuraOS WP] WorkerW not found yet (attempt {}), retrying...", attempt + 1));
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    std::thread::sleep(std::time::Duration::from_millis(80));
                 }
             }
+        }
+
+        // In Windows 11 raised desktop, WorkerW is created as a child of Progman
+        let child_workerw = FindWindowExW(progman, std::ptr::null_mut(), worker_class.as_ptr(), std::ptr::null());
+        if !child_workerw.is_null() {
+            state.workerw = child_workerw;
+            log_msg(&format!("[AuraOS WP] Found child WorkerW under Progman: 0x{:X}", child_workerw as usize));
+            // Move child WorkerW to HWND_BOTTOM so Explorer's static wallpaper never draws over our live wallpaper
+            SetWindowPos(child_workerw, 1 as HWND, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
 
         log_msg(&format!("[AuraOS WP] After enum: workerw=0x{:X} shell=0x{:X}",
@@ -362,7 +304,7 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
         
         let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
         // Strip 3D non-client borders and frames (WS_EX_WINDOWEDGE, WS_EX_CLIENTEDGE, etc.)
-        let new_ex_style = (ex_style | WS_EX_LAYERED) & !(0x00000100 | 0x00000200 | 0x00000001 | 0x00020000);
+        let new_ex_style = (ex_style | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & !(0x00000100 | 0x00000200 | 0x00000001 | 0x00020000);
         SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex_style as i32);
         SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
 
@@ -386,11 +328,14 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
         
         log_msg(&format!("[AuraOS WP] Set GWL_STYLE: 0x{:08X} -> 0x{:08X}, added WS_EX_LAYERED, DWM frame disabled", style, new_style));
 
-        let parent_hwnd = if !state.workerw.is_null() && progman_shell.is_null() {
+        let parent_hwnd = if is_raised_desktop || !progman_shell.is_null() {
+            log_msg(&format!("[AuraOS WP] MODE: Raised Desktop — parent = Progman 0x{:X}", progman as usize));
+            progman
+        } else if !state.workerw.is_null() {
             log_msg(&format!("[AuraOS WP] MODE: Standard Desktop — parent = WorkerW 0x{:X}", state.workerw as usize));
             state.workerw
         } else {
-            log_msg(&format!("[AuraOS WP] MODE: Raised Desktop — parent = Progman 0x{:X}", progman as usize));
+            log_msg(&format!("[AuraOS WP] MODE: Fallback — parent = Progman 0x{:X}", progman as usize));
             progman
         };
 
@@ -425,47 +370,16 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             mon_screen_x, mon_screen_y, client_x, client_y
         ));
 
-        // ── Measure the non-client frame insets dynamically ─────────────────
-        // We map the client area's (0,0) to screen coordinates and compare with
-        // the outer window rect to determine the exact top, left, right, bottom padding.
-        let mut pre_wr: RECT = std::mem::zeroed();
-        let mut pre_cr: RECT = std::mem::zeroed();
-        GetWindowRect(hwnd, &mut pre_wr);
-        GetClientRect(hwnd, &mut pre_cr);
-
-        let mut client_origin = [POINT { x: 0, y: 0 }];
-        MapWindowPoints(hwnd, std::ptr::null_mut(), client_origin.as_mut_ptr(), 1);
-
-        let left_frame = client_origin[0].x - pre_wr.left;
-        let top_frame = client_origin[0].y - pre_wr.top;
-        let right_frame = pre_wr.right - (client_origin[0].x + pre_cr.right);
-        let bottom_frame = pre_wr.bottom - (client_origin[0].y + pre_cr.bottom);
+        // Borderless WS_CHILD windows inside Progman/WorkerW have zero non-client insets.
+        // Size and position must match monitor dimensions exactly (1:1 pixel mapping)
+        // to prevent boundary spillover onto adjacent screens.
+        let adj_x = client_x;
+        let adj_y = client_y;
+        let adj_w = mon_w;
+        let adj_h = mon_h;
 
         log_msg(&format!(
-            "[AuraOS WP] Measured frame insets: left={}, top={}, right={}, bottom={}",
-            left_frame, top_frame, right_frame, bottom_frame
-        ));
-        log_msg(&format!(
-            "[AuraOS WP] Pre-positioning: WinRect=({},{})-({},{}) [{}x{}], ClientScreen=({},{})",
-            pre_wr.left, pre_wr.top, pre_wr.right, pre_wr.bottom,
-            pre_wr.right - pre_wr.left, pre_wr.bottom - pre_wr.top,
-            client_origin[0].x, client_origin[0].y
-        ));
-
-        // Use measured insets if plausible (0..50px), otherwise fallback to 9px horizontal
-        let pad_left = if left_frame >= 0 && left_frame < 50 { left_frame } else { 9 };
-        let pad_top = if top_frame >= 0 && top_frame < 50 { top_frame } else { 0 };
-        let pad_right = if right_frame >= 0 && right_frame < 50 { right_frame } else { 9 };
-        let pad_bottom = if bottom_frame >= 0 && bottom_frame < 50 { bottom_frame } else { 10 - pad_top };
-
-        let adj_x = client_x - pad_left;
-        let adj_y = client_y - pad_top;
-        let adj_w = mon_w + pad_left + pad_right;
-        let adj_h = mon_h + pad_top + pad_bottom;
-
-        log_msg(&format!(
-            "[AuraOS WP] Target client pos=({},{}) size={}x{} -> HWND pos=({},{}) size={}x{}",
-            client_x, client_y, mon_w, mon_h,
+            "[AuraOS WP] Exact pixel placement: pos=({},{}) size={}x{}",
             adj_x, adj_y, adj_w, adj_h
         ));
 
@@ -491,20 +405,15 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND) {
             SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED,
         );
 
-        // Clip the window region strictly to the monitor client rectangle so non-client frame padding
-        // never spills across monitor boundaries onto adjacent screens
-        if pad_left > 0 || pad_right > 0 || pad_top > 0 || pad_bottom > 0 {
-            let rgn = windows_sys::Win32::Graphics::Gdi::CreateRectRgn(
-                pad_left,
-                pad_top,
-                pad_left + mon_w,
-                pad_top + mon_h,
+        // Ensure child WorkerW (if present under Progman) stays at HWND_BOTTOM
+        // so Explorer's static wallpaper bitmap never draws over our live wallpaper!
+        if !state.workerw.is_null() && parent_hwnd == progman {
+            SetWindowPos(
+                state.workerw,
+                1 as HWND, // HWND_BOTTOM
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
             );
-            windows_sys::Win32::Graphics::Gdi::SetWindowRgn(hwnd, rgn, 1);
-            log_msg(&format!(
-                "[AuraOS WP] SetWindowRgn: clipped non-client frame to ({},{})-({},{})",
-                pad_left, pad_top, pad_left + mon_w, pad_top + mon_h
-            ));
         }
 
         // Force immediate DWM composition update and desktop client area invalidation
@@ -672,22 +581,8 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
 
             if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
                 if let Some(ref mut map) = *mpv_guard {
-                    map.remove(&label);
-                }
-            }
-
-            #[cfg(windows)]
-            if let Ok(mut guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
-                if let Some(ref mut map) = *guard {
-                    if let Some(h) = map.remove(&label) {
-                        let hwnd = h as HWND;
-                        unsafe {
-                            if IsWindow(hwnd) != 0 {
-                                ShowWindow(hwnd, SW_HIDE);
-                                SetParent(hwnd, std::ptr::null_mut());
-                                DestroyWindow(hwnd);
-                            }
-                        }
+                    if let Some(mut player) = map.remove(&label) {
+                        player.terminate();
                     }
                 }
             }
@@ -724,7 +619,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                 #[cfg(windows)]
                 if let Ok(hwnd) = win.hwnd() {
                     let raw_hwnd = hwnd.0 as HWND;
-                    pin_hwnd_as_wallpaper(raw_hwnd);
+                    pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
                 }
             } else {
                 // NEW MONITOR: Create host using the exact working startup path
@@ -758,7 +653,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                             log_msg(&host_log);
                             println!("{}", host_log);
 
-                            pin_hwnd_as_wallpaper(raw_hwnd);
+                            pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
                             let _ = win.show();
                         }
                     }
@@ -890,70 +785,59 @@ async fn apply_wallpaper(
                     let _ = win.hide();
                 }
 
-                // 2. Obtain dedicated native Win32 window (pure HWND, zero WebView2)
-                let pos = mon.position();
-                let size = mon.size();
-                #[cfg(windows)]
-                {
-                    match get_or_create_native_wallpaper_window(name, pos.x, pos.y, size.width as i32, size.height as i32) {
-                        Ok(native_h) => {
-                            let native_usize = native_h as usize;
-                            if is_main_hwnd(native_h) {
-                                let err = format!("[DIAG 10 CRITICAL ABORT] get_or_create_native_wallpaper_window returned MAIN_HWND: 0x{:X}", native_usize);
-                                log_msg(&err);
-                                eprintln!("{}", err);
-                                continue;
-                            }
-
-                            let parent_before = unsafe { GetParent(native_h) as usize };
-                            log_msg(&format!("[DIAG 2 & 4] Native host HWND for {}: 0x{:X}, Parent before apply: 0x{:X}", label, native_usize, parent_before));
-
-                            // Terminate existing MPV on this monitor
-                            if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                                if let Some(ref mut map) = *mpv_guard {
-                                    if let Some(mut existing) = map.remove(&label) {
-                                        existing.terminate();
-                                    }
-                                }
-                            }
-
-                            // Show native host window without activating or stealing focus
-                            unsafe {
-                                ShowWindow(native_h, SW_SHOWNOACTIVATE);
-                            }
-
-                            // Spawn MPV in background task so main UI thread NEVER blocks
-                            let label_clone = label.clone();
-                            let vpath_clone = vpath.clone();
-                            let native_h_val = native_h as usize;
-
-                            tauri::async_runtime::spawn_blocking(move || {
-                                let native_hwnd = native_h_val as HWND;
-                                match mpv::spawn_mpv_wallpaper(&vpath_clone, native_hwnd, &label_clone, Some(screen_volume), Some(screen_muted)) {
-                                    Ok(proc) => {
-                                        let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (Host HWND=0x{:X}, vol={}, muted={})", 
-                                            label_clone, native_h_val, screen_volume, screen_muted);
-                                        log_msg(&msg);
-                                        println!("{}", msg);
-                                        if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
-                                            let map = mpv_guard.get_or_insert_with(HashMap::new);
-                                            map.insert(label_clone, proc);
-                                        }
-                                    }
-                                    Err(err) => {
-                                        let err_msg = format!("[MPV ERROR] Failed to spawn MPV on {}: {}", label_clone, err);
-                                        log_msg(&err_msg);
-                                        eprintln!("{}", err_msg);
-                                    }
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            let err_msg = format!("[NATIVE HOST ERROR] Could not get native host for {}: {}", label, e);
-                            log_msg(&err_msg);
-                            eprintln!("{}", err_msg);
+                // 2. Terminate existing MPV on this monitor
+                if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                    if let Some(ref mut map) = *mpv_guard {
+                        if let Some(mut existing) = map.remove(&label) {
+                            existing.terminate();
                         }
                     }
+                }
+
+                let pos = mon.position();
+                let size = mon.size();
+
+                #[cfg(windows)]
+                {
+                    let label_clone = label.clone();
+                    let vpath_clone = vpath.clone();
+                    let mon_x = pos.x;
+                    let mon_y = pos.y;
+                    let mon_w = size.width as i32;
+                    let mon_h = size.height as i32;
+
+                    tauri::async_runtime::spawn_blocking(move || {
+                        match mpv::spawn_mpv_wallpaper(
+                            &vpath_clone,
+                            &label_clone,
+                            mon_x,
+                            mon_y,
+                            mon_w,
+                            mon_h,
+                            Some(screen_volume),
+                            Some(screen_muted),
+                        ) {
+                            Ok(proc) => {
+                                let hwnd = proc.hwnd as HWND;
+                                if !hwnd.is_null() {
+                                    pin_hwnd_as_wallpaper(hwnd, Some((mon_x, mon_y, mon_w, mon_h)));
+                                }
+                                let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (HWND=0x{:X}, vol={}, muted={})", 
+                                    label_clone, proc.hwnd, screen_volume, screen_muted);
+                                log_msg(&msg);
+                                println!("{}", msg);
+                                if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
+                                    let map = mpv_guard.get_or_insert_with(HashMap::new);
+                                    map.insert(label_clone, proc);
+                                }
+                            }
+                            Err(err) => {
+                                let err_msg = format!("[MPV ERROR] Failed to spawn MPV on {}: {}", label_clone, err);
+                                log_msg(&err_msg);
+                                eprintln!("{}", err_msg);
+                            }
+                        }
+                    });
                 }
             }
         }
@@ -973,24 +857,7 @@ async fn apply_wallpaper(
             }
         }
 
-        // 2. Hide native MPV host windows
-        #[cfg(windows)]
-        if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
-            if let Some(ref map) = *guard {
-                for (lbl, &raw_h) in map {
-                    if target == "*" || target == *lbl {
-                        unsafe {
-                            let hwnd = raw_h as HWND;
-                            if IsWindow(hwnd) != 0 {
-                                ShowWindow(hwnd, SW_HIDE);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Show canvas webview windows and send engine events
+        // 2. Show canvas webview windows and send engine events
         let windows = app.webview_windows();
         for (label, win) in windows {
             if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -1061,23 +928,6 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
                 }
             } else if let Some(mut proc) = map.remove(&target) {
                 proc.terminate();
-            }
-        }
-    }
-
-    // Hide native MPV host windows
-    #[cfg(windows)]
-    if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
-        if let Some(ref map) = *guard {
-            for (lbl, &raw_h) in map {
-                if target == "*" || target == *lbl {
-                    unsafe {
-                        let hwnd = raw_h as HWND;
-                        if IsWindow(hwnd) != 0 {
-                            ShowWindow(hwnd, SW_HIDE);
-                        }
-                    }
-                }
             }
         }
     }
@@ -1531,13 +1381,13 @@ fn get_diagnostics(app: AppHandle) -> serde_json::Value {
 
     let mut native_hosts = serde_json::Map::new();
     #[cfg(windows)]
-    if let Ok(guard) = NATIVE_WALLPAPER_WINDOWS.lock() {
+    if let Ok(guard) = MPV_PLAYERS.lock() {
         if let Some(ref map) = *guard {
-            for (label, &raw_h) in map {
-                let hwnd = raw_h as HWND;
+            for (label, proc) in map {
+                let hwnd = proc.hwnd as HWND;
                 let (parent, vis) = unsafe { (format!("0x{:X}", GetParent(hwnd) as usize), IsWindowVisible(hwnd) != 0) };
                 native_hosts.insert(label.clone(), serde_json::json!({
-                    "hwnd": format!("0x{:X}", raw_h),
+                    "hwnd": format!("0x{:X}", proc.hwnd),
                     "parent": parent,
                     "visible": vis,
                 }));
@@ -1597,6 +1447,18 @@ fn get_diagnostics(app: AppHandle) -> serde_json::Value {
 fn main() {
     #[cfg(windows)]
     {
+        // 0. Ensure main thread attaches to the interactive "Default" desktop on "WinSta0"
+        unsafe {
+            let desktop_name: Vec<u16> = "Default\0".encode_utf16().collect();
+            let mut hdesk = OpenDesktopW(desktop_name.as_ptr(), 0, 0, 0x01FF);
+            if hdesk.is_null() {
+                hdesk = OpenInputDesktop(0, 0, 0x01FF);
+            }
+            if !hdesk.is_null() {
+                SetThreadDesktop(hdesk);
+            }
+        }
+
         // 1. Link all child processes (WebView2, MPV) into a Windows Job Object so they form a single managed unit
         unsafe {
             use windows_sys::Win32::System::JobObjects::{

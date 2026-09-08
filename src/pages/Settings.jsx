@@ -64,8 +64,37 @@ export default function SettingsPage() {
   const fps = useStore(s => s.fps)
   const setFps = useStore(s => s.setFps)
   const autoStart = useStore(s => s.autoStart)
-  const toggleAutoStart = useStore(s => s.toggleAutoStart)
   const runInTray = useStore(s => s.runInTray)
+
+  useEffect(() => {
+    async function checkAutostart() {
+      try {
+        const { isEnabled } = await import('@tauri-apps/plugin-autostart')
+        const enabled = await isEnabled()
+        if (enabled !== autoStart) {
+          useStore.setState({ autoStart: enabled })
+        }
+      } catch {}
+    }
+    checkAutostart()
+  }, [])
+
+  const handleToggleAutoStart = async () => {
+    const nextVal = !autoStart
+    useStore.setState({ autoStart: nextVal })
+    try {
+      const { enable, disable, isEnabled } = await import('@tauri-apps/plugin-autostart')
+      if (nextVal) {
+        await enable()
+      } else {
+        await disable()
+      }
+      const verified = await isEnabled()
+      useStore.setState({ autoStart: verified })
+    } catch (err) {
+      console.warn('[AetherFlow] Autostart plugin failed:', err)
+    }
+  }
   const toggleRunInTray = useStore(s => s.toggleRunInTray)
   const pauseOnBattery = useStore(s => s.pauseOnBattery)
   const togglePauseOnBattery = useStore(s => s.togglePauseOnBattery)
@@ -198,7 +227,7 @@ export default function SettingsPage() {
       icon: Power, title: 'System',
       content: (
         <>
-          <ToggleRow label="Launch at Startup" desc="Start AetherFlow when Windows boots" value={autoStart} toggle={toggleAutoStart} />
+          <ToggleRow label="Launch at Startup" desc="Start AetherFlow when Windows boots" value={autoStart} toggle={handleToggleAutoStart} />
           <ToggleRow label="Minimize to Tray" desc="Keep running in system tray when closed" value={runInTray} toggle={toggleRunInTray} />
         </>
       ),

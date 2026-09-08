@@ -1,7 +1,8 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { Home, Store, Library, Settings, Zap } from 'lucide-react'
-import { useStore } from './store/useStore.js'
+import { useStore, syncCustomWallpapersFromDisk } from './store/useStore.js'
+import { applyWallpaperToDesktop } from './lib/wallpaperActions.js'
 import StatusBar from './components/StatusBar/index.jsx'
 import HomePage from './pages/Home.jsx'
 import MarketplacePage from './pages/Marketplace.jsx'
@@ -53,6 +54,38 @@ export default function App() {
       } catch {}
     }
     initWindow()
+  }, [])
+
+  // Auto-restore wallpaper & sync custom wallpapers on startup/cold boot
+  React.useEffect(() => {
+    let timer = null
+    async function restoreStartup() {
+      try {
+        await syncCustomWallpapersFromDisk()
+        const state = useStore.getState()
+        if (state.isWallpaperRunning) {
+          timer = setTimeout(async () => {
+            if (state.screenArrangement === 'per-screen' && state.monitorWallpapers && Object.keys(state.monitorWallpapers).length > 0) {
+              console.log('[AetherFlow] Restoring per-screen wallpapers on startup:', state.monitorWallpapers)
+              for (const [monLabel, wp] of Object.entries(state.monitorWallpapers)) {
+                if (wp) {
+                  await applyWallpaperToDesktop(wp, { targetMonitor: monLabel })
+                }
+              }
+            } else if (state.activeWallpaper) {
+              console.log('[AetherFlow] Restoring active wallpaper on startup:', state.activeWallpaper)
+              await applyWallpaperToDesktop(state.activeWallpaper)
+            }
+          }, 600)
+        }
+      } catch (e) {
+        console.error('[AetherFlow] Startup restoration failed:', e)
+      }
+    }
+    restoreStartup()
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
   }, [])
 
   return (

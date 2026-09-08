@@ -130,3 +130,43 @@
     - Recompiled standalone release with `npx tauri build --no-bundle` and updated root `AetherFlow.exe` (7.3MB with embedded assets). Verified standalone launch and frontend heartbeat without localhost dependencies.
 - **Build status:** ✅ `npm run build` (419ms) and `cargo check` (3.06s) passing with 0 errors.
 ---
+
+## Session: 2026-09-08 17:00 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Diagnosed and resolved the cold-start and laptop-restart issues ("only audio plays, custom wallpapers don't apply, app breaks after laptop restart"):
+    - **Root Cause 1 (MPV Audio-Only / Direct3D 11 Swapchain Failure)**: Passing `--wid` to an `AetherFlow_MpvHost` cross-process child window caused MPV's DirectX 11 backend to fail swapchain creation with `[vo/gpu/win32] unable to create window!`, falling back to audio-only. Refactored `mpv.rs` to spawn MPV with a native borderless window and reparent its HWND (`class="mpv"`) directly into `Progman` behind `SHELLDLL_DefView` (Lively Wallpaper architecture).
+    - **Root Cause 2 (Windows Explorer Cold-Boot Timing)**: On clean reboot, Explorer takes 1-4 seconds to initialize `Progman`. When AetherFlow launched on startup, `FindWindowW` failed immediately on tick 0. Added a 6-second retry loop in `pin_hwnd_as_wallpaper` so AetherFlow waits for Explorer to be ready before anchoring.
+    - **Root Cause 3 (Desktop Window Station Attachment)**: Added `OpenDesktopW("Default")` / `SetThreadDesktop` at the start of `fn main()` to ensure all windows and child processes attach to the interactive `WinSta0\Default` desktop.
+    - **Root Cause 4 (Windows 11 WorkerW Occlusion)**: Pushed Explorer's static wallpaper child `WorkerW` under `Progman` to `HWND_BOTTOM` to prevent it from drawing over live video wallpapers.
+    - **Root Cause 5 (Frontend State Hydration & Auto-Restoration)**: Added `isWallpaperRunning` to `partialize` in `src/store/useStore.js`. Added startup restoration hook in `src/App.jsx` to call `syncCustomWallpapersFromDisk()` and automatically re-apply `activeWallpaper` on mount after a 600ms delay.
+    - **Root Cause 6 (Autostart Integration)**: Installed and wired `@tauri-apps/plugin-autostart` (`enable()`, `disable()`, `isEnabled()`) to the "Launch at Startup" toggle in `Settings.jsx`.
+    - Recompiled production release binary with `cargo build --release --bin aetherflow` and updated `AetherFlow.exe` in the project root.
+- **Build status:** ✅ `npm run build` (461ms), `cargo check` (0 errors, 0 warnings), and `AetherFlow.exe` release binary verified.
+---
+
+## Session: 2026-09-08 17:10 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved "Hmmm... can't reach this page — localhost refused to connect (ERR_CONNECTION_REFUSED)" on cold double-click after PC restart:
+    - **Root Cause**: In `src-tauri/Cargo.toml`, `[features]` defined `custom-protocol = ["tauri/custom-protocol"]` without `default = ["custom-protocol"]`. Compiling with raw `cargo build --release` in prior sessions omitted the feature flag, causing Tauri 2's `tauri-macros` (`context.rs:155`) to evaluate `dev: cfg!(not(feature = "custom-protocol"))` as `true`. In dev mode, Tauri attempts to connect to `self.config.build.dev_url` (`http://localhost:1420`), failing immediately when no Vite dev server is running.
+    - **Fix**: Added `default = ["custom-protocol"]` to `[features]` in `src-tauri/Cargo.toml` so any future `cargo build` or `cargo check` automatically enables custom protocol asset embedding.
+    - Recompiled production standalone binary with `npx tauri build --no-bundle`, generating embedded 7.3MB executable at `src-tauri/target/release/aetherflow.exe`.
+    - Overwrote root `C:\Users\Yashpreet_o7\Desktop\AetherFlow\AetherFlow.exe` with the new standalone binary.
+    - Verified with `.\AetherFlow.exe --diagnostics`: confirmed `[FRONTEND HEARTBEAT]` reported page `/` successfully mounted and active from embedded assets (`http://tauri.localhost`) without any connection to `localhost:1420`.
+    - Rebuilt NSIS distribution installer package via `npm run tauri:build`.
+- **Build status:** ✅ `npm run build` (624ms), `AetherFlow.exe` (7.3MB embedded standalone verified offline).
+---
+
+## Session: 2026-09-08 17:30 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Resolved "custom wallpaper only applies to one screen instead of both" and "white border issue between screens":
+    - **Root Cause 1 (Custom Wallpaper only applying to one screen)**: When spawning MPV video wallpapers, `pin_hwnd_as_wallpaper` took only `hwnd` and called `MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)`. Because MPV's newly spawned window initially spawned at `(128, 128)` before geometry took effect, `MonitorFromWindow` always matched Monitor 1 (primary). In duplicated or multi-monitor modes, MPV instances for Monitor 2 were forcibly repositioned onto Monitor 1, leaving Monitor 2 without video wallpaper.
+    - **Fix 1**: Updated `pin_hwnd_as_wallpaper` in `src-tauri/src/main.rs` to accept `target_bounds: Option<(i32, i32, i32, i32)>`. All MPV and Webview call sites now supply their exact monitor bounds `(pos.x, pos.y, width, height)`. Monitor 2's MPV is now pinned directly and accurately to Monitor 2.
+    - **Root Cause 2 (White border between screens)**: `pin_hwnd_as_wallpaper` computed artificial `pad_left = 9, pad_right = 9, adj_w = mon_w + 18`, expanding Monitor 1's window width to 1938 at `x = -9` and extending to `x = 1929`. Since Monitor 2 begins at `x = 1920`, Monitor 1's window overflowed 9px onto the left of Monitor 2. The subsequent `SetWindowRgn` caused DWM to paint the clipped non-client boundary with a white border.
+    - **Fix 2**: Stripped artificial padding and `SetWindowRgn` from `pin_hwnd_as_wallpaper`. Child windows are now placed strictly 1:1 against monitor boundaries (`adj_x = client_x, adj_y = client_y, adj_w = mon_w, adj_h = mon_h`). Zero pixels overlap between screens.
+    - **Fix 3**: In `src-tauri/src/mpv.rs`, formatted geometry correctly (`--geometry={:+}{:+}`) and added `--background-color=#000000`. In `src/App.jsx`, enhanced startup restoration to re-apply per-screen wallpapers to each monitor when in `per-screen` mode.
+    - Recompiled production standalone binary with `cargo build --release --bin aetherflow` and updated `AetherFlow.exe` in the project root (7.3MB).
+- **Build status:** ✅ `npm run build` (783ms), `cargo check` (0 errors), and `AetherFlow.exe` updated.
+---

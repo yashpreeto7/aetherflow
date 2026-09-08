@@ -15,6 +15,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.113.0",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-fs": "^2.5.2",
     "lucide-react": "^1.39.0",
