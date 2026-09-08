@@ -21,6 +21,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     GetWindowRect, GetClientRect,
     WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE,
+    SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDCHANGE,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -1225,6 +1226,39 @@ async fn read_local_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| e.to_string())
 }
 
+/// Sets the native Windows desktop wallpaper via Win32 SystemParametersInfoW
+#[tauri::command]
+fn set_system_wallpaper(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let wide: Vec<u16> = OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let res = SystemParametersInfoW(
+                SPI_SETDESKWALLPAPER,
+                0,
+                wide.as_ptr() as *mut std::ffi::c_void,
+                SPIF_UPDATEINIFILE | SPIF_SENDCHANGE,
+            );
+            if res == 0 {
+                return Err("Failed to set system wallpaper".to_string());
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("Only supported on Windows".to_string())
+    }
+}
+
 #[cfg(windows)]
 fn trim_all_process_memory() {
     use std::collections::HashSet;
@@ -1622,6 +1656,7 @@ fn main() {
             get_diagnostics,
             save_custom_wallpapers,
             load_custom_wallpapers,
+            set_system_wallpaper,
             get_detailed_memory_usage,
         ])
         .setup(|app| {

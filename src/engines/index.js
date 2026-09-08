@@ -118,9 +118,24 @@ export const ENGINES = {
     },
     load: () => import('./video-player.js').then(m => m.default),
   },
+  'image-player': {
+    id: 'image-player',
+    name: 'Picture Wallpaper',
+    description: 'Displays a high-resolution local picture (PNG, JPG, WebP) as wallpaper',
+    preview: '/previews/matrix-rain.svg',
+    tags: ['image', 'picture', 'custom', 'local'],
+    defaultConfig: { imagePath: '', fit: 'cover' },
+    properties: {
+      imagePath: { type: 'text', label: 'Local Image Path (.png, .jpg, .webp)', default: '' },
+      fit: { type: 'select', label: 'Fit Mode', options: ['cover', 'contain', 'stretch'], default: 'cover' },
+    },
+    load: () => import('./image-player.js').then(m => m.createImagePlayer || m.default),
+  },
 }
 
-export const WALLPAPER_LIST = Object.values(ENGINES)
+export const WALLPAPER_LIST = Object.values(ENGINES).filter(
+  e => e.id !== 'video-player' && e.id !== 'image-player'
+)
 
 /** Prebuilt themes shipped with the app */
 export const BUILTIN_THEMES = [

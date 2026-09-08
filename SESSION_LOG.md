@@ -179,3 +179,21 @@
 - **Build status:** ✅ `npm run build` (1.16s), `npm run tauri:build` (0 errors), and `AetherFlow.exe` updated.
 ---
 
+## Session: 2026-09-08 18:20 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Committed prior border scaling fix to git repository (`ac56812`: `fix(desktop): fix built-in wallpaper scaling and border on all sides`).
+  - Added full support for normal background pictures (`.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`):
+    - **Canvas 2D Image Engine (`src/engines/image-player.js`)**: Created a lightweight (~1.4KB) Canvas 2D engine supporting high-resolution image rendering, responsive resize, dynamic aspect-ratio scaling (`cover`, `contain`, `stretch`), and zero CPU overhead when idle.
+    - **Engine Registry (`src/engines/index.js`)**: Registered `image-player` and cleaned up `WALLPAPER_LIST` to filter out engine templates (`video-player`, `image-player`) so only legitimate built-ins appear in the built-in catalogue.
+    - **Actions & Persistence (`src/lib/wallpaperActions.js`)**: Updated `importWallpaperDialog` with multi-category filters (`All Supported Media`, `Pictures (*.png, *.jpg, *.jpeg, *.webp, *.bmp)`, `Videos (*.mp4, *.webm, *.mkv...)`). Added `addCustomMediaWallpaper` to detect media type and create appropriate `image-player` or `video-player` items. Added `setSystemWallpaper` helper.
+    - **Native System Wallpaper Command (`src-tauri/src/main.rs`)**: Implemented `set_system_wallpaper(path: String)` via Win32 `SystemParametersInfoW(SPI_SETDESKWALLPAPER)` so users can also persist any picture as their native Windows desktop background.
+    - **UI Controls & Previews (`src/pages/Home.jsx`, `src/pages/Library.jsx`)**:
+      - File pickers and drag-and-drop now accept PNG, JPG, JPEG, WebP, and BMP files in addition to videos.
+      - Updated `AddWallpaperModal` with dynamic icon and title (`Add Picture Wallpaper` vs `Add Video Wallpaper`).
+      - Added dynamic property controls for images on `Home.jsx`: Fit mode toggle (`Cover`, `Contain`, `Stretch`) and "Set as Windows Wallpaper" button with visual confirmation.
+      - Updated `WallpaperThumbnail`: renders crisp `<img>` tag via Tauri's asset protocol with smooth hover zoom for image wallpapers.
+  - **Build status:** ✅ `npm run build` (637ms), `cargo check` passing with 0 errors.
+---
+
+

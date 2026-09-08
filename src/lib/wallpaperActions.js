@@ -77,40 +77,77 @@ export async function stopDesktopWallpaper(targetMonitor = null) {
 }
 
 /**
- * Opens native file dialog to import a video wallpaper and adds it to Library
+/**
+ * Sets the native Windows desktop wallpaper (Explorer wallpaper)
+ */
+export async function setSystemWallpaper(path) {
+  if (!path) return false
+  try {
+    await tauriInvoke('set_system_wallpaper', { path })
+    return true
+  } catch (err) {
+    console.error('[AetherFlow] Failed to set system wallpaper:', err)
+    return false
+  }
+}
+
+/**
+ * Opens native file dialog to import a video or picture wallpaper and adds it to Library
  */
 export async function importWallpaperDialog() {
   try {
     const { open } = await import('@tauri-apps/plugin-dialog')
     const selected = await open({
       multiple: false,
-      filters: [{
-        name: 'Video Wallpapers',
-        extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov']
-      }]
+      filters: [
+        {
+          name: 'All Supported Media',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+        },
+        {
+          name: 'Pictures (*.png, *.jpg, *.jpeg, *.webp, *.bmp)',
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp']
+        },
+        {
+          name: 'Videos (*.mp4, *.webm, *.mkv, *.avi, *.mov)',
+          extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+        }
+      ]
     })
 
     if (selected) {
       const path = typeof selected === 'string' ? selected : selected[0]
       if (!path) return null
 
-      return addCustomVideoWallpaper(path)
+      return addCustomMediaWallpaper(path)
     }
   } catch (err) {
-    console.error('[AuraOS] Failed to open import dialog:', err)
+    console.error('[AetherFlow] Failed to open import dialog:', err)
   }
   return null
 }
 
 /**
- * Adds a video file path into the user's installed library with optional custom name & home pinning
+ * Adds a media file path (picture or video) into the user's installed library with optional custom name & home pinning
  */
-export function addCustomVideoWallpaper(path, customName = null, pinToHome = true) {
+export function addCustomMediaWallpaper(path, customName = null, pinToHome = true) {
   if (!path) return null
   const filename = path.split('\\').pop().split('/').pop()
   const cleanName = filename.replace(/\.[^/.]+$/, '') // remove extension for title
 
-  const item = {
+  const isImg = /\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(path)
+
+  const item = isImg ? {
+    id: 'local-' + Date.now(),
+    type: 'wallpaper',
+    name: customName?.trim() || cleanName || filename,
+    engine: 'image-player',
+    config: { imagePath: path, fit: 'cover' },
+    tags: ['custom', 'picture', 'image'],
+    installedAt: new Date().toISOString(),
+    isCustom: true,
+    mediaType: 'image',
+  } : {
     id: 'local-' + Date.now(),
     type: 'wallpaper',
     name: customName?.trim() || cleanName || filename,
@@ -119,6 +156,7 @@ export function addCustomVideoWallpaper(path, customName = null, pinToHome = tru
     tags: ['custom', 'video'],
     installedAt: new Date().toISOString(),
     isCustom: true,
+    mediaType: 'video',
   }
 
   const state = useStore.getState()
@@ -128,3 +166,7 @@ export function addCustomVideoWallpaper(path, customName = null, pinToHome = tru
   }
   return item
 }
+
+// Backward compatibility alias
+export const addCustomVideoWallpaper = addCustomMediaWallpaper
+

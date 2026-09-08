@@ -19,7 +19,14 @@ import { Video, Image as ImageIcon } from 'lucide-react'
 export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
   const engineId = wallpaper.engine || wallpaper.id
   const descriptor = ENGINES[engineId]
-  const isVideo = wallpaper.isCustom || engineId === 'video-player'
+
+  const imgPath = wallpaper.config?.imagePath || wallpaper.defaultConfig?.imagePath || ''
+  const isImage = engineId === 'image-player' || 
+                  wallpaper.mediaType === 'image' || 
+                  Boolean(imgPath && !wallpaper.config?.videoPath) ||
+                  Boolean(wallpaper.tags && wallpaper.tags.includes('image'))
+
+  const isVideo = !isImage && (wallpaper.isCustom || engineId === 'video-player' || wallpaper.mediaType === 'video')
   const videoNodeRef = useRef(null)
   const [debouncedHover, setDebouncedHover] = useState(false)
 
@@ -63,6 +70,61 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
       }
     }
   }, [])
+
+  // Image Wallpaper Thumbnail:
+  // Render high-res picture directly with zero GPU decode overhead
+  if (isImage) {
+    const imgSrc = imgPath
+      ? (imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : convertFileSrc(imgPath))
+      : ''
+
+    return (
+      <div style={{ width: '100%', height: '100%', position: 'relative', background: '#090a0f', overflow: 'hidden' }}>
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt={wallpaper.name}
+            loading="lazy"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              transition: 'transform 0.3s ease',
+              transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+            }}
+          />
+        ) : (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #0f111a 0%, #1a1b26 100%)',
+            gap: 6
+          }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: 'rgba(16, 185, 129, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            }}>
+              <ImageIcon size={22} style={{ color: 'var(--color-emerald)', opacity: 0.9 }} />
+            </div>
+            <span style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Picture Wallpaper
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // Custom Video Wallpaper Thumbnail:
   // Render static poster or placeholder when not hovered.

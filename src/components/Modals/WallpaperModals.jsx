@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react'
-import { X, Check, Pencil, Video, Pin } from 'lucide-react'
+import { X, Check, Pencil, Video, Image as ImageIcon, Pin } from 'lucide-react'
 
 /**
- * Modal to customize wallpaper name and options when adding a new local video
+ * Modal to customize wallpaper name and options when adding a new local video or picture
  */
 export function AddWallpaperModal({ isOpen, filePath, initialName, onClose, onConfirm }) {
   const [name, setName] = useState('')
   const [pinToHome, setPinToHome] = useState(true)
+
+  const isImage = Boolean(filePath && /\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(filePath))
 
   useEffect(() => {
     if (isOpen) {
@@ -45,8 +47,14 @@ export function AddWallpaperModal({ isOpen, filePath, initialName, onClose, onCo
       }}>
         <div className="flex items-center justify-between" style={{ marginBottom: 18 }}>
           <div className="flex items-center gap-2">
-            <Video size={18} className="text-brand" />
-            <h3 className="font-semibold text-base">Add Local Wallpaper</h3>
+            {isImage ? (
+              <ImageIcon size={18} className="text-brand" />
+            ) : (
+              <Video size={18} className="text-brand" />
+            )}
+            <h3 className="font-semibold text-base">
+              {isImage ? 'Add Picture Wallpaper' : 'Add Local Wallpaper'}
+            </h3>
           </div>
           <button className="btn-icon" onClick={onClose}><X size={15} /></button>
         </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
-  Video, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight
+  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight
 } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
@@ -14,7 +14,9 @@ import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/Wa
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
+  addCustomMediaWallpaper,
   addCustomVideoWallpaper,
+  setSystemWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
 
@@ -29,6 +31,7 @@ export default function HomePage() {
   // Modals state
   const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
   const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
+  const [winWallpaperSet, setWinWallpaperSet] = useState(false)
 
   const activeWallpaper       = useStore(s => s.activeWallpaper)
   const setActiveWallpaper    = useStore(s => s.setActiveWallpaper)
@@ -98,10 +101,20 @@ export default function HomePage() {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({
         multiple: false,
-        filters: [{
-          name: 'Video Wallpapers',
-          extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov']
-        }]
+        filters: [
+          {
+            name: 'All Supported Media',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+          },
+          {
+            name: 'Pictures (*.png, *.jpg, *.jpeg, *.webp, *.bmp)',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp']
+          },
+          {
+            name: 'Videos (*.mp4, *.webm, *.mkv, *.avi, *.mov)',
+            extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+          }
+        ]
       })
 
       if (selected) {
@@ -125,7 +138,7 @@ export default function HomePage() {
 
       const path = paths[0]
       const ext = path.split('.').pop().toLowerCase()
-      if (['mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov'].includes(ext)) {
+      if (['png', 'jpg', 'jpeg', 'webp', 'bmp', 'mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov', 'wmv', 'flv'].includes(ext)) {
         const filename = path.split('\\').pop().split('/').pop()
         const cleanName = filename.replace(/\.[^/.]+$/, '')
         setAddModal({ isOpen: true, path, initialName: cleanName })
@@ -137,7 +150,7 @@ export default function HomePage() {
 
   function handleConfirmAdd({ name, pinToHome }) {
     if (!addModal.path) return
-    const newItem = addCustomVideoWallpaper(addModal.path, name, pinToHome)
+    const newItem = addCustomMediaWallpaper(addModal.path, name, pinToHome)
     setAddModal({ isOpen: false, path: '', initialName: '' })
     if (newItem) {
       selectWallpaper(newItem)
@@ -279,6 +292,31 @@ export default function HomePage() {
     }
   }
 
+  async function handleFit(fit) {
+    if (!activeWallpaper) return
+    const updatedConfig = { ...(activeWallpaper.config || {}), fit }
+    useStore.getState().updateWallpaperConfig({ fit })
+    if (isWallpaperRunning) {
+      await tauriInvoke('update_wallpaper_config', {
+        config: updatedConfig,
+        monitorLabel: selectedMonitorLabel || null,
+      })
+    }
+  }
+
+  async function handleSetWindowsWallpaper() {
+    const imgPath = activeWallpaper?.config?.imagePath
+    if (!imgPath) return
+    const ok = await setSystemWallpaper(imgPath)
+    if (ok) {
+      setWinWallpaperSet(true)
+      setTimeout(() => setWinWallpaperSet(false), 2500)
+    }
+  }
+
+  const isCurrentWallpaperImage = activeWallpaper?.engine === 'image-player' ||
+    Boolean(activeWallpaper?.config?.imagePath && !activeWallpaper?.config?.videoPath)
+
   return (
     <div className="animate-fadeIn" style={{ maxWidth: 960, margin: '0 auto' }}>
       {/* Top Header */}
@@ -372,11 +410,11 @@ export default function HomePage() {
         >
           <Plus size={28} className="text-brand" style={{ margin: '0 auto 10px', opacity: 0.8 }} />
           <div className="text-sm font-medium">Select a wallpaper below or click to import your own</div>
-          <div className="text-xs text-muted" style={{ marginTop: 4 }}>Supports MP4, WebM, and MKV video files with auto-loop</div>
+          <div className="text-xs text-muted" style={{ marginTop: 4 }}>Supports pictures (PNG, JPG, WebP) and videos (MP4, WebM, MKV)</div>
         </div>
       )}
 
-      {/* Property Controls (Opacity / Brightness / Speed) */}
+      {/* Property Controls (Opacity / Brightness / Speed or Fit) */}
       {activeWallpaper && (
         <div className="card p-4" style={{ marginBottom: 28 }}>
           {screenArrangement === 'per-screen' && monitors.length > 1 && (
@@ -408,26 +446,92 @@ export default function HomePage() {
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20 }}>
-            {[
-              { label: 'Opacity',    value: wallpaperOpacity,    set: handleOpacity,    min: 0.1, max: 1,   step: 0.05, fmt: v => `${Math.round(v * 100)}%` },
-              { label: 'Brightness', value: wallpaperBrightness, set: handleBrightness, min: 0.1, max: 1.5, step: 0.05, fmt: v => `${Math.round(v * 100)}%` },
-              { label: 'Speed',      value: wallpaperSpeed,      set: handleSpeed,      min: 0.1, max: 3,   step: 0.1,  fmt: v => `${parseFloat(v).toFixed(1)}×` },
-            ].map(({ label, value, set, min, max, step, fmt }) => (
-              <div key={label}>
+            <div>
+              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+                <span>Opacity</span>
+                <span className="text-brand font-mono">{Math.round(wallpaperOpacity * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                className="slider"
+                min={0.1} max={1} step={0.05}
+                value={wallpaperOpacity}
+                onChange={e => handleOpacity(parseFloat(e.target.value))}
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+                <span>Brightness</span>
+                <span className="text-brand font-mono">{Math.round(wallpaperBrightness * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                className="slider"
+                min={0.1} max={1.5} step={0.05}
+                value={wallpaperBrightness}
+                onChange={e => handleBrightness(parseFloat(e.target.value))}
+              />
+            </div>
+
+            {isCurrentWallpaperImage ? (
+              <div>
                 <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
-                  <span>{label}</span>
-                  <span className="text-brand font-mono">{fmt(value)}</span>
+                  <span>Scaling / Fit</span>
+                  <span className="text-brand font-mono capitalize">{activeWallpaper.config?.fit || 'cover'}</span>
+                </div>
+                <div className="flex gap-1">
+                  {['cover', 'contain', 'stretch'].map(fit => (
+                    <button
+                      key={fit}
+                      className={`btn ${(activeWallpaper.config?.fit || 'cover') === fit ? 'btn-primary' : 'btn-ghost'}`}
+                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, textTransform: 'capitalize' }}
+                      onClick={() => handleFit(fit)}
+                    >
+                      {fit}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+                  <span>Speed</span>
+                  <span className="text-brand font-mono">{parseFloat(wallpaperSpeed).toFixed(1)}×</span>
                 </div>
                 <input
                   type="range"
                   className="slider"
-                  min={min} max={max} step={step}
-                  value={value}
-                  onChange={e => set(parseFloat(e.target.value))}
+                  min={0.1} max={3} step={0.1}
+                  value={wallpaperSpeed}
+                  onChange={e => handleSpeed(parseFloat(e.target.value))}
                 />
               </div>
-            ))}
+            )}
           </div>
+
+          {isCurrentWallpaperImage && activeWallpaper?.config?.imagePath && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-main)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+              <div className="text-xs text-muted">
+                Also set this picture as your Windows desktop system wallpaper (persists even when app closes)
+              </div>
+              <button
+                className={`btn ${winWallpaperSet ? 'btn-success' : 'btn-ghost'}`}
+                style={{ fontSize: 12, padding: '5px 14px' }}
+                onClick={handleSetWindowsWallpaper}
+              >
+                {winWallpaperSet ? (
+                  <>
+                    <Check size={13} style={{ marginRight: 4 }} /> Set as System Wallpaper!
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon size={13} style={{ marginRight: 4 }} /> Set as Windows Wallpaper
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -482,7 +586,7 @@ export default function HomePage() {
           {[
             { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
             { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
-            { id: 'custom', label: `Videos & Custom (${homeWallpapers.filter(w => w.isCustom).length})` },
+            { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom).length})` },
           ].map(cat => (
             <button
               key={cat.id}

@@ -12,6 +12,7 @@ import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/Wa
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
+  addCustomMediaWallpaper,
   addCustomVideoWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
@@ -81,10 +82,20 @@ export default function LibraryPage() {
       const { open } = await import('@tauri-apps/plugin-dialog')
       const selected = await open({
         multiple: false,
-        filters: [{
-          name: 'Video Wallpapers',
-          extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov']
-        }]
+        filters: [
+          {
+            name: 'All Supported Media',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+          },
+          {
+            name: 'Pictures (*.png, *.jpg, *.jpeg, *.webp, *.bmp)',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp']
+          },
+          {
+            name: 'Videos (*.mp4, *.webm, *.mkv, *.avi, *.mov)',
+            extensions: ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv']
+          }
+        ]
       })
 
       if (selected) {
@@ -108,7 +119,7 @@ export default function LibraryPage() {
 
       const path = paths[0]
       const ext = path.split('.').pop().toLowerCase()
-      if (['mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov'].includes(ext)) {
+      if (['png', 'jpg', 'jpeg', 'webp', 'bmp', 'mp4', 'webm', 'ogg', 'mkv', 'avi', 'mov', 'wmv', 'flv'].includes(ext)) {
         const filename = path.split('\\').pop().split('/').pop()
         const cleanName = filename.replace(/\.[^/.]+$/, '')
         setAddModal({ isOpen: true, path, initialName: cleanName })
@@ -120,7 +131,7 @@ export default function LibraryPage() {
 
   function handleConfirmAdd({ name, pinToHome }) {
     if (!addModal.path) return
-    const newItem = addCustomVideoWallpaper(addModal.path, name, pinToHome)
+    const newItem = addCustomMediaWallpaper(addModal.path, name, pinToHome)
     setAddModal({ isOpen: false, path: '', initialName: '' })
     if (newItem) {
       handleApply(newItem)
@@ -293,7 +304,7 @@ export default function LibraryPage() {
             { id: 'all', label: `All (${allWallpapers.length})` },
             { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
             { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
-            { id: 'custom', label: `Custom Videos (${allWallpapers.filter(w => w.isCustom).length})` },
+            { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom).length})` },
           ].map(cat => (
             <button
               key={cat.id}

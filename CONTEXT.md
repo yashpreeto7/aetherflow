@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 18:05 IST — Fixed built-in wallpaper border on all sides & scaling issue: dynamically measured frame insets on Tauri WebView2 windows, applied exact coordinate compensation and SetWindowRgn clipping to eliminate 9px window frame borders, and ensured canvas resize in all 7 engines falls back to window.innerWidth/innerHeight; rebuilt standalone AetherFlow.exe.
+2026-09-08 18:20 IST — Committed built-in border scaling fix (ac56812); added full support for normal background pictures (.png, .jpg, .jpeg, .webp, .bmp) with Canvas 2D image-player engine, aspect-ratio scaling (cover/contain/stretch), Win32 set_system_wallpaper integration, and media import dialogs.
 
 ---
 
@@ -57,6 +57,7 @@ src/engines/deep-space.js           Parallax stars, nebula, shooting stars
 src/engines/aurora.js               Borealis curtains over starfield
 src/engines/tokyo-rain.js           Procedural neon city + rain
 src/engines/audio-spectrum.js       Mic-reactive CAVA-style bars
+src/engines/image-player.js         Canvas 2D picture wallpaper engine (PNG/JPG/WebP)
 src/engines/index.js                Lazy-loaded engine registry + theme list
 src/store/useStore.js               Zustand persisted global state
 src/styles/themes.css               6 Sovereign theme CSS token sets
