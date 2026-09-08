@@ -967,7 +967,8 @@ async fn apply_wallpaper(
     }
 
     let video_path_opt = config.get("videoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt.as_deref());
+    let is_mpv_ready = mpv::find_mpv_binary().is_ok();
+    let is_video = mpv::is_video_wallpaper(&engine_id, video_path_opt.as_deref()) && is_mpv_ready;
 
     let monitors = app.available_monitors().unwrap_or_default();
 

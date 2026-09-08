@@ -140,8 +140,24 @@ pub fn find_mpv_binary() -> Result<PathBuf, String> {
         }
     }
 
-    // 3. Fall back to system PATH
-    Ok(PathBuf::from("AetherFlow-VideoEngine.exe"))
+    // 3. Fall back to system PATH if installed globally
+    for name in &["AetherFlow-VideoEngine.exe", "mpv.exe"] {
+        #[cfg(windows)]
+        if let Ok(output) = std::process::Command::new("where.exe").arg(name).output() {
+            if output.status.success() {
+                if let Ok(text) = String::from_utf8(output.stdout) {
+                    if let Some(first_line) = text.lines().next() {
+                        let p = PathBuf::from(first_line.trim());
+                        if p.exists() {
+                            return Ok(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err("MPV executable not found on disk or PATH".to_string())
 }
 
 /// Check if a given wallpaper configuration represents a video wallpaper

@@ -30,9 +30,12 @@ src-tauri/gen/
 src-tauri/bin/
 bin/
 *.exe
+!release/*.exe
+!release/*.zip
 
 # Scratch / temporary debug scripts
 scratch/
+.playwright-mcp/
 .env
 .env.*
 !.env.example
