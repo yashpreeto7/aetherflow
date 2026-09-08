@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 03:45 IST — Resolved window layering flash, Progman pinning, MPV candidate paths, and event broadcasting. Standalone binary verified.
+2026-09-08 16:10 IST — Resolved standalone executable offline asset bundling via custom-protocol feature in Cargo.toml. Standalone AetherFlow.exe verified without localhost server.
 
 ---
 
