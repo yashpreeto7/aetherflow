@@ -100,13 +100,19 @@ No installation required! Just download and run:
 | Package | Format | Direct Download Link |
 |---|---|---|
 | **Standalone Executable** | `.exe` (~7.3MB) | [⚡ **Download AetherFlow.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow.exe) |
-| **Windows Installer** | `.exe` (~2.7MB) | [📦 **Download AetherFlow-Setup.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe) |
+| **Portable Package (with MPV)** | `.zip` (Self-Contained) | [📦 **Download AetherFlow-v1.0.0-Portable.zip**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-v1.0.0-Portable.zip) |
+| **Windows Installer** | `.exe` (NSIS Setup) | [💿 **Download AetherFlow-Setup.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe) |
 | **All Releases & Notes** | GitHub Page | [🚀 **View GitHub Releases**](https://github.com/yashpreeto7/aetherflow/releases/tag/v1.0.0) |
 
 ### Option 2: Windows Installer
 If you prefer a standard Windows installation with Desktop shortcuts and Start Menu integration:
 1. Download **[`AetherFlow-Setup.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe)**.
 2. Run the installer and launch AetherFlow.
+
+### Option 3: Full Portable Zip
+For zero installation with the dedicated hardware-accelerated MPV video engine included:
+1. Download **[`AetherFlow-v1.0.0-Portable.zip`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-v1.0.0-Portable.zip)**.
+2. Extract the folder anywhere and run `AetherFlow.exe`.
 
 ---
 
