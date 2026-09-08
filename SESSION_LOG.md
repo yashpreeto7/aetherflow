@@ -227,3 +227,25 @@
     - Updated `App.jsx` to detect `--autostart` / `--minimized` via `is_minimized_boot` and skip opening/focusing the UI window on boot, keeping AetherFlow running silently in the system tray.
 - **Build status:** ✅ `npm run build` (916ms), `cargo check` (1.65s) passing with 0 errors.
 ---
+
+## Session: 2026-09-08 20:15 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Branch:** `main` (Release tag: `v1.0.0`)
+- **Completed:**
+  - **Fixed 2 Terminal Popups on Wallpaper Apply**:
+    - Eradicated `where.exe` child process spawning in `src-tauri/src/mpv.rs`. Replaced with zero-allocation, in-memory Rust `std::env::split_paths` and filesystem lookups across `PATH`, `resource_dir`, next to `exe`, and `LocalAppData`.
+    - Short-circuited `find_mpv_binary` in `src-tauri/src/main.rs` so it only runs when `wants_video` is explicitly true (skipping entirely for built-in canvas engines).
+    - Enforced `creation_flags(0x08000000)` (`CREATE_NO_WINDOW`) for all MPV child process calls.
+  - **Fixed Custom Wallpapers Not Playing in Release**:
+    - Fixed `videoEl.style.zIndex`: changed from `-2` to `'1'` in `src/engines/video-player.js`. Previously, `-2` placed the video beneath the `#000` root background of `wallpaper.html`, causing a black screen.
+    - Added resilient fallback via `@tauri-apps/plugin-fs` `readFile`: if Tauri's custom asset streaming protocol is blocked or fails on custom drive paths, video and image engines automatically read the binary bytes into a `Blob` URL (`URL.createObjectURL(blob)`), ensuring 100% playback reliability.
+    - Updated Windows asset scope in `tauri.conf.json` (`["**", "*:\\**", "*/**", "\\\\?\\**"]`) and capabilities in `capabilities/default.json` (`"fs:read-all"`).
+    - Auto-resolved custom wallpaper IDs (`local-*`): `main.rs`, `wallpaper.jsx`, and `wallpaperActions.js` now auto-detect `video-player` or `image-player` based on `videoPath` or `imagePath` when `engine` is not explicitly registered.
+  - **Bundled MPV in Release Pipeline & Live GitHub Assets**:
+    - Updated GitHub Actions workflow (`.github/workflows/release.yml`) to download `mpv-winbuild` portable release and bundle it into `src-tauri/bin/mpv/`.
+    - Tauri NSIS setup bundles MPV in `resources/` (`AetherFlow-Setup.exe`, 35.86 MB).
+    - GitHub Actions packages self-contained `AetherFlow-v1.0.0-Portable.zip` (95.44 MB) with MPV and standalone `AetherFlow.exe` (6.93 MB).
+    - Updated `README.md` download links and documentation with the Portable ZIP option.
+    - Release run `34238648775` completed successfully with all three assets uploaded to GitHub Releases `v1.0.0`.
+- **Build status:** ✅ `npm run build` (448ms), `cargo check` (1.1s), `cargo build --release` (1m 57s) clean, GitHub Release v1.0.0 live.
+---

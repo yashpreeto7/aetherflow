@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 19:22 IST — Official v1.0.0 Release published! Merged to `main`, tagged `v1.0.0`, pushed to GitHub repo (https://github.com/yashpreeto7/aetherflow). Standalone executable (`release/AetherFlow.exe`), installer, portable zip, comprehensive README with 6 screenshots, and automated GitHub Actions workflow all deployed.
+2026-09-08 20:15 IST — Fixed terminal popups on wallpaper application (eliminated where.exe in favor of in-memory split_paths and CREATE_NO_WINDOW), fixed custom video/picture wallpaper playback in release (resolved negative z-index, asset protocol scopes, and added binary blob fallback), and updated GitHub Actions release pipeline to bundle hardware-accelerated MPV into setup installer and portable zip package. Live GitHub Release v1.0.0 updated with all three download packages.
 
 ---
 
