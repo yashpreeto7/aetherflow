@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 18:33 IST — Fixed multi-monitor border bleed during video to canvas/image transitions: re-asserted pin_hwnd_as_wallpaper and monitor region clipping upon unhiding WebView2 wallpaper hosts; rebuilt release executable.
+2026-09-08 18:55 IST — Fixed real-time audio volume/mute sync (direct MPV named pipe IPC & canvas/video option sync), system monitor for battery & fullscreen auto-pause, and native Windows registry autostart (`HKCU\...\Run` with `--autostart --minimized` silent tray launch). Working strictly on dedicated branch `fix/audio-power-fullscreen-startup`.
 
 ---
 
@@ -156,5 +156,6 @@ npm run tauri:dev
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Resolved "localhost refused to connect" error: enabled default custom-protocol in Cargo.toml, embedded all web assets, and rebuilt standalone AetherFlow.exe |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor custom video wallpaper pinning across screens and eliminated white boundary line artifact between displays |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor border bleed on transition from video to canvas/image: re-asserted pin_hwnd_as_wallpaper with monitor clipping after unhiding WebView2 window |
+| 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Real-time audio volume/mute sync (IPC & option merge), battery & fullscreen auto-pause monitor, and native registry autostart on branch fix/audio-power-fullscreen-startup |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

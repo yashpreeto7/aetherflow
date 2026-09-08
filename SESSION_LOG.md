@@ -206,5 +206,24 @@
 - **Build status:** ✅ `npm run build` (465ms), `cargo check` passing with 0 errors, `cargo build --release` (2m 04s) clean, `AetherFlow.exe` updated.
 ---
 
-
-
+## Session: 2026-09-08 18:50 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Branch:** `fix/audio-power-fullscreen-startup` (strictly not on `main`)
+- **Completed:**
+  - **Real-Time Audio Volume & Mute Sync**:
+    - Hardened MPV IPC pipe communication in `src-tauri/src/mpv.rs` with `WaitNamedPipeW` and retry on busy.
+    - Updated `update_wallpaper_config` to extract volume/mute and forward immediately to MPV.
+    - Added direct event and IPC dispatches from `Settings.jsx` and `App.jsx` on slider movement and mute toggle.
+    - Fixed `options = { ...options, ...newOpts }` merging in `src/engines/video-player.js` so updating volume/mute does not erase `videoPath`.
+  - **Auto-Pause on Battery & Fullscreen**:
+    - Implemented Win32 power status check (`GetSystemPowerStatus`) in `src-tauri/src/main.rs`.
+    - Implemented Win32 foreground fullscreen detection (`GetForegroundWindow` + `MONITORINFO`) with desktop (`WorkerW`, `Progman`) and taskbar exclusion filters.
+    - Added dedicated background monitor thread checking every 750ms against active performance settings.
+    - Dispatches pause/resume to both native MPV processes and WebView2 canvas/video wallpaper windows.
+    - Added `pause()` and `resume()` lifecycle hooks across all Canvas 2D wallpaper engines.
+  - **Windows Startup Registry & Silent Boot**:
+    - Added `"autostart:default"` capability permission in `src-tauri/capabilities/default.json`.
+    - Implemented native Windows registry autostart commands (`set_autostart`, `is_autostart_enabled`) targeting `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` with `"<exe_path>" --autostart --minimized`.
+    - Updated `App.jsx` to detect `--autostart` / `--minimized` via `is_minimized_boot` and skip opening/focusing the UI window on boot, keeping AetherFlow running silently in the system tray.
+- **Build status:** ✅ `npm run build` (916ms), `cargo check` (1.65s) passing with 0 errors.
+---
