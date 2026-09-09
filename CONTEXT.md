@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 23:20 IST — Seamless TranslucentTB integration: AetherFlow directly syncs Taskbar Style changes (Clear, Acrylic, Blur, Default) into TranslucentTB configuration and executes instant silent reloads, unlocking 100% transparent glass on Windows 11.
+2026-09-09 23:30 IST — Auto-launch TranslucentTB in background, added No Border toggle in Settings UI, and enforced 100% crystal-clear borderless taskbar transparency across all window states.
 
 ---
 

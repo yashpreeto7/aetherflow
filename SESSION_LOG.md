@@ -498,3 +498,18 @@
   - Committed and pushed changes to `origin/main` (commit `6acee63`).
 - **Build status:** ✅ `npm run build` (528ms), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 23:30 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Auto-Launch TranslucentTB & Borderless Glass Taskbar**:
+    - Implemented `ensure_translucenttb_running()` in `src-tauri/src/taskbar.rs` to automatically detect and launch TranslucentTB in the background if installed, eliminating the need to launch it manually.
+    - Added **"Taskbar Top Border"** toggle in Settings UI and global Zustand store (`taskbarBorder` persisted state).
+    - Updated TranslucentTB configuration engine to sync `show_line: false` (or `true`) across all window states (desktop, visible window, maximized, search, start).
+    - Enforced `visible_window_appearance.enabled: true` with `accent: "clear"` and `#00000000` to prevent TranslucentTB from reverting to Windows default tinted bar when windows are open.
+    - Updated native Win32 fallback in `taskbar.rs` to toggle `flags: 0` (clean borderless) vs `flags: 2` (draw accent border).
+    - Rebuilt frontend (`npm run build` 430ms) and release binary (`cargo build --release` 2m 33s).
+    - Deployed to `AetherFlow.exe` and verified running process (PID 24280, working set 23.8MB).
+    - Committed and pushed to `origin/main` (commit `02acaf6`).
+- **Build status:** ✅ `npm run build` (430ms), `cargo build --release` passed with 0 errors.
+---
