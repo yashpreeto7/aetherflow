@@ -51,6 +51,12 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
           media.remove()
         } catch (e) {}
       })
+      canvasRef.current.parentNode.querySelectorAll('iframe').forEach(frame => {
+        try {
+          frame.src = 'about:blank'
+          frame.remove()
+        } catch (e) {}
+      })
     }
   }, [])
 

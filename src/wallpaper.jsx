@@ -42,6 +42,12 @@ function WallpaperCanvas() {
         media.remove()
       } catch (e) {}
     })
+    document.querySelectorAll('iframe').forEach(frame => {
+      try {
+        frame.src = 'about:blank'
+        frame.remove()
+      } catch (e) {}
+    })
   }
 
   // ── Engine boot/swap ─────────────────────────────────────────────────────────

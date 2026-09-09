@@ -91,7 +91,8 @@ export function createWebStream(canvas, options = {}) {
     const ytId = parseYouTubeId(url)
     if (ytId) {
       const muteParam = muted ? '1' : '0'
-      return `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&mute=${muteParam}&controls=0&loop=1&playlist=${ytId}&modestbranding=1&rel=0&iv_load_policy=3&disablekb=1&playsinline=1`
+      // Use standard youtube.com/embed with strict-origin referrerpolicy to satisfy YouTube security & anti-bot checks
+      return `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=${muteParam}&controls=0&loop=1&playlist=${ytId}&enablejsapi=1&rel=0&iv_load_policy=3&disablekb=1&playsinline=1`
     }
     return url
   }
@@ -101,8 +102,8 @@ export function createWebStream(canvas, options = {}) {
 
     if (!iframeEl && canvas.parentElement) {
       iframeEl = document.createElement('iframe')
-      iframeEl.setAttribute('allow', 'autoplay; encrypted-media; fullscreen')
-      iframeEl.setAttribute('referrerpolicy', 'no-referrer')
+      iframeEl.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen')
+      iframeEl.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
       iframeEl.style.position = 'absolute'
       iframeEl.style.top = '0'
       iframeEl.style.left = '0'
@@ -162,6 +163,36 @@ export function createWebStream(canvas, options = {}) {
     unmountIframe()
   }
 
+  function pause() {
+    if (iframeEl) {
+      const ytId = parseYouTubeId(currentUrl)
+      if (ytId) {
+        try {
+          iframeEl.contentWindow?.postMessage(JSON.stringify({
+            event: 'command',
+            func: 'pauseVideo',
+            args: []
+          }), '*')
+        } catch {}
+      }
+    }
+  }
+
+  function resume() {
+    if (iframeEl) {
+      const ytId = parseYouTubeId(currentUrl)
+      if (ytId) {
+        try {
+          iframeEl.contentWindow?.postMessage(JSON.stringify({
+            event: 'command',
+            func: 'playVideo',
+            args: []
+          }), '*')
+        } catch {}
+      }
+    }
+  }
+
   function updateOptions(newOpts = {}) {
     Object.assign(options, newOpts)
     if (newOpts.streamUrl !== undefined && newOpts.streamUrl !== currentUrl) {
@@ -172,7 +203,32 @@ export function createWebStream(canvas, options = {}) {
     }
     if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
       currentMuted = newOpts.muted
-      if (iframeEl) iframeEl.src = buildEmbedUrl(currentUrl, currentMuted)
+      if (iframeEl) {
+        const ytId = parseYouTubeId(currentUrl)
+        if (ytId) {
+          try {
+            iframeEl.contentWindow?.postMessage(JSON.stringify({
+              event: 'command',
+              func: currentMuted ? 'mute' : 'unMute',
+              args: []
+            }), '*')
+          } catch {}
+        } else {
+          iframeEl.src = buildEmbedUrl(currentUrl, currentMuted)
+        }
+      }
+    }
+    if (newOpts.volume !== undefined && iframeEl) {
+      const ytId = parseYouTubeId(currentUrl)
+      if (ytId) {
+        try {
+          iframeEl.contentWindow?.postMessage(JSON.stringify({
+            event: 'command',
+            func: 'setVolume',
+            args: [Math.round(newOpts.volume)]
+          }), '*')
+        } catch {}
+      }
     }
     if (iframeEl) {
       if (newOpts.opacity !== undefined) iframeEl.style.opacity = String(newOpts.opacity)
@@ -180,7 +236,7 @@ export function createWebStream(canvas, options = {}) {
     }
   }
 
-  return { start, stop, updateOptions }
+  return { start, stop, pause, resume, updateOptions }
 }
 
 export default createWebStream
