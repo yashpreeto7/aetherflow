@@ -287,7 +287,14 @@ export default function SettingsPage() {
               className="btn btn-ghost"
               style={{ padding: '5px 12px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-main)', borderRadius: 6 }}
               onClick={() => {
-                window.open('https://apps.microsoft.com/detail/9pf4kz2vn4w9', '_blank')
+                import('@tauri-apps/api/core').then(({ invoke }) => {
+                  invoke('open_url', { url: 'ms-windows-store://pdp/?ProductId=9PF4KZ2VN4W9' })
+                    .catch(() => {
+                      invoke('open_url', { url: 'https://apps.microsoft.com/detail/9pf4kz2vn4w9' }).catch(() => {})
+                    })
+                }).catch(() => {
+                  window.open('https://apps.microsoft.com/detail/9pf4kz2vn4w9', '_blank')
+                })
               }}
             >
               <ExternalLink size={12} /> Open TranslucentTB on Microsoft Store

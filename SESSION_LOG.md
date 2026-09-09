@@ -467,3 +467,16 @@
   - Deployed to root `AetherFlow.exe` and launched process (PID 17952, working set 25.8MB).
 - **Build status:** ✅ `npm run build` (551ms), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 22:56 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Fixed TranslucentTB & External URL Redirection**:
+    - Identified that `window.open` inside Tauri WebView2 windows is blocked by default and does not delegate to the Windows default shell handler.
+    - Implemented a native backend `open_url` command in `src-tauri/src/main.rs` using `cmd /C start "" <url>` with `CREATE_NO_WINDOW` (0x08000000) flags.
+    - Supports native Microsoft Store protocol links (`ms-windows-store://pdp/?ProductId=9PF4KZ2VN4W9`) and standard browser URLs without console popups.
+    - Updated `src/pages/Settings.jsx` and `src/lib/updater.js` to invoke `open_url`.
+  - Rebuilt production bundle (`npm run build` 576ms) and release binary (`cargo build --release` 2m 18s).
+  - Deployed to root `AetherFlow.exe` and verified running process (PID 11148, working set 26.1MB).
+- **Build status:** ✅ `npm run build` (576ms), `cargo build --release` passed with 0 errors.
+---

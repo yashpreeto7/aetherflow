@@ -62,8 +62,7 @@ export async function openReleaseUrl(url) {
   if (!url) return
   try {
     const { invoke } = await import('@tauri-apps/api/core')
-    // If Tauri command exists or invoke via system command
-    window.open(url, '_blank')
+    await invoke('open_url', { url })
   } catch {
     window.open(url, '_blank')
   }

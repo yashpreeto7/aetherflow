@@ -163,5 +163,6 @@ npm run tauri:dev
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored on-demand dynamic hover previews for Video, Image, YouTube, and Canvas cards with automatic decoder disposal upon cursor exit to maintain ultra-low idle RAM |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored original top hero WallpaperPlayer preview banner on Home.jsx for selected/active wallpaper with rename modal & action buttons |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed taskbar settings deadlock: separated mutex locking from execution, eliminated EnumWindows hangs, added DesktopWindowContentBridge bridge targets, and added SWP_FRAMECHANGED |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Added native open_url backend command with Windows protocol handler support, fixing TranslucentTB Microsoft Store and browser redirection |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

@@ -1781,6 +1781,27 @@ fn set_taskbar_style(style: String) -> Result<(), String> {
     taskbar::apply_taskbar_style(&style)
 }
 
+/// Safely opens external URLs or Windows protocol links in the default application
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        use std::os::windows::process::CommandExt;
+        Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Ok(())
+    }
+}
+
 #[cfg(windows)]
 fn trim_all_process_memory() {
     use std::collections::HashSet;
@@ -2184,6 +2205,7 @@ fn main() {
             load_custom_wallpapers,
             set_system_wallpaper,
             set_taskbar_style,
+            open_url,
             get_detailed_memory_usage,
         ])
         .setup(|app| {
