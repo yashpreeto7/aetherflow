@@ -86,6 +86,85 @@ pub fn is_translucenttb_running() -> bool {
 }
 
 #[cfg(windows)]
+fn update_translucenttb_config(style: &str) -> bool {
+    let local_app_data = match std::env::var("LOCALAPPDATA") {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let packages_dir = std::path::PathBuf::from(local_app_data).join("Packages");
+    if let Ok(entries) = std::fs::read_dir(packages_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains("TranslucentTB") {
+                let settings_file = entry.path().join("RoamingState").join("settings.json");
+                if settings_file.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&settings_file) {
+                        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                            let accent = match style.to_lowercase().as_str() {
+                                "clear" | "transparent" => "clear",
+                                "acrylic" => "acrylic",
+                                "blur" => "blur",
+                                _ => "normal",
+                            };
+
+                            let current_accent = json.get("desktop_appearance")
+                                .and_then(|d| d.get("accent"))
+                                .and_then(|a| a.as_str());
+
+                            if current_accent == Some(accent) {
+                                return true;
+                            }
+
+                            if let Some(desktop) = json.get_mut("desktop_appearance") {
+                                desktop["accent"] = serde_json::Value::String(accent.to_string());
+                            }
+                            if let Some(visible) = json.get_mut("visible_window_appearance") {
+                                visible["accent"] = serde_json::Value::String(accent.to_string());
+                                visible["enabled"] = serde_json::Value::Bool(false);
+                            }
+                            if let Some(maximized) = json.get_mut("maximized_window_appearance") {
+                                maximized["accent"] = serde_json::Value::String(accent.to_string());
+                                maximized["enabled"] = serde_json::Value::Bool(false);
+                            }
+
+                            if let Ok(serialized) = serde_json::to_string_pretty(&json) {
+                                let _ = std::fs::write(&settings_file, serialized);
+                            }
+
+                            restart_translucenttb_appx(&name);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+#[cfg(windows)]
+fn restart_translucenttb_appx(package_folder_name: &str) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/IM", "TranslucentTB.exe"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", package_folder_name);
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &format!("Start-Process '{}'", app_launch_target),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+}
+
+#[cfg(windows)]
 fn get_all_taskbar_hwnds() -> Vec<HWND> {
     let mut hwnds = Vec::new();
     unsafe {
@@ -134,9 +213,11 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
 fn apply_taskbar_style_internal(style: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        // When TranslucentTB is running, yield taskbar control to it to avoid brush conflicts
+        // When TranslucentTB is running, control it directly via its config and avoid conflicting WCA calls
         if is_translucenttb_running() {
-            return Ok(());
+            if update_translucenttb_config(style) {
+                return Ok(());
+            }
         }
 
         let (state, gradient, flags) = match style.to_lowercase().as_str() {
