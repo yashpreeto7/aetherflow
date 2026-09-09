@@ -64,7 +64,7 @@ jobs:
           New-Item -ItemType Directory -Path "portable-staging\bin\mpv" -Force
           Copy-Item -Path "src-tauri\target\release\aetherflow.exe" -Destination "portable-staging\AetherFlow.exe" -Force
           Copy-Item -Path "src-tauri\bin\mpv\*" -Destination "portable-staging\bin\mpv\" -Recurse -Force
-          Compress-Archive -Path "portable-staging\*" -DestinationPath "release-artifacts\AetherFlow-v1.0.0-Portable.zip" -Force
+          Compress-Archive -Path "portable-staging\*" -DestinationPath "release-artifacts\AetherFlow-${{ github.ref_name }}-Portable.zip" -Force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
