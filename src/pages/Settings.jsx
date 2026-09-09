@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore.js'
-import { Monitor, Zap, Battery, Mic, Power, Layers, Activity, RefreshCw } from 'lucide-react'
+import {
+  Monitor, Zap, Battery, Mic, Power, Layers, Activity, RefreshCw,
+  LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles
+} from 'lucide-react'
+import { checkForUpdate, openReleaseUrl, APP_VERSION } from '../lib/updater.js'
 
 function SliderRow({ label, value, set, min, max, step, fmt }) {
   return (
@@ -63,6 +67,19 @@ export default function SettingsPage() {
 
   const fps = useStore(s => s.fps)
   const setFps = useStore(s => s.setFps)
+  const taskbarStyle = useStore(s => s.taskbarStyle) || 'default'
+  const setTaskbarStyle = useStore(s => s.setTaskbarStyle)
+
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updateResult, setUpdateResult] = useState(null)
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true)
+    setUpdateResult(null)
+    const result = await checkForUpdate()
+    setUpdateResult(result)
+    setCheckingUpdate(false)
+  }
 
   const handleFpsChange = (v) => {
     setFps(v)
@@ -292,6 +309,145 @@ export default function SettingsPage() {
         </>
       ),
     },
+    {
+      icon: LayoutTemplate, title: 'Windows Taskbar Styling',
+      content: (
+        <div>
+          <div className="text-sm font-medium" style={{ marginBottom: 6 }}>Taskbar Appearance</div>
+          <div className="text-xs text-muted" style={{ marginBottom: 14 }}>
+            Apply high-performance native transparency or frosted glass to Windows taskbars on all connected displays.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+            {[
+              { id: 'default', label: 'Default', desc: 'Windows standard style' },
+              { id: 'clear', label: 'Clear', desc: '100% transparent glass' },
+              { id: 'acrylic', label: 'Acrylic', desc: 'Frosted acrylic blur' },
+              { id: 'blur', label: 'Blur', desc: 'Soft Gaussian blur' },
+            ].map(style => {
+              const active = taskbarStyle === style.id
+              return (
+                <button
+                  key={style.id}
+                  className={`btn ${active ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    padding: '10px 12px',
+                    height: 'auto',
+                    textAlign: 'left',
+                    borderRadius: 8,
+                    border: active ? '1px solid var(--color-brand)' : '1px solid var(--border-main)',
+                  }}
+                  onClick={() => setTaskbarStyle(style.id)}
+                >
+                  <div className="text-sm font-semibold flex items-center justify-between w-full">
+                    <span>{style.label}</span>
+                    {active && <CheckCircle2 size={13} />}
+                  </div>
+                  <div className="text-xs" style={{ opacity: 0.75, marginTop: 4, fontWeight: 400 }}>
+                    {style.desc}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ),
+    },
+    {
+      icon: DownloadCloud, title: 'Software Updates',
+      content: (
+        <div>
+          <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
+            <div>
+              <div className="text-sm font-medium flex items-center gap-2">
+                <span>Installed Version</span>
+                <span className="badge font-mono badge-brand">v{APP_VERSION}</span>
+              </div>
+              <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                Official GitHub releases and automated installer updates
+              </div>
+            </div>
+            <button
+              className="btn btn-ghost"
+              onClick={handleCheckUpdate}
+              disabled={checkingUpdate}
+              style={{ fontSize: 12, padding: '6px 14px', height: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+              {checkingUpdate ? 'Checking…' : 'Check for Updates'}
+            </button>
+          </div>
+
+          {updateResult && (
+            <div style={{
+              marginTop: 12,
+              padding: 14,
+              borderRadius: 8,
+              border: '1px solid var(--border-main)',
+              background: updateResult.hasUpdate
+                ? 'color-mix(in srgb, var(--color-brand) 12%, transparent)'
+                : 'rgba(0,0,0,0.2)',
+            }}>
+              {updateResult.hasUpdate ? (
+                <div>
+                  <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-brand" />
+                      <span className="font-semibold text-sm">Update Available: {updateResult.latestTag}</span>
+                    </div>
+                    <span className="text-xs text-muted">
+                      {updateResult.publishedAt ? new Date(updateResult.publishedAt).toLocaleDateString() : ''}
+                    </span>
+                  </div>
+                  {updateResult.releaseNotes && (
+                    <div className="text-xs text-muted" style={{
+                      maxHeight: 120,
+                      overflowY: 'auto',
+                      padding: 8,
+                      background: 'rgba(0,0,0,0.3)',
+                      borderRadius: 6,
+                      whiteSpace: 'pre-wrap',
+                      marginBottom: 12,
+                      fontFamily: 'monospace',
+                    }}>
+                      {updateResult.releaseNotes}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12, padding: '5px 12px', height: 'auto' }}
+                      onClick={() => openReleaseUrl(updateResult.releaseUrl)}
+                    >
+                      <ExternalLink size={12} style={{ marginRight: 4 }} /> View on GitHub
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      style={{ fontSize: 12, padding: '5px 14px', height: 'auto' }}
+                      onClick={() => openReleaseUrl(updateResult.downloadUrl)}
+                    >
+                      <DownloadCloud size={13} style={{ marginRight: 6 }} /> Download Update
+                    </button>
+                  </div>
+                </div>
+              ) : updateResult.error ? (
+                <div className="flex items-center gap-2 text-xs text-rose" style={{ color: 'var(--color-rose)' }}>
+                  <AlertCircle size={14} />
+                  <span>Unable to check updates: {updateResult.error}</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-emerald" style={{ color: 'var(--color-emerald)' }}>
+                  <CheckCircle2 size={14} />
+                  <span>You are running the latest version of AetherFlow (v{APP_VERSION})</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ),
+    },
   ]
 
   return (
@@ -318,7 +474,7 @@ export default function SettingsPage() {
       ))}
 
       <div className="text-xs text-muted" style={{ textAlign: 'center', marginTop: 20, paddingBottom: 20 }}>
-        AetherFlow v1.0.0 · MIT License · Built with Tauri + React
+        AetherFlow v{APP_VERSION} · MIT License · Built with Tauri + React
       </div>
     </div>
   )

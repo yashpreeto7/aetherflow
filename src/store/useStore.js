@@ -181,8 +181,18 @@ export const useStore = create(
       audioReactive: false,
       audioSource: 'mic',             // 'mic' | 'system'
       fps: 60,                        // Target FPS cap
+      taskbarStyle: 'default',        // 'default' | 'clear' | 'acrylic' | 'blur'
 
       setFps: (v) => set({ fps: v }),
+      setTaskbarStyle: async (style) => {
+        set({ taskbarStyle: style })
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_taskbar_style', { style })
+        } catch {
+          // ignore outside tauri
+        }
+      },
       toggleAutoStart: () => set((s) => ({ autoStart: !s.autoStart })),
       toggleRunInTray: () => set((s) => ({ runInTray: !s.runInTray })),
       togglePauseOnBattery: () => set((s) => ({ pauseOnBattery: !s.pauseOnBattery })),
@@ -235,6 +245,7 @@ export const useStore = create(
         homeWallpaperIds: s.homeWallpaperIds,
         customNames: s.customNames,
         isWallpaperRunning: s.isWallpaperRunning,
+        taskbarStyle: s.taskbarStyle,
       }),
     }
   )

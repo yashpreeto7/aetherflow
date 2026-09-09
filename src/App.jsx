@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { Home, Store, Library, Settings, Zap } from 'lucide-react'
+import { Home, Store, Library, Settings, Zap, Sparkles, X as CloseIcon } from 'lucide-react'
+import { checkForUpdate } from './lib/updater.js'
 import { useStore, syncCustomWallpapersFromDisk } from './store/useStore.js'
 import { applyWallpaperToDesktop } from './lib/wallpaperActions.js'
 import StatusBar from './components/StatusBar/index.jsx'
@@ -28,6 +29,18 @@ export default function App() {
   const audioMuted       = useStore(s => s.audioMuted)
   const pauseOnBattery   = useStore(s => s.pauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
+  const [updateToast, setUpdateToast] = React.useState(null)
+
+  // One-time startup check for newer AetherFlow releases
+  React.useEffect(() => {
+    const timer = setTimeout(async () => {
+      const res = await checkForUpdate()
+      if (res && res.hasUpdate) {
+        setUpdateToast(res)
+      }
+    }, 3500)
+    return () => clearTimeout(timer)
+  }, [])
 
   // Broadcast global volume/mute changes to all active wallpaper windows & MPV
   React.useEffect(() => {
@@ -208,6 +221,53 @@ export default function App() {
 
         {/* Status bar */}
         <StatusBar />
+
+        {/* Floating Update Notification Toast */}
+        {updateToast && (
+          <div style={{
+            position: 'fixed',
+            bottom: 38,
+            right: 20,
+            zIndex: 9999,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-accent)',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
+            borderRadius: 10,
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            backdropFilter: 'blur(16px)',
+            animation: 'fadeIn 0.3s ease',
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'color-mix(in srgb, var(--color-brand) 20%, transparent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Sparkles size={16} className="text-brand" />
+            </div>
+            <div>
+              <div className="text-xs font-bold" style={{ color: 'var(--text-main)' }}>
+                New Version Available: {updateToast.latestTag}
+              </div>
+              <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                Enhancements and new features are ready to install.
+              </div>
+            </div>
+            <div className="flex items-center gap-2" style={{ marginLeft: 8 }}>
+              <NavLink to="/settings" style={{ textDecoration: 'none' }} onClick={() => setUpdateToast(null)}>
+                <button className="btn btn-primary" style={{ fontSize: 11, padding: '4px 10px', height: 'auto' }}>
+                  Update
+                </button>
+              </NavLink>
+              <button className="btn-icon" onClick={() => setUpdateToast(null)} title="Dismiss">
+                <CloseIcon size={13} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </BrowserRouter>
   )

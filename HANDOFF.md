@@ -1,17 +1,22 @@
 # AuraOS — Session Handoff File
-> **Created:** 2026-09-02 | **Status:** ✅ COMPLETE — Live wallpaper embedding, Z-order behind desktop icons, and multi-monitor geometry verified working!
+> **Created:** 2026-09-02 | **Status:** ✅ COMPLETE — Native Translucent Taskbar, YouTube & Live Web Stream Wallpapers, and In-App Auto-Updater implemented and verified!
 > Copy this file verbatim into your new session's first message.
 
 ---
 
 ## 🧠 Context Snapshot (Read First)
 
-We are building **AuraOS** — a **standalone Windows desktop app** similar to Wallpaper Engine + Lively. It is a **completely separate project** from the Personal AI OS at `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT`.
+We are building **AetherFlow** (formerly AuraOS) — a **standalone Windows desktop app** similar to Wallpaper Engine + Lively. It is a **completely separate project** from the Personal AI OS at `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT`.
 
-**Project location:** `C:\Users\Yashpreet_o7\Desktop\AURAOS\`
+**Project location:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
 
-### Why this project exists
-The Personal AI OS (`PERSONALAGENT`) already has a world-class theme + wallpaper engine in `server/dashboard_template.py` (8 Sovereign themes, 7 live wallpaper canvas engines, audio spectrum visualizer). We are extracting that engine into a dedicated, ultra-lightweight standalone Windows app with a built-in marketplace.
+### Key Features
+1. **Live Animated Desktop Wallpapers**: Runs behind Windows desktop icons using the PROGMAN/WorkerW trick.
+2. **Comprehensive Media Support**: Local MP4/WebM/MKV videos with MPV hardware acceleration, high-res pictures, 7 procedural Canvas 2D engines, and live YouTube/web streams.
+3. **Native Translucent Taskbar**: Built-in styling (Clear, Acrylic, Blur, Default) with auto-persistence against Explorer resets.
+4. **In-App Auto-Updater**: Directly connects with GitHub Releases to notify, view changelogs, and download updates.
+5. **Theme System**: 6 Sovereign themes + visual Theme Editor.
+6. **Multi-Monitor**: Duplicate or distinct per-screen wallpaper assignments.
 
 ---
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
-  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight
+  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe
 } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
@@ -10,12 +10,13 @@ import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
 import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
 import ThemeEditor from '../components/ThemeEditor/index.jsx'
-import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
+import { AddWallpaperModal, RenameWallpaperModal, AddWebStreamModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
   addCustomMediaWallpaper,
   addCustomVideoWallpaper,
+  addCustomStreamWallpaper,
   setSystemWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
@@ -31,6 +32,7 @@ export default function HomePage() {
   // Modals state
   const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
   const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
+  const [addStreamModal, setAddStreamModal] = useState(false)
   const [winWallpaperSet, setWinWallpaperSet] = useState(false)
 
   const activeWallpaper       = useStore(s => s.activeWallpaper)
@@ -159,6 +161,15 @@ export default function HomePage() {
     }
   }
 
+  function handleConfirmAddStream({ name, url, muted, pinToHome }) {
+    const newItem = addCustomStreamWallpaper(url, name, muted, pinToHome)
+    setAddStreamModal(false)
+    if (newItem) {
+      selectWallpaper(newItem)
+      handleApply(newItem)
+    }
+  }
+
   function handleConfirmRename(newName) {
     if (!renameModal.id) return
     setWallpaperName(renameModal.id, newName)
@@ -205,7 +216,8 @@ export default function HomePage() {
   const filteredWallpapers = useMemo(() => {
     return homeWallpapers.filter(w => {
       if (filterCategory === 'builtin' && w.isCustom) return false
-      if (filterCategory === 'custom' && !w.isCustom) return false
+      if (filterCategory === 'custom' && (!w.isCustom || w.config?.streamUrl)) return false
+      if (filterCategory === 'stream' && !w.config?.streamUrl) return false
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
         const matchName = w.name.toLowerCase().includes(query)
@@ -340,8 +352,11 @@ export default function HomePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button className="btn btn-ghost" onClick={() => setAddStreamModal(true)}>
+            <Globe size={15} /> Add Web Stream
+          </button>
           <button className="btn btn-primary" onClick={handleOpenImportDialog}>
-            <Plus size={15} /> Add Wallpaper
+            <Plus size={15} /> Add Media
           </button>
         </div>
       </div>
@@ -370,7 +385,11 @@ export default function HomePage() {
                   ) : (
                     <div className="badge">SELECTED PREVIEW</div>
                   )}
-                  {activeWallpaper.isCustom && (
+                  {activeWallpaper.config?.streamUrl ? (
+                    <div className="badge badge-brand" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                      {activeWallpaper.config?.youtubeId ? 'YOUTUBE STREAM' : 'WEB STREAM'}
+                    </div>
+                  ) : activeWallpaper.isCustom && (
                     <div className="badge badge-brand">VIDEO WALLPAPER</div>
                   )}
                 </div>
@@ -597,7 +616,8 @@ export default function HomePage() {
           {[
             { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
             { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
-            { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom).length})` },
+            { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
+            { id: 'stream', label: `Web Streams (${homeWallpapers.filter(w => w.config?.streamUrl).length})` },
           ].map(cat => (
             <button
               key={cat.id}
@@ -834,6 +854,12 @@ export default function HomePage() {
         currentName={renameModal.currentName}
         onClose={() => setRenameModal({ isOpen: false, id: null, currentName: '' })}
         onConfirm={handleConfirmRename}
+      />
+
+      <AddWebStreamModal
+        isOpen={addStreamModal}
+        onClose={() => setAddStreamModal(false)}
+        onConfirm={handleConfirmAddStream}
       />
     </div>
   )

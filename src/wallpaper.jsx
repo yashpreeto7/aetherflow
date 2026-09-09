@@ -73,6 +73,7 @@ function WallpaperCanvas() {
     if (!ENGINES[resolvedEngineId]) {
       if (config?.videoPath) resolvedEngineId = 'video-player'
       else if (config?.imagePath) resolvedEngineId = 'image-player'
+      else if (config?.streamUrl) resolvedEngineId = 'web-stream'
     }
 
     const descriptor = ENGINES[resolvedEngineId]

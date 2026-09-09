@@ -144,10 +144,23 @@ export const ENGINES = {
     },
     load: () => import('./image-player.js').then(m => m.createImagePlayer || m.default),
   },
+  'web-stream': {
+    id: 'web-stream',
+    name: 'YouTube & Web Stream',
+    description: 'Streams live video, YouTube ambient loops, or interactive web pages as wallpaper',
+    preview: '/previews/deep-space.svg',
+    tags: ['stream', 'youtube', 'live', 'web'],
+    defaultConfig: { streamUrl: '', muted: true },
+    properties: {
+      streamUrl: { type: 'text', label: 'YouTube or Web Stream URL', default: '' },
+      muted: { type: 'toggle', label: 'Mute Audio', default: true },
+    },
+    load: () => import('./web-stream.js').then(m => m.createWebStream || m.default),
+  },
 }
 
 export const WALLPAPER_LIST = Object.values(ENGINES).filter(
-  e => e.id !== 'video-player' && e.id !== 'image-player'
+  e => e.id !== 'video-player' && e.id !== 'image-player' && e.id !== 'web-stream'
 )
 
 /** Prebuilt themes shipped with the app */

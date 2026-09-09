@@ -276,3 +276,32 @@
     - Tagged release as `v1.0.1` and pushed to GitHub, automatically triggering GitHub Actions build pipeline `34347031441` for installer, portable zip, and standalone release binaries.
 - **Build status:** ✅ `npm run build` (566ms), `cargo check` clean with 0 errors, GitHub Release v1.0.1 triggered.
 ---
+
+## Session: 2026-09-09 18:45 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Pruned Unwanted Files from Git Repository**:
+    - Removed `.agents/` (273 files, ~7.6 MB) from Git tracking via `git rm -r --cached .agents` and ignored in `.gitignore`.
+    - Removed unused boilerplate (`src/App.css`, `src/index.css`, `src/assets/hero.png`, `src/assets/react.svg`, `src/assets/vite.svg`, `AetherFlow.bat`).
+    - Removed unused diagnostic binary `desktop_debug.rs` from `src-tauri/` and `Cargo.toml`.
+    - Pushed clean repository commit `22cbe39` to `origin/main` and force-updated `v1.0.1` tag.
+  - **Translucent Taskbar Toggle (Native Win32)**:
+    - Implemented `src-tauri/src/taskbar.rs` using dynamic `SetWindowCompositionAttribute` (attribute 19 = `WCA_ACCENT_POLICY`).
+    - Supports `Clear` (100% transparent), `Acrylic` (frosted blur), `Blur` (soft Gaussian blur), and `Default`.
+    - Automatically discovers and styles both primary taskbar (`Shell_TrayWnd`) and multi-monitor secondary taskbars (`Shell_SecondaryTrayWnd`).
+    - Wired `set_taskbar_style` Tauri command in `main.rs`, periodic style maintainer in 750ms background monitor loop (prevents Explorer resets), and clean restoration on tray quit and shutdown.
+    - Added `taskbarStyle` and `setTaskbarStyle` in `src/store/useStore.js` (persisted), restored on startup in `src/main.jsx`.
+    - Added "Windows Taskbar Styling" card in `src/pages/Settings.jsx`.
+  - **YouTube & Live Web Stream Wallpapers**:
+    - Created `src/engines/web-stream.js` with YouTube ID parser, clean distraction-free embedder (`youtube-nocookie.com`), general live web URL embedder, and instant thumbnail fetcher (`img.youtube.com/vi/{id}/hqdefault.jpg`).
+    - Registered `web-stream` in `src/engines/index.js` and updated engine resolution in `wallpaperActions.js` and `wallpaper.jsx`.
+    - Created `AddWebStreamModal` in `src/components/Modals/WallpaperModals.jsx` with live thumbnail preview, custom naming, mute toggle, and pin-to-home option.
+    - Added "+ Add Web Stream" buttons in `Home.jsx` and `Library.jsx`, plus dedicated `Web Streams` filter tabs.
+    - Updated `WallpaperThumbnail/index.jsx` to render instant YouTube/stream thumbnails with live status badges.
+  - **In-App GitHub Releases Auto-Updater**:
+    - Implemented `src/lib/updater.js` querying GitHub Releases API (`repos/yashpreeto7/aetherflow/releases/latest`), semantic version comparison (`compareVersions`), and safe download openers.
+    - Added "Software Updates" card in `src/pages/Settings.jsx` showing current version `v1.0.1`, "Check for Updates" button with loading spinner, changelog viewer, and direct download buttons.
+    - Added startup update check in `src/App.jsx` showing a floating toast notification when a newer release is published.
+- **Build status:** ✅ `npm run build` (582ms), `cargo check` clean with 0 errors.
+---
+

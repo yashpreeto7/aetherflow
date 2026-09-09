@@ -34,6 +34,7 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
     const resolvedEngine = wallpaper.engine
       || (wallpaper.config?.videoPath ? 'video-player' : null)
       || (wallpaper.config?.imagePath ? 'image-player' : null)
+      || (wallpaper.config?.streamUrl ? 'web-stream' : null)
       || wallpaper.id
 
     await tauriInvoke('apply_wallpaper', {
@@ -190,3 +191,51 @@ export function addCustomMediaWallpaper(path, customName = null, pinToHome = tru
 // Backward compatibility alias
 export const addCustomVideoWallpaper = addCustomMediaWallpaper
 
+/**
+ * Adds a live stream or YouTube URL into the user's library
+ */
+export function addCustomStreamWallpaper(url, customName = null, muted = true, pinToHome = true) {
+  if (!url) return null
+  const cleanUrl = url.trim()
+
+  // Extract YouTube ID if present
+  let ytId = null
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/live\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+    /^([a-zA-Z0-9_-]{11})$/
+  ]
+  for (const p of patterns) {
+    const m = cleanUrl.match(p)
+    if (m && m[1]) {
+      ytId = m[1]
+      break
+    }
+  }
+
+  const defaultName = ytId ? 'YouTube Ambient Stream' : 'Live Web Stream'
+  const preview = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : '/previews/deep-space.svg'
+
+  const item = {
+    id: 'stream-' + Date.now(),
+    type: 'wallpaper',
+    name: customName?.trim() || defaultName,
+    engine: 'web-stream',
+    config: {
+      streamUrl: cleanUrl,
+      muted,
+      youtubeId: ytId,
+    },
+    preview,
+    tags: ytId ? ['custom', 'stream', 'youtube', 'live'] : ['custom', 'stream', 'web', 'live'],
+    installedAt: new Date().toISOString(),
+    isCustom: true,
+    mediaType: 'stream',
+  }
+
+  const state = useStore.getState()
+  state.installItem(item)
+  if (pinToHome) {
+    state.pinToHome(item.id)
+  }
+  return item
+}

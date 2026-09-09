@@ -82,6 +82,7 @@ pub struct ActiveWallpaperState {
 static ACTIVE_WALLPAPERS: Mutex<Option<HashMap<String, ActiveWallpaperState>>> = Mutex::new(None);
 
 pub mod mpv;
+pub mod taskbar;
 static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new(None);
 
 // ─── Main AuraOS Window Protection & HWND Identity ───────────────────────────
@@ -232,6 +233,9 @@ pub fn start_system_state_monitor(app: AppHandle) {
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(750));
+
+            // Maintain translucent taskbar style against Explorer resets
+            taskbar::maintain_taskbar_style();
 
             let (pause_on_battery, pause_on_fullscreen) = {
                 if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
@@ -1644,6 +1648,12 @@ fn set_system_wallpaper(path: String) -> Result<(), String> {
     }
 }
 
+/// Sets the Windows taskbar appearance style (default, clear, acrylic, blur)
+#[tauri::command]
+fn set_taskbar_style(style: String) -> Result<(), String> {
+    taskbar::apply_taskbar_style(&style)
+}
+
 #[cfg(windows)]
 fn trim_all_process_memory() {
     use std::collections::HashSet;
@@ -2046,6 +2056,7 @@ fn main() {
             save_custom_wallpapers,
             load_custom_wallpapers,
             set_system_wallpaper,
+            set_taskbar_style,
             get_detailed_memory_usage,
         ])
         .setup(|app| {
@@ -2260,6 +2271,7 @@ fn main() {
                             stop_wallpaper(app.clone(), None);
                         }
                         "quit" => {
+                            taskbar::restore_taskbar();
                             if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
                                 if let Some(ref mut map) = *mpv_guard {
                                     for (_, mut proc) in map.drain() {

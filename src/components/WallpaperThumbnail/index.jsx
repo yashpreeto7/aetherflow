@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { ENGINES } from '../../engines/index.js'
-import { Video, Image as ImageIcon } from 'lucide-react'
+import { Video, Image as ImageIcon, Globe } from 'lucide-react'
 
 /**
  * WallpaperThumbnail — Ultra-lightweight thumbnail component for grid cards.
@@ -13,6 +13,7 @@ import { Video, Image as ImageIcon } from 'lucide-react'
  * This component:
  * 1. For Built-in Canvas Wallpapers: renders an optimized, zero-CPU vector SVG thumbnail.
  * 2. For Video Wallpapers: renders a paused poster frame, playing ONLY on hover.
+ * 3. For Web/YouTube Streams: renders instant crisp thumbnails.
  *
  * Total RAM usage drops from ~1.5GB down to ~40-60MB!
  */
@@ -26,7 +27,11 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
                   Boolean(imgPath && !wallpaper.config?.videoPath) ||
                   Boolean(wallpaper.tags && wallpaper.tags.includes('image'))
 
-  const isVideo = !isImage && (wallpaper.isCustom || engineId === 'video-player' || wallpaper.mediaType === 'video')
+  const isStream = engineId === 'web-stream' ||
+                   wallpaper.mediaType === 'stream' ||
+                   Boolean(wallpaper.config?.streamUrl)
+
+  const isVideo = !isImage && !isStream && (wallpaper.isCustom || engineId === 'video-player' || wallpaper.mediaType === 'video')
   const videoNodeRef = useRef(null)
   const [debouncedHover, setDebouncedHover] = useState(false)
 
@@ -194,6 +199,79 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
             </span>
           </div>
         )}
+      </div>
+    )
+  }
+
+  // Web & YouTube Stream Wallpaper Thumbnail
+  if (isStream) {
+    const ytId = wallpaper.config?.youtubeId
+    const thumb = ytId
+      ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+      : (wallpaper.preview && wallpaper.preview !== '/previews/deep-space.svg' ? wallpaper.preview : null)
+
+    return (
+      <div style={{ width: '100%', height: '100%', position: 'relative', background: '#090a0f', overflow: 'hidden' }}>
+        {thumb ? (
+          <img
+            src={thumb}
+            alt={wallpaper.name}
+            loading="lazy"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              transition: 'transform 0.3s ease',
+              transform: isHovered ? 'scale(1.05)' : 'scale(1)',
+            }}
+          />
+        ) : (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #0f111a 0%, #1a1b26 100%)',
+            gap: 6
+          }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid rgba(239, 68, 68, 0.3)'
+            }}>
+              <Globe size={22} style={{ color: 'var(--color-rose)', opacity: 0.9 }} />
+            </div>
+            <span style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+              Web Stream
+            </span>
+          </div>
+        )}
+        <div style={{
+          position: 'absolute',
+          bottom: 6,
+          left: 6,
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(4px)',
+          borderRadius: 4,
+          padding: '2px 6px',
+          fontSize: 10,
+          fontWeight: 600,
+          color: ytId ? '#ef4444' : '#00d4ff',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+          {ytId ? 'YOUTUBE' : 'STREAM'}
+        </div>
       </div>
     )
   }

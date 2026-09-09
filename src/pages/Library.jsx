@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
   Trash2, Play, Image, Plus, Video, Monitor, Square, Check,
-  Zap, Pin, PinOff, Pencil, Search, X
+  Zap, Pin, PinOff, Pencil, Search, X, Globe
 } from 'lucide-react'
 import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { BUILTIN_THEMES, WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
 import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
-import { AddWallpaperModal, RenameWallpaperModal } from '../components/Modals/WallpaperModals.jsx'
+import { AddWallpaperModal, RenameWallpaperModal, AddWebStreamModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
   stopDesktopWallpaper,
   addCustomMediaWallpaper,
   addCustomVideoWallpaper,
+  addCustomStreamWallpaper,
   tauriInvoke,
 } from '../lib/wallpaperActions.js'
 
@@ -44,6 +45,7 @@ export default function LibraryPage() {
   // Modals state
   const [addModal, setAddModal] = useState({ isOpen: false, path: '', initialName: '' })
   const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
+  const [addStreamModal, setAddStreamModal] = useState(false)
 
   // Fetch monitors on mount and when display configuration changes
   useEffect(() => {
@@ -139,6 +141,14 @@ export default function LibraryPage() {
     }
   }
 
+  function handleConfirmAddStream({ name, url, muted, pinToHome }) {
+    const newItem = addCustomStreamWallpaper(url, name, muted, pinToHome)
+    setAddStreamModal(false)
+    if (newItem) {
+      handleApply(newItem)
+    }
+  }
+
   function handleConfirmRename(newName) {
     if (!renameModal.id) return
     setWallpaperName(renameModal.id, newName)
@@ -205,7 +215,8 @@ export default function LibraryPage() {
     return allWallpapers.filter(w => {
       const isPinned = homeWallpaperIds.includes(w.id)
       if (filterCategory === 'builtin' && w.isCustom) return false
-      if (filterCategory === 'custom' && !w.isCustom) return false
+      if (filterCategory === 'custom' && (!w.isCustom || w.config?.streamUrl)) return false
+      if (filterCategory === 'stream' && !w.config?.streamUrl) return false
       if (filterCategory === 'pinned' && !isPinned) return false
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
@@ -233,9 +244,14 @@ export default function LibraryPage() {
             Master collection of all wallpapers — select what you want to appear on your Home screen
           </p>
         </div>
-        <button className="btn btn-primary" onClick={handleOpenImportDialog}>
-          <Plus size={15} /> Add Local Wallpaper
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-ghost" onClick={() => setAddStreamModal(true)}>
+            <Globe size={15} /> Add Web Stream
+          </button>
+          <button className="btn btn-primary" onClick={handleOpenImportDialog}>
+            <Plus size={15} /> Add Local Wallpaper
+          </button>
+        </div>
       </div>
 
       {/* Target Screen Bar (for multi-monitor) */}
@@ -308,7 +324,8 @@ export default function LibraryPage() {
             { id: 'all', label: `All (${allWallpapers.length})` },
             { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
             { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
-            { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom).length})` },
+            { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
+            { id: 'stream', label: `Web Streams (${allWallpapers.filter(w => w.config?.streamUrl).length})` },
           ].map(cat => (
             <button
               key={cat.id}
@@ -527,6 +544,12 @@ export default function LibraryPage() {
         currentName={renameModal.currentName}
         onClose={() => setRenameModal({ isOpen: false, id: null, currentName: '' })}
         onConfirm={handleConfirmRename}
+      />
+
+      <AddWebStreamModal
+        isOpen={addStreamModal}
+        onClose={() => setAddStreamModal(false)}
+        onConfirm={handleConfirmAddStream}
       />
     </div>
   )

@@ -55,6 +55,11 @@ if (state.themes && state.themes[savedTheme]) {
   })
 }
 
+// Restore saved taskbar styling
+if (state.taskbarStyle && state.taskbarStyle !== 'default') {
+  tauriInvoke('set_taskbar_style', { style: state.taskbarStyle }).catch(() => {})
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'))
 root.render(
   <React.StrictMode>

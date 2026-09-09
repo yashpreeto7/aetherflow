@@ -273,5 +273,10 @@ Mark these off as you complete them:
 - [x] TASK 2: Preview images exist in `public/previews/` → cards show thumbnails
 - [x] TASK 3: `.env` created + Supabase tables created → marketplace is live
 - [x] TASK 4: `npm run tauri:build` → installer .exe created
-- [x] TASK 5: Theme editor built (optional)
-- [x] TASK 6: Video wallpaper support (optional)
+- [x] TASK 5: Theme editor built
+- [x] TASK 6: Video wallpaper support (with MPV hardware acceleration)
+- [x] TASK 7: FPS throttle pacing + FPS Benchmark HUD Wallpaper
+- [x] TASK 8: Pruned repository (removed `.agents/` tracking, unused assets, and debug binaries)
+- [x] TASK 9: Native Win32 Translucent Taskbar (Clear, Acrylic, Blur, Default)
+- [x] TASK 10: YouTube & Live Web Stream Wallpapers (embedded iframes + instant thumbnails)
+- [x] TASK 11: In-App GitHub Releases Auto-Updater (Settings check + startup toast notification)

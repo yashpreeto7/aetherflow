@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 16:55 IST — Fixed FPS option across all wallpaper engines & MPV, created FPS Benchmark HUD wallpaper (live rolling FPS counter, gauge, and frame-time graph), eliminated false display badges & button state confusion on card clicks, fixed top hero preview controls on custom video wallpapers, and enabled real-time desktop wallpaper speed, opacity, and brightness updates.
+2026-09-09 18:45 IST — Added Native Translucent Taskbar toggle (Clear, Acrylic, Blur, Default), YouTube & Live Web Stream Wallpapers engine with instant thumbnails and custom modals, and GitHub Releases Auto-Updater with in-app check, release notes, and startup toast notification.
 
 ---
 
@@ -11,11 +11,12 @@
 
 A **standalone Windows desktop application** that:
 - Shows **live animated wallpapers** behind the Windows desktop (like Wallpaper Engine)
-- Lets users switch **themes** (6 Sovereign themes built-in)
-- Has a **marketplace** for community wallpapers/themes (Supabase)
+- Supports **local videos (MP4/WebM/MKV), picture wallpapers, canvas engines, and live YouTube/web streams**
+- Lets users switch **themes** (6 Sovereign themes built-in) and style the **Windows Taskbar** natively
+- Has an **in-app auto-updater** checking GitHub Releases with one-click download
 - Is **ultra-lightweight**: ~8MB install, ~30MB RAM (uses WebView2, not Chromium)
 
-**Location:** `C:\Users\Yashpreet_o7\Desktop\AURAOS\`
+**Location:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
 **NOT related to:** `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT\` (different project, don't touch)
 
 ---
@@ -24,10 +25,10 @@ A **standalone Windows desktop application** that:
 
 | Check | Result |
 |-------|--------|
-| `npm run build` | ✅ Passes in ~1s |
+| `npm run build` | ✅ Passes in ~580ms |
 | `npm run dev` | ✅ Runs at http://localhost:1420/ |
 | `npm run tauri:dev` | ✅ Passes (Rust installed & verified) |
-| Windows .exe / standalone | ✅ Built: `AetherFlow.exe`, `run.bat`, and `AetherFlow_1.0.0_x64-setup.exe` |
+| Windows .exe / standalone | ✅ Built: `AetherFlow.exe`, `run.bat`, and `AetherFlow_1.0.1_x64-setup.exe` |
 
 ---
 
@@ -38,11 +39,11 @@ A **standalone Windows desktop application** that:
 | Desktop framework | **Tauri 2** (NOT Electron) | 8MB vs 150MB, 30MB RAM vs 300MB |
 | Frontend | **React 19 + Vite 8** | Fast HMR, tree-shaking |
 | State | **Zustand** with persist | Simple, localStorage-backed |
-| Wallpaper rendering | **Canvas 2D only** | Lightweight, no GPU dep |
+| Wallpaper rendering | **Canvas 2D + MPV + WebStream** | Lightweight, no GPU dep, 60fps |
 | Marketplace backend | **Supabase** (free tier) | Auth + DB + Storage |
 | Minifier | **oxc** | Vite 8 dropped esbuild |
 | manualChunks | **Function form** | rolldown requirement |
-| Wallpaper pinning | **Frameless Tauri window** | Simpler than COM API |
+| Wallpaper pinning | **Frameless Tauri window** | WorkerW desktop layer |
 
 ---
 
@@ -59,40 +60,34 @@ src/engines/tokyo-rain.js           Procedural neon city + rain
 src/engines/audio-spectrum.js       Mic-reactive CAVA-style bars
 src/engines/fps-meter.js            Canvas 2D telemetry HUD with live rolling FPS counter & graph
 src/engines/image-player.js         Canvas 2D picture wallpaper engine (PNG/JPG/WebP)
+src/engines/web-stream.js           YouTube & Live Web Stream engine (iframes & thumbnails)
 src/engines/index.js                Lazy-loaded engine registry + theme list
-src/store/useStore.js               Zustand persisted global state
+src/store/useStore.js               Zustand persisted global state (with taskbarStyle)
 src/styles/themes.css               6 Sovereign theme CSS token sets
 src/styles/index.css                Global CSS utilities
 src/components/WallpaperPlayer/     Engine lifecycle manager (canvas)
 src/components/StatusBar/           Waybar-style FPS + status bar
+src/components/Modals/              AddWallpaperModal, RenameWallpaperModal, AddWebStreamModal
 src/lib/supabase.js                 Offline-safe Supabase marketplace API
-src/pages/Home.jsx                  Wallpaper grid, controls, theme switcher
+src/lib/updater.js                  GitHub Releases Auto-Updater module
+src/lib/wallpaperActions.js         Desktop wallpaper applicator & stream handlers
+src/pages/Home.jsx                  Wallpaper grid, controls, stream modal, theme switcher
 src/pages/Marketplace.jsx           Search, tags, publish form
-src/pages/Library.jsx               Installed items, activate/uninstall
-src/pages/Settings.jsx              FPS, audio, glassmorphism, system
-src/App.jsx                         Router, sidebar, wallpaper layer, layout
-src/main.jsx                        Entry point, theme hydration
+src/pages/Library.jsx               Installed items, add stream, activate/uninstall
+src/pages/Settings.jsx              Taskbar styling, software updates, FPS, audio, system
+src/App.jsx                         Router, sidebar, layout, startup update toast
+src/main.jsx                        Entry point, theme hydration, taskbar restoration
 src-tauri/src/main.rs               Rust backend: window mgmt, tray, commands
+src-tauri/src/taskbar.rs            Win32 SetWindowCompositionAttribute taskbar module
+src-tauri/src/mpv.rs                Native MPV video playback integration
 src-tauri/Cargo.toml                Release: lto + strip + opt-level=s
 src-tauri/tauri.conf.json           System tray, NSIS installer config
 vite.config.js                      Tauri-optimized, oxc minifier
 package.json                        Scripts: dev, build, tauri:dev, tauri:build
-AGENTS.md                           Full agent instructions (14KB)
+AGENTS.md                           Full agent instructions
 GEMINI.md                           Gemini-specific session start rules
 REMAINING_TASKS.md                  Step-by-step remaining task guide
 HANDOFF.md                          Session handoff with full status
-.agents/skills/auraos-resume/       Project context loader skill
-.agents/skills/planning-with-files/ Task persistence across sessions
-.agents/skills/subagent-driven*/    Parallel task execution skill
-.agents/skills/verification-loop/   Post-feature verification skill
-.agents/skills/impeccable/          UI polish skill
-.agents/skills/ui-ux-pro-max/       UI/UX intelligence skill
-.agents/skills/to-spec/             Turn ideas into precise specs
-.agents/rules/auraos-standards.md   Engine, Supabase, Zustand patterns
-public/previews/*.svg               Fallback preview thumbnails generated
-.env file                           Supabase config scaffolded
-Theme Editor component              Visual CSS token editor built and integrated
-Video wallpaper engine              MP4/WebM backend command and frontend player
 ```
 
 ### ❌ Not Done
