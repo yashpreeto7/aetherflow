@@ -270,5 +270,9 @@
     - Added native Win32 `WS_EX_LAYERED` window opacity (`SetLayeredWindowAttributes`) to MPV's child window in `src-tauri/src/main.rs`.
     - Wired `update_wallpaper_config`, `set_wallpaper_brightness`, and `set_wallpaper_opacity` to forward adjustments in real time to running MPV instances as well as webview windows.
     - Fixed canvas engines' closure scopes so `updateOptions` updates `speedMultiplier` dynamically.
-- **Build status:** ✅ `npm run build` (566ms), `cargo check` clean with 0 errors.
+  - **Release v1.0.1 Deployment**:
+    - Bumped project version to `1.0.1` across `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `README.md`.
+    - Made portable zip release artifact filename dynamic based on tag name in `.github/workflows/release.yml`.
+    - Tagged release as `v1.0.1` and pushed to GitHub, automatically triggering GitHub Actions build pipeline `34347031441` for installer, portable zip, and standalone release binaries.
+- **Build status:** ✅ `npm run build` (566ms), `cargo check` clean with 0 errors, GitHub Release v1.0.1 triggered.
 ---
