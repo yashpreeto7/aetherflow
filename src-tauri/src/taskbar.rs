@@ -209,6 +209,27 @@ fn update_translucenttb_config(style: &str, show_border: bool) -> bool {
 }
 
 #[cfg(windows)]
+fn disable_windows_accent_tint_on_taskbar() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let _ = std::process::Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            "/v",
+            "ColorPrevalence",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            "0",
+            "/f",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+}
+
+#[cfg(windows)]
 fn restart_translucenttb_appx(package_folder_name: &str) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -217,6 +238,14 @@ fn restart_translucenttb_appx(package_folder_name: &str) {
         .args(["/F", "/IM", "TranslucentTB.exe"])
         .creation_flags(CREATE_NO_WINDOW)
         .status();
+
+    // Wait until old TranslucentTB process is completely terminated to avoid "already running" error popup
+    let start = std::time::Instant::now();
+    while is_translucenttb_running() && start.elapsed() < std::time::Duration::from_millis(1500) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // Allow kernel to release named mutexes
+    std::thread::sleep(std::time::Duration::from_millis(300));
 
     let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", package_folder_name);
     let _ = std::process::Command::new("powershell")
@@ -279,6 +308,9 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
 fn apply_taskbar_style_internal(style: &str, show_border: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
+        // Disable Windows accent color on taskbar so Windows doesn't tint it red/acrylic
+        disable_windows_accent_tint_on_taskbar();
+
         // Auto-launch TranslucentTB if installed but not running
         let _ = ensure_translucenttb_running();
 

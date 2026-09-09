@@ -513,3 +513,17 @@
     - Committed and pushed to `origin/main` (commit `02acaf6`).
 - **Build status:** ✅ `npm run build` (430ms), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 23:42 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved Red Acrylic Tint on Taskbar ("Clear, Acrylic, Blur all apply same effect")**:
+    - **Root Cause**: In Windows 11 Personalization, `ColorPrevalence` was set to `1` in `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize` ("Show accent color on Start and taskbar"). When enabled, Windows DWM forcefully injects the user's accent color (red/crimson) as a frosted acrylic layer across `Shell_TrayWnd`, overriding TranslucentTB's clear brush and making Clear, Blur, and Acrylic all appear as the same reddish frosted tint.
+    - **Fix**: Added native helper `disable_windows_accent_tint_on_taskbar()` in `src-tauri/src/taskbar.rs` that automatically sets `ColorPrevalence = 0`. With Windows accent wash disabled, Clear becomes 100% crystal-clear glass showing the desktop wallpaper directly, and Acrylic / Blur render their distinct native textures.
+  - **Eliminated TranslucentTB "Already Running" Modal Dialog**:
+    - **Root Cause**: `restart_translucenttb_appx()` previously killed TranslucentTB and immediately called `Start-Process` before the OS had finished terminating the process and releasing its single-instance named kernel mutexes.
+    - **Fix**: Added process termination wait polling (`while is_translucenttb_running()`) with 100ms intervals (up to 1.5s) followed by a 300ms kernel mutex release delay before launching the refreshed instance.
+  - Rebuilt production bundle (`npm run build` 637ms) and native release binary (`cargo build --release` 3m 15s).
+  - Deployed updated executable to `AetherFlow.exe` and verified running process (PID 276, 23.8MB RAM).
+- **Build status:** ✅ `npm run build` (637ms), `cargo build --release` passed with 0 errors.
+---
