@@ -50,13 +50,25 @@ export function createWebStream(canvas, options = {}) {
   const ctx = canvas.getContext('2d')
   let animId = null
   let containerEl = null
-  let iframeEl = null
-  let ytPlayer = null
+  let wrapA = null
+  let wrapB = null
+  let playerA = null
+  let playerB = null
+  let activeSlot = 'A'
+  let hasFadedIn = false
+  let isTransitioning = false
+  let crossfadeTimer = null
   let loopTimer = null
+  let syncInterval = null
+  const syncChannel = (typeof window !== 'undefined' && typeof BroadcastChannel !== 'undefined')
+    ? new BroadcastChannel('aetherflow_yt_sync')
+    : null
+  let iframeEl = null
   let thumbImg = null
   let thumbLoaded = false
   let currentUrl = options.streamUrl || ''
   let currentMuted = options.muted ?? true
+  let currentSpeed = Number(options.speedMultiplier ?? options.speed ?? 1)
   let isRunning = false
   let isPausedByUser = false
 
@@ -131,62 +143,188 @@ export function createWebStream(canvas, options = {}) {
       containerEl.style.height = 'calc(100% + 120px)'
       containerEl.style.pointerEvents = 'none'
       containerEl.style.zIndex = '1'
-      containerEl.style.opacity = String(options.opacity ?? 1)
       containerEl.style.filter = `brightness(${options.brightness ?? 1})`
       containerEl.style.overflow = 'hidden'
 
-      const playerMount = document.createElement('div')
-      playerMount.id = 'yt-mount-' + Math.random().toString(36).slice(2)
-      playerMount.style.width = '100%'
-      playerMount.style.height = '100%'
-      containerEl.appendChild(playerMount)
+      // Slot A wrapper
+      wrapA = document.createElement('div')
+      wrapA.style.position = 'absolute'
+      wrapA.style.inset = '0'
+      wrapA.style.opacity = String(options.opacity ?? 1)
+      wrapA.style.transition = 'opacity 0.4s ease'
+      const mountA = document.createElement('div')
+      mountA.id = 'yt-mount-a-' + Math.random().toString(36).slice(2)
+      mountA.style.width = '100%'
+      mountA.style.height = '100%'
+      wrapA.appendChild(mountA)
+      containerEl.appendChild(wrapA)
+
+      // Slot B wrapper (for seamless ping-pong loop without bezel)
+      wrapB = document.createElement('div')
+      wrapB.style.position = 'absolute'
+      wrapB.style.inset = '0'
+      wrapB.style.opacity = '0'
+      wrapB.style.transition = 'opacity 0.4s ease'
+      const mountB = document.createElement('div')
+      mountB.id = 'yt-mount-b-' + Math.random().toString(36).slice(2)
+      mountB.style.width = '100%'
+      mountB.style.height = '100%'
+      wrapB.appendChild(mountB)
+      containerEl.appendChild(wrapB)
+
       canvas.parentElement.appendChild(containerEl)
 
       loadYouTubeApi().then((YT) => {
         if (!isRunning || !containerEl) return
-        ytPlayer = new YT.Player(playerMount.id, {
-          videoId: ytId,
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            rel: 0,
-            iv_load_policy: 3,
-            modestbranding: 1,
-            playsinline: 1,
-          },
-          events: {
-            onReady: (e) => {
-              if (currentMuted) e.target.mute()
-              else e.target.unMute()
-              if (options.volume !== undefined) {
-                e.target.setVolume(Math.round(options.volume))
-              }
-              e.target.playVideo()
 
-              // Proactive rewind: checks every 100ms and loops BEFORE video reaches the end
-              // Prevents pause, replay icon, and media controls from ever appearing
-              clearInterval(loopTimer)
-              loopTimer = setInterval(() => {
-                if (ytPlayer?.getCurrentTime && ytPlayer?.getDuration && isRunning && !isPausedByUser) {
-                  const cur = ytPlayer.getCurrentTime()
-                  const dur = ytPlayer.getDuration()
-                  if (dur > 1.5 && cur >= dur - 0.25) {
-                    ytPlayer.seekTo(0, true)
-                  }
-                }
-              }, 100)
+        function makeConfig(slot, onReadyCb) {
+          return {
+            videoId: ytId,
+            playerVars: {
+              autoplay: 1,
+              controls: 0,
+              disablekb: 1,
+              fs: 0,
+              rel: 0,
+              iv_load_policy: 3,
+              modestbranding: 1,
+              playsinline: 1,
+              mute: currentMuted ? 1 : 0,
+              loop: 0,
+              enablejsapi: 1,
             },
-            onStateChange: (e) => {
-              // 0 = ENDED: instantaneous rewind fallback
-              if (e.data === 0 && isRunning && !isPausedByUser) {
-                e.target.seekTo(0, true)
-                e.target.playVideo()
+            events: {
+              onReady: (e) => {
+                if (currentMuted) e.target.mute()
+                else e.target.unMute()
+                if (options.volume !== undefined) {
+                  e.target.setVolume(Math.round(options.volume))
+                }
+                if (currentSpeed !== 1 && e.target.setPlaybackRate) {
+                  try { e.target.setPlaybackRate(currentSpeed) } catch {}
+                }
+                onReadyCb?.(e)
+              },
+              onStateChange: (e) => {
+                if (e.data === 1 && !hasFadedIn && slot === 'A') {
+                  hasFadedIn = true
+                  if (wrapA) wrapA.style.opacity = String(options.opacity ?? 1)
+                }
+                // Genuine ENDED fallback if loop timer missed
+                if (e.data === 0 && isRunning && !isPausedByUser) {
+                  triggerLoopTransition()
+                }
               }
             }
           }
-        })
+        }
+
+        function triggerLoopTransition() {
+          if (isTransitioning || !isRunning || isPausedByUser) return
+          isTransitioning = true
+
+          const currentActive = activeSlot === 'A' ? playerA : playerB
+          const nextWrap = activeSlot === 'A' ? wrapB : wrapA
+
+          function runNext(nextPlayer) {
+            // Next player begins seeking & playing at opacity: 0
+            nextWrap.style.opacity = '0'
+            try {
+              if (currentMuted) nextPlayer.mute()
+              else nextPlayer.unMute()
+              if (currentSpeed !== 1 && nextPlayer.setPlaybackRate) {
+                nextPlayer.setPlaybackRate(currentSpeed)
+              }
+              nextPlayer.seekTo(0, true)
+              nextPlayer.playVideo()
+            } catch {}
+
+            clearTimeout(crossfadeTimer)
+            crossfadeTimer = setTimeout(() => {
+              if (!isRunning) return
+              // Crossfade: next player fades in, previous fades out
+              nextWrap.style.opacity = String(options.opacity ?? 1)
+              const prevWrap = activeSlot === 'A' ? wrapA : wrapB
+              if (prevWrap) prevWrap.style.opacity = '0'
+
+              setTimeout(() => {
+                if (!isRunning) return
+                try { currentActive?.pauseVideo() } catch {}
+                activeSlot = activeSlot === 'A' ? 'B' : 'A'
+                isTransitioning = false
+              }, 450)
+            }, 300)
+          }
+
+          if (activeSlot === 'A') {
+            if (!playerB) {
+              playerB = new YT.Player(mountB.id, makeConfig('B', () => {
+                runNext(playerB)
+              }))
+            } else {
+              runNext(playerB)
+            }
+          } else {
+            runNext(playerA)
+          }
+        }
+
+        function startLoopMonitor() {
+          clearInterval(loopTimer)
+          loopTimer = setInterval(() => {
+            if (!isRunning || isPausedByUser || isTransitioning) return
+            const activePlayer = activeSlot === 'A' ? playerA : playerB
+            if (!activePlayer?.getCurrentTime || !activePlayer?.getDuration) return
+
+            const cur = activePlayer.getCurrentTime()
+            const dur = activePlayer.getDuration()
+
+            // If valid duration, initiate seamless ping-pong transition 2.4s before end
+            if (dur > 3 && cur >= dur - 2.4) {
+              triggerLoopTransition()
+            }
+          }, 150)
+        }
+
+        function startSyncMonitor() {
+          if (!syncChannel) return
+          if (!currentMuted) {
+            // Master screen: broadcast audio-synced timestamp to secondary screens
+            clearInterval(syncInterval)
+            syncInterval = setInterval(() => {
+              if (!isRunning || isPausedByUser) return
+              const activePlayer = activeSlot === 'A' ? playerA : playerB
+              if (activePlayer && activePlayer.getCurrentTime && activePlayer.getPlayerState?.() === 1) {
+                try {
+                  syncChannel.postMessage({ type: 'sync_time', ytId, time: activePlayer.getCurrentTime() })
+                } catch (e) {}
+              }
+            }, 1000)
+          } else {
+            // Secondary screen: keep video frame in exact lockstep while remaining muted
+            syncChannel.onmessage = (ev) => {
+              if (!isRunning || isPausedByUser) return
+              if (ev.data?.type === 'sync_time' && ev.data?.ytId === ytId) {
+                const activePlayer = activeSlot === 'A' ? playerA : playerB
+                if (activePlayer && activePlayer.getCurrentTime && activePlayer.getPlayerState?.() === 1) {
+                  try {
+                    const currentT = activePlayer.getCurrentTime()
+                    if (Math.abs(currentT - ev.data.time) > 0.45) {
+                      activePlayer.seekTo(ev.data.time, true)
+                    }
+                  } catch (e) {}
+                }
+              }
+            }
+          }
+        }
+
+        // Initialize Player A
+        playerA = new YT.Player(mountA.id, makeConfig('A', (e) => {
+          e.target.playVideo()
+          startLoopMonitor()
+          startSyncMonitor()
+        }))
       })
     } else {
       // General web URL / WebGL interactive wallpaper
@@ -209,17 +347,26 @@ export function createWebStream(canvas, options = {}) {
   }
 
   function unmountPlayer() {
-    if (loopTimer) {
-      clearInterval(loopTimer)
-      loopTimer = null
+    clearInterval(loopTimer)
+    loopTimer = null
+    clearInterval(syncInterval)
+    syncInterval = null
+    clearTimeout(crossfadeTimer)
+    crossfadeTimer = null
+
+    if (playerA) {
+      try { playerA.destroy() } catch {}
+      playerA = null
     }
-    if (ytPlayer) {
-      try { ytPlayer.destroy() } catch {}
-      ytPlayer = null
+    if (playerB) {
+      try { playerB.destroy() } catch {}
+      playerB = null
     }
     if (containerEl) {
       try { containerEl.remove() } catch {}
       containerEl = null
+      wrapA = null
+      wrapB = null
     }
     if (iframeEl) {
       try {
@@ -228,6 +375,9 @@ export function createWebStream(canvas, options = {}) {
       } catch {}
       iframeEl = null
     }
+    hasFadedIn = false
+    isTransitioning = false
+    activeSlot = 'A'
   }
 
   function frame() {
@@ -266,16 +416,19 @@ export function createWebStream(canvas, options = {}) {
 
   function pause() {
     isPausedByUser = true
-    if (ytPlayer?.pauseVideo) {
-      try { ytPlayer.pauseVideo() } catch {}
-    }
+    const activePlayer = activeSlot === 'A' ? playerA : playerB
+    try { activePlayer?.pauseVideo() } catch {}
   }
 
   function resume() {
     isPausedByUser = false
-    if (ytPlayer?.playVideo) {
-      try { ytPlayer.playVideo() } catch {}
-    }
+    const activePlayer = activeSlot === 'A' ? playerA : playerB
+    try {
+      activePlayer?.playVideo()
+      if (currentSpeed !== 1 && activePlayer?.setPlaybackRate) {
+        activePlayer.setPlaybackRate(currentSpeed)
+      }
+    } catch {}
   }
 
   function updateOptions(newOpts = {}) {
@@ -286,20 +439,35 @@ export function createWebStream(canvas, options = {}) {
       if (ytId) loadThumbnail(ytId)
       if (!options.preview) mountPlayer()
     }
+    if (newOpts.speedMultiplier !== undefined || newOpts.speed !== undefined) {
+      currentSpeed = Number(newOpts.speedMultiplier ?? newOpts.speed ?? 1)
+      try { playerA?.setPlaybackRate(currentSpeed) } catch {}
+      try { playerB?.setPlaybackRate(currentSpeed) } catch {}
+    }
+    if (newOpts.paused !== undefined) {
+      if (newOpts.paused) pause()
+      else resume()
+    }
     if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
       currentMuted = newOpts.muted
-      if (ytPlayer) {
-        try {
-          if (currentMuted) ytPlayer.mute()
-          else ytPlayer.unMute()
-        } catch {}
-      }
+      try {
+        if (currentMuted) {
+          playerA?.mute()
+          playerB?.mute()
+        } else {
+          const active = activeSlot === 'A' ? playerA : playerB
+          active?.unMute()
+        }
+      } catch {}
     }
-    if (newOpts.volume !== undefined && ytPlayer?.setVolume) {
-      try { ytPlayer.setVolume(Math.round(newOpts.volume)) } catch {}
+    if (newOpts.volume !== undefined) {
+      const vol = Math.round(newOpts.volume)
+      try { playerA?.setVolume(vol) } catch {}
+      try { playerB?.setVolume(vol) } catch {}
     }
     if (newOpts.opacity !== undefined) {
-      if (containerEl) containerEl.style.opacity = String(newOpts.opacity)
+      const activeWrap = activeSlot === 'A' ? wrapA : wrapB
+      if (hasFadedIn && activeWrap) activeWrap.style.opacity = String(newOpts.opacity)
       if (iframeEl) iframeEl.style.opacity = String(newOpts.opacity)
     }
     if (newOpts.brightness !== undefined) {

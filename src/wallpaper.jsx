@@ -123,106 +123,92 @@ function WallpaperCanvas() {
         const appWindow = getCurrentWindow()
         const myLabel = appWindow.label
 
-        const handleSetEngine = ({ payload }) => {
-          if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-            return
-          }
-          bootEngine(payload.engineId, payload.config || {})
-        }
-
-        unlisteners.push(await appWindow.listen('aura:set-engine', handleSetEngine))
-
+        let globalListen = null
         try {
-          const { listen: globalListen } = await import('@tauri-apps/api/event')
-          unlisteners.push(await globalListen('aura:set-engine', handleSetEngine))
+          const eventMod = await import('@tauri-apps/api/event')
+          globalListen = eventMod.listen
         } catch (e) {}
 
-        unlisteners.push(
-          await appWindow.listen('aura:update-config', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            const cfg = payload.config || payload
-            engineRef.current?.updateOptions?.(cfg)
-          })
-        )
+        let lastEventKey = ''
+        let lastEventTime = 0
 
-        unlisteners.push(
-          await appWindow.listen('aura:stop', ({ payload }) => {
+        async function addListener(eventName, handler) {
+          const wrapped = ({ payload }) => {
             if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
               return
             }
-            bootSeqRef.current++
-            activeIdRef.current = null
-            setActiveId(null)
-            if (engineRef.current) {
-              try { engineRef.current.stop() } catch (e) {}
-              engineRef.current = null
+            const now = Date.now()
+            const key = eventName + ':' + JSON.stringify(payload || {})
+            if (key === lastEventKey && (now - lastEventTime) < 150) {
+              return
             }
-            silenceAllMedia()
-            if (canvasRef.current) {
-              const ctx = canvasRef.current.getContext('2d')
-              ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-              canvasRef.current.width = 1
-              canvasRef.current.height = 1
-            }
-          })
-        )
+            lastEventKey = key
+            lastEventTime = now
+            handler(payload)
+          }
+          unlisteners.push(await appWindow.listen(eventName, wrapped))
+          if (globalListen) {
+            try {
+              unlisteners.push(await globalListen(eventName, wrapped))
+            } catch (e) {}
+          }
+        }
 
-        unlisteners.push(
-          await appWindow.listen('aura:pause', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            try { engineRef.current?.pause?.() } catch (e) {}
-            try { engineRef.current?.updateOptions?.({ paused: true }) } catch (e) {}
-            document.querySelectorAll('video, audio').forEach(el => {
-              try { el.pause() } catch (e) {}
-            })
-          })
-        )
+        await addListener('aura:set-engine', (payload) => {
+          bootEngine(payload?.engineId, payload?.config || {})
+        })
 
-        unlisteners.push(
-          await appWindow.listen('aura:resume', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            try { engineRef.current?.resume?.() } catch (e) {}
-            try { engineRef.current?.updateOptions?.({ paused: false }) } catch (e) {}
-            document.querySelectorAll('video').forEach(el => {
-              try { el.play().catch(() => {}) } catch (e) {}
-            })
-          })
-        )
+        await addListener('aura:update-config', (payload) => {
+          const cfg = payload?.config || payload || {}
+          engineRef.current?.updateOptions?.(cfg)
+        })
 
-        unlisteners.push(
-          await appWindow.listen('aura:set-brightness', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            setBrightness(payload.brightness)
-          })
-        )
+        await addListener('aura:stop', () => {
+          bootSeqRef.current++
+          activeIdRef.current = null
+          setActiveId(null)
+          if (engineRef.current) {
+            try { engineRef.current.stop() } catch (e) {}
+            engineRef.current = null
+          }
+          silenceAllMedia()
+          if (canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d')
+            ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+            canvasRef.current.width = 1
+            canvasRef.current.height = 1
+          }
+        })
 
-        unlisteners.push(
-          await appWindow.listen('aura:set-opacity', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            setOpacity(payload.opacity)
+        await addListener('aura:pause', () => {
+          try { engineRef.current?.pause?.() } catch (e) {}
+          try { engineRef.current?.updateOptions?.({ paused: true }) } catch (e) {}
+          document.querySelectorAll('video, audio').forEach(el => {
+            try { el.pause() } catch (e) {}
           })
-        )
+        })
 
-        unlisteners.push(
-          await appWindow.listen('aura:set-fps', ({ payload }) => {
-            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
-              return
-            }
-            if (payload?.fps) {
-              engineRef.current?.updateOptions?.({ fps: payload.fps })
-            }
+        await addListener('aura:resume', () => {
+          try { engineRef.current?.resume?.() } catch (e) {}
+          try { engineRef.current?.updateOptions?.({ paused: false }) } catch (e) {}
+          document.querySelectorAll('video').forEach(el => {
+            try { el.play().catch(() => {}) } catch (e) {}
           })
-        )
+        })
+
+        await addListener('aura:set-brightness', (payload) => {
+          if (payload?.brightness !== undefined) setBrightness(payload.brightness)
+        })
+
+        await addListener('aura:set-opacity', (payload) => {
+          if (payload?.opacity !== undefined) setOpacity(payload.opacity)
+        })
+
+        await addListener('aura:set-fps', (payload) => {
+          if (payload?.fps) {
+            engineRef.current?.updateOptions?.({ fps: payload.fps })
+          }
+        })
 
         // Check if there is already an active wallpaper for this monitor (handles hot-plug & reload)
         try {

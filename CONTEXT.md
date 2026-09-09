@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 19:00 IST — Resolved YouTube Error 153 player configuration issue using strict-origin-when-cross-origin referrerpolicy, standard embed endpoint, enablejsapi stream controls, and updated release binary AetherFlow.exe.
+2026-09-09 22:32 IST — Restored the original top hero WallpaperPlayer preview panel on Home.jsx for selected/active wallpapers, displaying live animations, video, and stream previews with quick controls and rename actions.
 
 ---
 
@@ -155,5 +155,12 @@ npm run tauri:dev
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Real-time audio volume/mute sync (IPC & option merge), battery & fullscreen auto-pause monitor, and native registry autostart on branch fix/audio-power-fullscreen-startup |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed FPS pacing across all engines, created FPS Benchmark HUD, decoupled preview from desktop applied state to fix false display badges & Re-apply button state, restored video preview top controls, and enabled live speed/brightness/opacity on desktop wallpapers |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Built native Translucent Taskbar, YouTube & Web Stream engine, GitHub Releases auto-updater, and resolved YouTube Error 153 via strict-origin referrerpolicy & live API stream controls |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Resolved YouTube wallpaper speed multiplier control and eliminated center pause overlay buttons via debounced loop, WebView2 CSS suppression, and WS_CAPTION window style filter |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Completed frontend overhaul: eliminated YouTube 2s pause bezel via dark buffer & dual-player ping-pong crossfade, removed Resource & Memory Monitor from Settings, removed FPS display from footer |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Reverted video thumbnail previews back to zero-RAM vector placeholders to avoid high memory usage from hardware video decoders |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Removed all previews across every card (YouTube, Video, Canvas, Image), replaced hero WallpaperPlayer with glass card, dropped WebView2 RAM to ~38MB, removed 2s YouTube delay for immediate start, added --osd-level=0 to MPV to permanently remove pause symbol, and synced multi-monitor YouTube audio/video |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed MPV crash caused by invalid --osd-font-size=0, restored win.emit & app.emit in main.rs, and cleaned up wallpaper.jsx listeners to restore all video, canvas, and YouTube stream wallpapers |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored on-demand dynamic hover previews for Video, Image, YouTube, and Canvas cards with automatic decoder disposal upon cursor exit to maintain ultra-low idle RAM |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored original top hero WallpaperPlayer preview banner on Home.jsx for selected/active wallpaper with rename modal & action buttons |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

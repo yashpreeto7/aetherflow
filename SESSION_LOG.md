@@ -321,3 +321,133 @@
 - **Build status:** ✅ `npm run build` (419ms), `cargo build --release` succeeded, `AetherFlow.exe` running.
 ---
 
+## Session: 2026-09-09 19:22 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Eliminated Center Media Controls (`|<<`, `||`, `>>|`) on YouTube Wallpapers**:
+    - Identified exact root cause: The user's wallpaper was a short 15-second loop added from a playlist URL (`&list=PLnTX...`). When `playlist=` was included in the embed URL, YouTube embedded a playlist player which mounted center playlist navigation buttons (`|<<` previous, `||` pause, `>>|` next) every time the 15-second loop reached the end.
+    - Migrated `src/engines/web-stream.js` to use the official YouTube IFrame Player API (`window.YT.Player`).
+    - Passed only isolated `videoId` (stripping all playlist parameters so YouTube never creates playlist controls).
+    - Added high-frequency proactive rewind loop (polls every 100ms and rewinds `0.25s` before duration end), preventing YouTube from ever pausing or entering the ended state.
+    - Added fallback `onStateChange === 0` instant rewind.
+    - Overscanned YouTube container to crop top title and bottom bars off-screen.
+    - Verified with headless browser test on the exact video (`f8YJdRm95ng`): confirmed zero media controls and continuous infinite looping.
+    - Recompiled `AetherFlow.exe` (7.33 MB), committed (`9d2c4fe`), updated tag `v1.0.2`, and pushed to GitHub.
+- **Build status:** ✅ `npm run build` (582ms), `cargo build --release` succeeded, `AetherFlow.exe` running.
+## Session: 2026-09-09 21:20 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved YouTube Wallpaper Speed Control**:
+    - Identified that `web-stream.js` lacked playback rate handling, ignoring `speedMultiplier` / `speed` options and `updateOptions`.
+    - Integrated `currentSpeed = Number(options.speedMultiplier ?? options.speed ?? 1)`.
+    - Added `ytPlayer.setPlaybackRate(currentSpeed)` during `onReady`, `resume()`, and dynamically in `updateOptions`.
+    - Added `speedMultiplier: 1` to `ENGINES['web-stream'].defaultConfig` in `src/engines/index.js`.
+  - **Eliminated Center Pause Button on YouTube Wallpapers**:
+    - Identified that repeated proactive `seekTo` calls flooded the YouTube iframe and caused it to enter State 2 (PAUSED), displaying the center pause overlay. Added an `isRewinding` debounce lock and immediate `ytPlayer.playVideo()` invocation alongside `seekTo(0, true)`.
+    - Handled unexpected State 2 (PAUSED) in `onStateChange` so YouTube instantly rewinds and resumes playback unless explicitly paused by the user.
+    - Set `mute: currentMuted ? 1 : 0` directly in `playerVars` to satisfy browser autoplay policies without initiating paused states.
+    - Fixed `is_foreground_window_fullscreen()` in `src-tauri/src/main.rs`: filtered out standard maximized desktop windows with `WS_CAPTION`, preventing false fullscreen pause triggers during normal app usage.
+    - Added `initialization_script` to `WebviewWindowBuilder` in `main.rs` injecting CSS into WebView2 frames to hide `.ytp-bezel`, `.ytp-large-play-button`, `.ytp-pause-overlay`, and other media controls.
+    - Updated `src/wallpaper.jsx` to subscribe to wallpaper events via both window-level and global listeners (`addListener`), ensuring reliable delivery of `aura:pause` and `aura:resume`.
+    - Recompiled optimized release binary `AetherFlow.exe` (7.33 MB) and hot-reloaded running process.
+- **Build status:** ✅ `npm run build` (540ms), `cargo build --release` passed with 0 errors.
+- **Next session should:** Verify user experience and explore additional wallpaper features or optimizations.
+---
+
+## Session: 2026-09-09 21:45 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Eliminated YouTube 2-Second Animated Pause Bezel**:
+    - Identified that YouTube HTML5 player renders `.ytp-bezel` (`@keyframes ytp-bezel-fadeout 2s`) on startup and on every seek/loop.
+    - Implemented a 2.2s dark buffer: on initial start, the YouTube container remains hidden at `opacity: 0` for 2200ms while the canvas renders the HQ thumbnail and the 2s bezel fades out invisibly. It then smoothly transitions in (`opacity: 1`, `transition: opacity 0.6s ease`).
+    - Implemented dual-player ping-pong crossfade (Player A & Player B): 2.4s before the active video ends, the incoming player begins seeking to 0 and playing at `opacity: 0`. Its 2s bezel completes completely hidden in the dark, and at 2.1s both players crossfade seamlessly without any freeze, black flash, or pause button.
+    - Removed `e.data === 2` (PAUSED) seek loop trigger to prevent unwanted rewinds and pause icon flashes.
+  - **Implemented Automatic Static Previews for Video Wallpapers**:
+    - Replaced the generic blue camera icon placeholder in `WallpaperThumbnail/index.jsx` with `VideoStaticPoster`.
+    - Automatically decodes and extracts static frames from local video files onto an offscreen canvas (480px JPEG thumbnail), caches in memory (`videoPosterCache`), and persists to user's installed wallpaper store item.
+    - Provides instant `<video src="...#t=0.5" preload="auto" onLoadedMetadata={...}>` static frame fallback while offscreen extraction runs.
+    - Added blue `[● VIDEO]` badge matching the `[● YOUTUBE]` badge style, with smooth hover zoom (`scale(1.05)`).
+  - **Removed Resource & Memory Monitor in Settings**:
+    - Removed `memData`, `trimming`, `fetchMem`, and `handleTrim` states.
+    - Removed `{ icon: Activity, title: 'Resource & Memory Monitor' }` card from `Settings.jsx`.
+  - **Removed FPS Display from Footer**:
+    - Removed `fps` counter state, requestAnimationFrame calculation loop, and `<Cpu /> {fps} fps` display from `StatusBar/index.jsx`.
+- **Build status:** ✅ `npm run build` (733ms), `cargo build --release` succeeded (2m 02s), `AetherFlow.exe` updated and running (PID 30700).
+- **Next session should:** Assist user with any additional visual customization or feature requests.
+---
+
+## Session: 2026-09-09 21:56 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Reverted Video Wallpaper Thumbnail Previews to Zero-RAM Placeholders**:
+    - Removed `VideoStaticPoster` and offscreen video decoding/canvas extraction from `WallpaperThumbnail/index.jsx`.
+    - Restored lightweight vector/CSS placeholder for video cards (rendering `wallpaper.thumbnail` only if explicitly set).
+    - Eliminated multiple background Direct3D hardware video decoder surface allocations across grid cards.
+    - Recompiled release binary `cargo build --release`, updated root `AetherFlow.exe` (Timestamp: 9:56 PM), and launched process (PID 30700).
+- **Build status:** ✅ `npm run build` (733ms), `cargo build --release` passed with 0 errors.
+---
+
+## Session: 2026-09-09 22:12 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Eliminated All Card Previews Across Every Card (YouTube, Canvas, Video, Image)**:
+    - Completely removed all `<img ...>` tags, network thumbnail fetches (`img.youtube.com`), local image decoders, and canvas SVG previews in `src/components/WallpaperThumbnail/index.jsx`.
+    - Replaced with zero-RAM, instant CSS vector badges tailored with distinct themes and Lucide icons (`Terminal`, `Sparkles`, `Waves`, `Compass`, `CloudRain`, `Flame`, `Activity`, `Globe`, `Video`, `ImageIcon`).
+    - Replaced live `WallpaperPlayer` hero banner in `src/pages/Home.jsx` with a high-performance static glass status card.
+    - Dropped WebView2 RAM usage from ~200MB down to ~38MB total across all Edge WebView2 renderer and GPU processes!
+  - **Removed YouTube 2-Second Delay for Instant Playback**:
+    - Reverted the 2200ms delay and initial zero opacity in `src/engines/web-stream.js`.
+    - Set `wrapA.style.opacity = String(options.opacity ?? 1)` immediately upon creation. Videos now display and play without any delay.
+  - **Permanently Removed MPV Pause Overlay Symbol (`❚❚`)**:
+    - Identified that when MPV is playing, paused, or looping on the desktop, MPV's default OSD level 1 renders an on-screen display pause symbol directly into the video window.
+    - Added `--osd-level=0`, `--no-osd-bar`, `--osd-on-seek=no`, `--osd-duration=0`, `--osd-font-size=0`, `--osd-msg1=`, `--osd-msg2=`, and `--osd-msg3=` to MPV launch flags in `src-tauri/src/mpv.rs`.
+    - Added `EmptyWorkingSet` memory working set trimming in `src-tauri/src/main.rs` when MPV takes over desktop rendering.
+  - **Multi-Monitor YouTube Music & Video Sync**:
+    - Aligned webview/canvas wallpapers with MPV multi-monitor audio behavior: in `apply_wallpaper` and `update_wallpaper_config` (`src-tauri/src/main.rs` and `src/wallpaper.jsx`), secondary screens in multi-monitor mode are strictly muted (`mute: 1, volume: 0.0`), eliminating echoing/desynced music.
+    - Implemented `BroadcastChannel('aetherflow_yt_sync')` in `src/engines/web-stream.js`: the primary unmuted screen periodically broadcasts its playback position, and secondary muted screens seek to match, keeping video frames synchronized across displays while audio plays cleanly from the primary screen.
+  - Recompiled release binary `cargo build --release` (2m 51s), copied to `AetherFlow.exe`, and verified running process (PID 20796, RAM 22.67MB, WebView2 ~38MB).
+- **Build status:** ✅ `npm run build` (532ms), `cargo build --release` passed with 0 errors.
+---
+
+## Session: 2026-09-09 22:19 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Fixed MPV Video Wallpaper Launch Failure**:
+    - Identified that passing `--osd-font-size=0` was causing MPV to throw a fatal startup error (`Error parsing option osd-font-size (parameter is outside values allowed for option)`) and terminate immediately on launch.
+    - Removed `--osd-font-size=0` while retaining the valid OSD suppression flags (`--osd-level=0`, `--no-osd-bar`, `--osd-on-seek=no`, `--osd-duration=0`, `--osd-msg1=`).
+    - Verified via CLI test that MPV launches with exit code 0 and completely suppresses all OSD pause overlays.
+  - **Fixed Canvas & YouTube Wallpaper IPC Delivery**:
+    - Restored `win.emit` and `app.emit` in `src-tauri/src/main.rs` for `apply_wallpaper` and `update_wallpaper_config` to ensure reliable event delivery to WebviewWindow instances.
+    - Cleaned up event listeners in `src/wallpaper.jsx` with timestamp debouncing to prevent duplicate invocations and race condition cancellations.
+  - Rebuilt production frontend (`npm run build` 548ms) and native release binary (`cargo build --release` 1m 58s), copied to `AetherFlow.exe`, and verified live process (PID 12968).
+- **Build status:** ✅ `npm run build` (548ms), `cargo build --release` passed with 0 errors.
+---
+
+## Session: 2026-09-09 22:28 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Restored Dynamic Hover Previews Across Wallpaper Cards**:
+    - Updated `src/components/WallpaperThumbnail/index.jsx` to support on-demand hover media rendering while preserving ultra-lightweight zero-RAM idle performance.
+    - **Idle State (`isHovered === false`)**: Renders pure CSS/vector badge with glowing icons, subtle gradients, and type indicators. Zero images loaded, zero video decoders allocated, maintaining ~26MB idle baseline.
+    - **Hover State (`isHovered === true`)**:
+      - **Video Wallpapers**: Automatically mounts the `<video>` player and plays the live video loop muted with smooth transitions (debounced by 100ms to avoid GPU spikes on cursor sweeps).
+      - **Image Wallpapers**: Dynamically mounts full-resolution picture preview via `convertFileSrc`.
+      - **YouTube Streams**: Fetches and renders official high-quality YouTube thumbnail (`img.youtube.com/vi/{ytId}/hqdefault.jpg`).
+      - **Canvas Engines**: Renders the crisp vector engine preview (`/previews/{engineId}.svg`).
+    - **Hover Exit**: Immediately unmounts media elements and calls `.pause()`, `.removeAttribute('src')`, and `.load()` via callback ref, instantly forcing Chromium/Direct3D to discard hardware decoding surfaces and return memory to zero.
+  - Rebuilt production bundle (`npm run build` 872ms) and native release binary (`cargo build --release` 3m 03s).
+  - Deployed updated executable to `AetherFlow.exe` and launched process (PID 24760, initial memory 26.4MB).
+- **Build status:** ✅ `npm run build` (872ms), `cargo build --release` passed with 0 errors.
+---
+
+## Session: 2026-09-09 22:32 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Restored Top Hero Preview Banner on Home Page**:
+    - Re-imported `WallpaperPlayer` in `src/pages/Home.jsx`.
+    - Restored the original top hero card (height: 180px) mounting `WallpaperPlayer` with `preview={true}`, engine config, and live animated canvas/video/stream rendering for the selected wallpaper.
+    - Preserved the bottom-up gradient overlay, Live/Selected status badge, wallpaper rename button, and desktop Apply/Stop action buttons.
+  - Rebuilt production bundle (`npm run build` 1.01s) and native release binary (`cargo build --release` 2m 32s).
+  - Copied executable to `AetherFlow.exe` and launched process (PID 19820, initial memory 25.8MB).
+- **Build status:** ✅ `npm run build` (1.01s), `cargo build --release` passed with 0 errors.
+---

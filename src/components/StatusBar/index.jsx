@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Zap, Palette, Cpu, Mic, Settings, ChevronLeft, Square, Activity } from 'lucide-react'
+import { Zap, Palette, Mic, Settings, ChevronLeft, Square, Activity } from 'lucide-react'
 import { useStore } from '../../store/useStore.js'
 import { stopDesktopWallpaper } from '../../lib/wallpaperActions.js'
 import { useNavigate } from 'react-router-dom'
@@ -43,26 +43,6 @@ export default function StatusBar() {
     } catch {}
     setTimeout(() => setTrimming(false), 500)
   }
-
-  // Live FPS counter
-  const [fps, setFps] = useState(0)
-  useEffect(() => {
-    let frames = 0
-    let last = performance.now()
-    let animId
-    function count() {
-      frames++
-      const now = performance.now()
-      if (now - last >= 1000) {
-        setFps(frames)
-        frames = 0
-        last = now
-      }
-      animId = requestAnimationFrame(count)
-    }
-    animId = requestAnimationFrame(count)
-    return () => cancelAnimationFrame(animId)
-  }, [])
 
   const themeLabel = activeTheme?.replace('sovereign-', '').replace('-', ' ') ?? '—'
 
@@ -158,11 +138,6 @@ export default function StatusBar() {
             <span>Audio reactive</span>
           </div>
         )}
-
-        <div className="flex items-center gap-2">
-          <Cpu size={11} />
-          <span className="font-mono">{fps} fps</span>
-        </div>
 
         {memUsage && (
           <div

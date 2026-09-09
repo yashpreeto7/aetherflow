@@ -150,7 +150,7 @@ export const ENGINES = {
     description: 'Streams live video, YouTube ambient loops, or interactive web pages as wallpaper',
     preview: '/previews/deep-space.svg',
     tags: ['stream', 'youtube', 'live', 'web'],
-    defaultConfig: { streamUrl: '', muted: true },
+    defaultConfig: { streamUrl: '', muted: true, speedMultiplier: 1 },
     properties: {
       streamUrl: { type: 'text', label: 'YouTube or Web Stream URL', default: '' },
       muted: { type: 'toggle', label: 'Mute Audio', default: true },

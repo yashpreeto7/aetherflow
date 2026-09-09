@@ -196,6 +196,13 @@ pub fn is_foreground_window_fullscreen() -> bool {
             return false;
         }
 
+        // Standard desktop applications have WS_CAPTION (title bar), even when maximized.
+        // True fullscreen games, media players (F11/exclusive fullscreen) have no WS_CAPTION.
+        let style = GetWindowLongW(fg_hwnd, GWL_STYLE) as u32;
+        if (style & WS_CAPTION) == WS_CAPTION {
+            return false;
+        }
+
         let monitor = MonitorFromWindow(fg_hwnd, MONITOR_DEFAULTTONEAREST);
         if monitor.is_null() {
             return false;
@@ -281,6 +288,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
                         let _ = win.emit_to(label.as_str(), event_name, serde_json::json!({ "target": "*" }));
                     }
                 }
+                let _ = app.emit(event_name, serde_json::json!({ "target": "*" }));
             }
         }
     });
@@ -879,6 +887,49 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                 log_msg(&new_mon_log);
                 println!("{}", new_mon_log);
 
+                let yt_css_hide_script = r#"
+(function() {
+    function hideElements() {
+        try {
+            var host = window.location.hostname || '';
+            if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+                var styleId = 'aetherflow-yt-hide-ui';
+                if (!document.getElementById(styleId)) {
+                    var s = document.createElement('style');
+                    s.id = styleId;
+                    s.textContent = `
+                        .ytp-bezel,
+                        .ytp-bezel-icon,
+                        .ytp-bezel-text,
+                        .ytp-large-play-button,
+                        .ytp-pause-overlay,
+                        .ytp-endscreen-content,
+                        .ytp-ce-element,
+                        .ytp-chrome-top,
+                        .ytp-chrome-bottom,
+                        .ytp-gradient-top,
+                        .ytp-gradient-bottom,
+                        .ytp-spinner {
+                            display: none !important;
+                            opacity: 0 !important;
+                            visibility: hidden !important;
+                            pointer-events: none !important;
+                        }
+                    `;
+                    (document.head || document.documentElement).appendChild(s);
+                }
+            }
+        } catch (e) {}
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', hideElements);
+    } else {
+        hideElements();
+    }
+    setInterval(hideElements, 1000);
+})();
+"#;
+
                 let win_res = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("wallpaper.html".into()))
                     .title(&format!("AetherFlow Wallpaper - {}", name))
                     .decorations(false)
@@ -888,6 +939,7 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                     .resizable(false)
                     .inner_size(logical_w, logical_h)
                     .position(logical_x, logical_y)
+                    .initialization_script(yt_css_hide_script)
                     .build();
 
                 match win_res {
@@ -919,6 +971,18 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
     // 4. Log verified wallpaper state
     log_wallpaper_state(app, current_count);
 }
+
+#[cfg(windows)]
+fn trim_process_working_set() {
+    unsafe {
+        windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet(
+            windows_sys::Win32::System::Threading::GetCurrentProcess()
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn trim_process_working_set() {}
 
 fn ensure_wallpaper_windows(app: &AppHandle) {
     reconcile_wallpaper_windows(app);
@@ -1000,6 +1064,8 @@ async fn apply_wallpaper(
     let is_video = wants_video && mpv::find_mpv_binary().is_ok();
 
     let monitors = app.available_monitors().unwrap_or_default();
+    let global_muted = config.get("muted").and_then(|v| v.as_bool()).unwrap_or(false);
+    let global_volume = config.get("volume").and_then(|v| v.as_f64()).unwrap_or(50.0);
 
     if is_video {
         let vpath = match video_path_opt {
@@ -1012,8 +1078,6 @@ async fn apply_wallpaper(
 
         let speed_val = config.get("speedMultiplier").and_then(|v| v.as_f64()).or_else(|| config.get("speed").and_then(|v| v.as_f64())).unwrap_or(1.0);
         let _fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
-        let global_muted = config.get("muted").and_then(|v| v.as_bool()).unwrap_or(false);
-        let global_volume = config.get("volume").and_then(|v| v.as_f64()).unwrap_or(50.0);
         let is_duplicated = target == "*";
         let mut audio_assigned = false;
 
@@ -1046,6 +1110,7 @@ async fn apply_wallpaper(
                     let _ = win.emit_to(label.as_str(), "aura:stop", serde_json::json!({ "target": label.clone() }));
                     let _ = win.hide();
                 }
+                trim_process_working_set();
 
                 // 2. Terminate existing MPV on this monitor
                 if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
@@ -1128,6 +1193,7 @@ async fn apply_wallpaper(
 
         // 2. Show canvas webview windows and send engine events
         let windows = app.webview_windows();
+        let mut audio_assigned = false;
         for (label, win) in windows {
             if label.starts_with("wallpaper_") && (target == "*" || target == label) {
                 let _ = win.set_ignore_cursor_events(true);
@@ -1153,9 +1219,40 @@ async fn apply_wallpaper(
                     pin_hwnd_as_wallpaper(hwnd, mon_bounds);
                 }
 
+                // In duplicated / all screens mode, ONLY the primary screen (or first screen) plays audio.
+                // Secondary screens MUST be muted to prevent echo / out-of-sync audio, exactly like MPV!
+                let is_primary = monitors.iter().find(|m| {
+                    if let Some(name) = m.name() {
+                        get_monitor_label(name) == label && m.position().x == 0 && m.position().y == 0
+                    } else {
+                        false
+                    }
+                }).is_some();
+
+                let screen_muted = if global_muted {
+                    true
+                } else if target == "*" {
+                    if (is_primary || label == "wallpaper_0") && !audio_assigned {
+                        audio_assigned = true;
+                        false
+                    } else {
+                        true // Secondary duplicate screen -> Mute audio!
+                    }
+                } else {
+                    global_muted
+                };
+                let screen_volume = if screen_muted { 0.0 } else { global_volume };
+
+                let mut win_config = config.clone();
+                if let Some(obj) = win_config.as_object_mut() {
+                    obj.insert("muted".to_string(), serde_json::json!(screen_muted));
+                    obj.insert("volume".to_string(), serde_json::json!(screen_volume));
+                    obj.insert("isSecondary".to_string(), serde_json::json!(screen_muted));
+                }
+
                 let payload = serde_json::json!({
                     "engineId": resolved_engine_id.clone(),
-                    "config": config.clone(),
+                    "config": win_config,
                     "target": target.clone(),
                 });
                 let _ = win.emit("aura:set-engine", payload.clone());
@@ -1165,6 +1262,7 @@ async fn apply_wallpaper(
                 let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
                 let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
+                let _ = win.emit("aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
             }
         }
@@ -1438,12 +1536,37 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
     if let Some(muted) = config.get("muted").and_then(|v| v.as_bool()) {
         set_mpv_mute(monitor_label.clone(), muted);
     }
+    let monitors = app.available_monitors().unwrap_or_default();
+    let mut audio_assigned = false;
     let windows = app.webview_windows();
     for (label, win) in &windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == *label) {
-            let payload = serde_json::json!({ "config": config.clone(), "target": target.clone() });
-            let _ = win.emit_to(label.as_str(), "aura:update-config", payload);
+            let mut win_config = config.clone();
+            if target == "*" {
+                let is_primary = monitors.iter().find(|m| {
+                    if let Some(name) = m.name() {
+                        get_monitor_label(name) == *label && m.position().x == 0 && m.position().y == 0
+                    } else {
+                        false
+                    }
+                }).is_some();
+                if (is_primary || *label == "wallpaper_0") && !audio_assigned {
+                    audio_assigned = true;
+                } else {
+                    // Secondary monitor -> Force mute!
+                    if let Some(obj) = win_config.as_object_mut() {
+                        obj.insert("muted".to_string(), serde_json::json!(true));
+                        obj.insert("volume".to_string(), serde_json::json!(0.0));
+                        obj.insert("isSecondary".to_string(), serde_json::json!(true));
+                    }
+                }
+            }
+            let payload = serde_json::json!({ "config": win_config, "target": target.clone() });
+            let _ = win.emit("aura:update-config", payload.clone());
+            let _ = win.emit_to(label.as_str(), "aura:update-config", payload.clone());
+            let _ = app.emit("aura:update-config", payload.clone());
             if let Some(fps_val) = config.get("fps").and_then(|v| v.as_f64()) {
+                let _ = win.emit("aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
             }
         }
