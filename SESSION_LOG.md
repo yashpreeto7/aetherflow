@@ -303,5 +303,21 @@
     - Added "Software Updates" card in `src/pages/Settings.jsx` showing current version `v1.0.1`, "Check for Updates" button with loading spinner, changelog viewer, and direct download buttons.
     - Added startup update check in `src/App.jsx` showing a floating toast notification when a newer release is published.
 - **Build status:** ✅ `npm run build` (582ms), `cargo check` clean with 0 errors.
+## Session: 2026-09-09 19:00 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved YouTube Error 153 on Desktop Wallpaper**:
+    - Identified root cause of "Video player configuration error - Error 153": YouTube embeds strictly require an HTTP Referer header to verify playback permissions and protect against headless scraping. The engine had `referrerpolicy="no-referrer"` which stripped the header and caused YouTube's player initialization to fail.
+    - Verified fix empirically with comparative Playwright tests: `no-referrer` reproduces Error 153 100% of the time, while `strict-origin-when-cross-origin` streams seamlessly without errors.
+    - Updated `src/engines/web-stream.js`:
+      - Set `referrerpolicy="strict-origin-when-cross-origin"`.
+      - Switched embed domain to standard `https://www.youtube.com/embed/${ytId}`.
+      - Enabled `enablejsapi=1` and `playsinline=1`.
+      - Added dynamic `mute` / `unMute` and volume adjustment via YouTube IFrame API `postMessage` (avoids re-buffering stream on control adjustments).
+      - Added `pause` and `resume` methods for background battery/fullscreen pause integration.
+    - Updated `src/wallpaper.jsx` and `src/components/WallpaperPlayer/index.jsx` to cleanly blank and destroy iframes on wallpaper switch.
+    - Compiled optimized native release binary `AetherFlow.exe` (7.33 MB) and placed at project root.
+    - Committed fix (`0392e54`), updated tag `v1.0.2`, and pushed to GitHub `origin/main`.
+- **Build status:** ✅ `npm run build` (419ms), `cargo build --release` succeeded, `AetherFlow.exe` running.
 ---
 
