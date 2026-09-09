@@ -279,8 +279,19 @@ export default function SettingsPage() {
               )
             })}
           </div>
-          <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.85, lineHeight: 1.5, background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
-            💡 <strong>Requirement:</strong> Ensure <em>"Transparency effects"</em> is turned <strong>ON</strong> in Windows Settings &gt; Personalization &gt; Colors.
+          <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.9, lineHeight: 1.6, background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ marginBottom: 8 }}>
+              💡 <strong>Windows 11 Notice:</strong> On recent Windows 11 builds (22H2 / 23H2 / 24H2), Microsoft draws an opaque XAML brush over the taskbar. AetherFlow's native API tints the taskbar, while <strong>100% invisible clear glass</strong> requires the free Microsoft Store utility <strong>TranslucentTB</strong>.
+            </div>
+            <button
+              className="btn btn-ghost"
+              style={{ padding: '5px 12px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-main)', borderRadius: 6 }}
+              onClick={() => {
+                window.open('https://apps.microsoft.com/detail/9pf4kz2vn4w9', '_blank')
+              }}
+            >
+              <ExternalLink size={12} /> Open TranslucentTB on Microsoft Store
+            </button>
           </div>
         </div>
       ),
