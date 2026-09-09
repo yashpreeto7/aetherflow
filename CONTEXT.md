@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 22:32 IST — Restored the original top hero WallpaperPlayer preview panel on Home.jsx for selected/active wallpapers, displaying live animations, video, and stream previews with quick controls and rename actions.
+2026-09-09 22:42 IST — Resolved taskbar styling freeze/deadlock: decoupled CURRENT_TASKBAR_STYLE lock to prevent recursive self-deadlocks, replaced EnumWindows with non-blocking FindWindowExW targeting Shell_TrayWnd & DesktopWindowContentBridge, and added SWP_FRAMECHANGED for instant DWM refresh.
 
 ---
 
@@ -162,5 +162,6 @@ npm run tauri:dev
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed MPV crash caused by invalid --osd-font-size=0, restored win.emit & app.emit in main.rs, and cleaned up wallpaper.jsx listeners to restore all video, canvas, and YouTube stream wallpapers |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored on-demand dynamic hover previews for Video, Image, YouTube, and Canvas cards with automatic decoder disposal upon cursor exit to maintain ultra-low idle RAM |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored original top hero WallpaperPlayer preview banner on Home.jsx for selected/active wallpaper with rename modal & action buttons |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed taskbar settings deadlock: separated mutex locking from execution, eliminated EnumWindows hangs, added DesktopWindowContentBridge bridge targets, and added SWP_FRAMECHANGED |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

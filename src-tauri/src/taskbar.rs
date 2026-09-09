@@ -6,9 +6,12 @@ use std::ffi::c_void;
 use std::sync::Mutex;
 
 #[cfg(windows)]
-use windows_sys::Win32::Foundation::{HWND, LPARAM};
+use windows_sys::Win32::Foundation::HWND;
 #[cfg(windows)]
-use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, EnumWindows, GetClassNameW};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    FindWindowW, FindWindowExW, SetWindowPos,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED,
+};
 #[cfg(windows)]
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
@@ -42,43 +45,55 @@ static CURRENT_TASKBAR_STYLE: Mutex<Option<String>> = Mutex::new(None);
 fn get_all_taskbar_hwnds() -> Vec<HWND> {
     let mut hwnds = Vec::new();
     unsafe {
+        // Primary Taskbar (Shell_TrayWnd)
         let primary_class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
         let primary = FindWindowW(primary_class.as_ptr(), std::ptr::null());
         if !primary.is_null() {
             hwnds.push(primary);
-        }
 
-        struct EnumData {
-            hwnds: *mut Vec<HWND>,
-        }
-
-        unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> i32 {
-            let data = &mut *(lparam as *mut EnumData);
-            let mut buf = [0u16; 64];
-            let len = GetClassNameW(hwnd, buf.as_mut_ptr(), 64);
-            let class_name = String::from_utf16_lossy(&buf[..len as usize]);
-            if class_name == "Shell_SecondaryTrayWnd" {
-                (&mut *data.hwnds).push(hwnd);
+            // Windows 11 XAML taskbar content bridge
+            let bridge_class: Vec<u16> = "Windows.UI.Composition.DesktopWindowContentBridge\0".encode_utf16().collect();
+            let mut bridge = std::ptr::null_mut();
+            loop {
+                bridge = FindWindowExW(primary, bridge, bridge_class.as_ptr(), std::ptr::null());
+                if bridge.is_null() {
+                    break;
+                }
+                hwnds.push(bridge);
             }
-            1
         }
 
-        let mut data = EnumData { hwnds: &mut hwnds };
-        EnumWindows(Some(enum_proc), &mut data as *mut _ as LPARAM);
+        // Secondary Taskbars on Multi-Monitor Setups (Shell_SecondaryTrayWnd)
+        let sec_class: Vec<u16> = "Shell_SecondaryTrayWnd\0".encode_utf16().collect();
+        let mut sec = std::ptr::null_mut();
+        loop {
+            sec = FindWindowExW(std::ptr::null_mut(), sec, sec_class.as_ptr(), std::ptr::null());
+            if sec.is_null() {
+                break;
+            }
+            hwnds.push(sec);
+
+            // Secondary XAML content bridge
+            let bridge_class: Vec<u16> = "Windows.UI.Composition.DesktopWindowContentBridge\0".encode_utf16().collect();
+            let mut bridge = std::ptr::null_mut();
+            loop {
+                bridge = FindWindowExW(sec, bridge, bridge_class.as_ptr(), std::ptr::null());
+                if bridge.is_null() {
+                    break;
+                }
+                hwnds.push(bridge);
+            }
+        }
     }
     hwnds
 }
 
-pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
-    if let Ok(mut lock) = CURRENT_TASKBAR_STYLE.lock() {
-        *lock = Some(style.to_string());
-    }
-
+fn apply_taskbar_style_internal(style: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         let (state, gradient, flags) = match style.to_lowercase().as_str() {
-            "clear" | "transparent" => (ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x00000000, 2),
-            "acrylic" => (ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x01000000, 2),
+            "clear" | "transparent" => (ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x00000000, 0),
+            "acrylic" => (ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x66101010, 2),
             "blur" => (ACCENT_ENABLE_BLURBEHIND, 0x00000000, 0),
             _ => (ACCENT_DISABLED, 0x00000000, 0),
         };
@@ -110,6 +125,13 @@ pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
             let hwnds = get_all_taskbar_hwnds();
             for hwnd in hwnds {
                 set_wca(hwnd, &mut data);
+                // Force DWM frame update so the new accent policy takes effect immediately
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+                );
             }
         }
         Ok(())
@@ -121,12 +143,30 @@ pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
     }
 }
 
+pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
+    // Record requested style without holding the lock across execution
+    {
+        if let Ok(mut lock) = CURRENT_TASKBAR_STYLE.lock() {
+            *lock = Some(style.to_string());
+        }
+    }
+
+    apply_taskbar_style_internal(style)
+}
+
 pub fn maintain_taskbar_style() {
-    if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
-        if let Some(ref style) = *lock {
-            if style != "default" && !style.is_empty() {
-                let _ = apply_taskbar_style(style);
-            }
+    // Clone style string and drop lock immediately to prevent deadlocks
+    let style_opt = {
+        if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
+            lock.clone()
+        } else {
+            None
+        }
+    };
+
+    if let Some(style) = style_opt {
+        if style != "default" && !style.is_empty() {
+            let _ = apply_taskbar_style_internal(&style);
         }
     }
 }

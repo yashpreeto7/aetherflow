@@ -451,3 +451,19 @@
   - Copied executable to `AetherFlow.exe` and launched process (PID 19820, initial memory 25.8MB).
 - **Build status:** ✅ `npm run build` (1.01s), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 22:42 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved Taskbar Styling Freeze / Deadlock**:
+    - Identified that `maintain_taskbar_style()` in `src-tauri/src/taskbar.rs` held a lock on `CURRENT_TASKBAR_STYLE` and then invoked `apply_taskbar_style()`, which attempted to re-acquire the same non-reentrant mutex on the same thread, causing an immediate deadlock every 750ms.
+    - Any subsequent UI click to change taskbar settings called `set_taskbar_style`, which blocked on the deadlocked mutex indefinitely, freezing Tauri's IPC message dispatcher and causing the app to hang with "Not Responding".
+    - Separated style tracking from execution (`apply_taskbar_style_internal`) and immediately cloned/dropped the mutex lock before executing Win32 calls.
+    - Replaced the heavy, blocking `EnumWindows` and `GetClassNameW` search with direct, instant `FindWindowW("Shell_TrayWnd")` and `FindWindowExW` calls targeting both taskbars and Windows 11 `Windows.UI.Composition.DesktopWindowContentBridge` child bridges.
+    - Added `SWP_FRAMECHANGED` (`SetWindowPos`) to immediately force DWM non-client and composition frame recalculation.
+    - Rate-limited taskbar maintenance in `start_system_state_monitor` to once every ~3 seconds instead of every 750ms loop.
+    - Added requirement note in `Settings.jsx` reminding users that Windows "Transparency effects" must be enabled in Windows Settings > Personalization > Colors.
+  - Rebuilt production bundle (`npm run build` 551ms) and release binary (`cargo build --release` 2m 16s).
+  - Deployed to root `AetherFlow.exe` and launched process (PID 17952, working set 25.8MB).
+- **Build status:** ✅ `npm run build` (551ms), `cargo build --release` passed with 0 errors.
+---

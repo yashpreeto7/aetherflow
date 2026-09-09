@@ -279,6 +279,9 @@ export default function SettingsPage() {
               )
             })}
           </div>
+          <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.85, lineHeight: 1.5, background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-subtle)' }}>
+            💡 <strong>Requirement:</strong> Ensure <em>"Transparency effects"</em> is turned <strong>ON</strong> in Windows Settings &gt; Personalization &gt; Colors.
+          </div>
         </div>
       ),
     },

@@ -238,11 +238,15 @@ pub fn start_system_state_monitor(app: AppHandle) {
         std::thread::sleep(std::time::Duration::from_millis(2500));
         let mut was_paused = false;
 
+        let mut taskbar_tick = 0u32;
         loop {
             std::thread::sleep(std::time::Duration::from_millis(750));
 
-            // Maintain translucent taskbar style against Explorer resets
-            taskbar::maintain_taskbar_style();
+            // Periodically maintain taskbar style against Explorer resets (every ~3s)
+            taskbar_tick = taskbar_tick.wrapping_add(1);
+            if taskbar_tick % 4 == 0 {
+                taskbar::maintain_taskbar_style();
+            }
 
             let (pause_on_battery, pause_on_fullscreen) = {
                 if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
