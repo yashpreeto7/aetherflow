@@ -1,6 +1,7 @@
 //! Taskbar Styling Module
 //! Uses native Win32 SetWindowCompositionAttribute API to style Windows 10 & 11 taskbars
 //! Supports: Default, Clear (Transparent), Acrylic (Frosted Glass), and Blur.
+//! Seamlessly yields control to TranslucentTB when detected to prevent XAML brush conflicts.
 
 use std::ffi::c_void;
 use std::sync::Mutex;
@@ -41,6 +42,49 @@ const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 
 static CURRENT_TASKBAR_STYLE: Mutex<Option<String>> = Mutex::new(None);
 
+/// Checks if TranslucentTB is active in background to avoid overriding its XAML hooks
+#[cfg(windows)]
+pub fn is_translucenttb_running() -> bool {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    };
+
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap == INVALID_HANDLE_VALUE || snap.is_null() {
+            return false;
+        }
+
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        let mut found = false;
+        if Process32FirstW(snap, &mut entry) != 0 {
+            loop {
+                let name = String::from_utf16_lossy(
+                    &entry.szExeFile[..entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len())]
+                );
+                if name.to_lowercase().contains("translucenttb") {
+                    found = true;
+                    break;
+                }
+                if Process32NextW(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        windows_sys::Win32::Foundation::CloseHandle(snap);
+        found
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_translucenttb_running() -> bool {
+    false
+}
+
 #[cfg(windows)]
 fn get_all_taskbar_hwnds() -> Vec<HWND> {
     let mut hwnds = Vec::new();
@@ -73,7 +117,6 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
             }
             hwnds.push(sec);
 
-            // Secondary XAML content bridge
             let bridge_class: Vec<u16> = "Windows.UI.Composition.DesktopWindowContentBridge\0".encode_utf16().collect();
             let mut bridge = std::ptr::null_mut();
             loop {
@@ -91,6 +134,11 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
 fn apply_taskbar_style_internal(style: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
+        // When TranslucentTB is running, yield taskbar control to it to avoid brush conflicts
+        if is_translucenttb_running() {
+            return Ok(());
+        }
+
         let (state, gradient, flags) = match style.to_lowercase().as_str() {
             "clear" | "transparent" => (ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x00000000, 0),
             "acrylic" => (ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x66101010, 2),
@@ -155,6 +203,11 @@ pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
 }
 
 pub fn maintain_taskbar_style() {
+    #[cfg(windows)]
+    if is_translucenttb_running() {
+        return;
+    }
+
     // Clone style string and drop lock immediately to prevent deadlocks
     let style_opt = {
         if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
