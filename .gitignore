@@ -35,6 +35,9 @@ release/
 # Scratch / temporary debug scripts
 scratch/
 .playwright-mcp/
+.agents/
+__pycache__/
+*.pyc
 .env
 .env.*
 !.env.example

@@ -8,10 +8,6 @@ repository = "https://github.com/aetherflow/aetherflow"
 edition = "2021"
 default-run = "aetherflow"
 
-[[bin]]
-name = "desktop_debug"
-path = "src/desktop_debug.rs"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
