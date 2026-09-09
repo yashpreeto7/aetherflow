@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 23:52 IST — Eliminated all TranslucentTB process kills/restarts (TranslucentTB now reloads live in memory via `ReadDirectoryChangesW` folder watcher), eliminated all "already running" popups, and verified clean native release binary.
+2026-09-09 23:55 IST — Release v1.0.3: Bumped version across all packages, eliminated TranslucentTB restart conflicts via live folderwatcher reload, disabled Windows accent tint override, added Taskbar Top Border toggle, and triggered GitHub Release pipeline.
 
 ---
 

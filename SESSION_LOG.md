@@ -544,3 +544,14 @@
   - Verified TranslucentTB PID 27868 remains running smoothly without interruptions.
 - **Build status:** ✅ `npm run build` (504ms), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 23:55 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Release v1.0.3 Preparation & Publishing**:
+    - Bumped project version to `1.0.3` across `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src/lib/updater.js`.
+    - Verified frontend production build passes cleanly (`npm run build` in 501ms).
+    - Verified Rust type check and manifest consistency (`cargo check` in 5.53s).
+    - Tagged release as `v1.0.3` and pushed to GitHub `origin/main`, triggering GitHub Actions workflow to build and publish installer, standalone, and portable ZIP packages to GitHub Releases.
+- **Build status:** ✅ `npm run build` (501ms), `cargo check` passed with 0 errors, release tag `v1.0.3` pushed.
+---
