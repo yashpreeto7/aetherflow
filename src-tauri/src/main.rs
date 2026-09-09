@@ -1775,10 +1775,11 @@ fn set_system_wallpaper(path: String) -> Result<(), String> {
     }
 }
 
-/// Sets the Windows taskbar appearance style (default, clear, acrylic, blur)
+/// Sets the Windows taskbar appearance style (default, clear, acrylic, blur) and border visibility
 #[tauri::command]
-fn set_taskbar_style(style: String) -> Result<(), String> {
-    taskbar::apply_taskbar_style(&style)
+fn set_taskbar_style(style: String, show_border: Option<bool>) -> Result<(), String> {
+    let border = show_border.unwrap_or(false);
+    taskbar::apply_taskbar_style(&style, border)
 }
 
 /// Safely opens external URLs or Windows protocol links in the default application

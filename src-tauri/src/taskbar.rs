@@ -40,7 +40,7 @@ const ACCENT_ENABLE_TRANSPARENTGRADIENT: u32 = 2;
 const ACCENT_ENABLE_BLURBEHIND: u32 = 3;
 const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 
-static CURRENT_TASKBAR_STYLE: Mutex<Option<String>> = Mutex::new(None);
+static CURRENT_TASKBAR_STYLE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
 /// Checks if TranslucentTB is active in background to avoid overriding its XAML hooks
 #[cfg(windows)]
@@ -85,8 +85,51 @@ pub fn is_translucenttb_running() -> bool {
     false
 }
 
+/// Automatically starts TranslucentTB in the background if installed and not currently running
 #[cfg(windows)]
-fn update_translucenttb_config(style: &str) -> bool {
+pub fn ensure_translucenttb_running() -> bool {
+    if is_translucenttb_running() {
+        return true;
+    }
+
+    let local_app_data = match std::env::var("LOCALAPPDATA") {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let packages_dir = std::path::PathBuf::from(local_app_data).join("Packages");
+    if let Ok(entries) = std::fs::read_dir(packages_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains("TranslucentTB") {
+                let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", name);
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+                let _ = std::process::Command::new("powershell")
+                    .args([
+                        "-WindowStyle",
+                        "Hidden",
+                        "-Command",
+                        &format!("Start-Process '{}'", app_launch_target),
+                    ])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+
+                std::thread::sleep(std::time::Duration::from_millis(350));
+                return is_translucenttb_running();
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(windows))]
+pub fn ensure_translucenttb_running() -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn update_translucenttb_config(style: &str, show_border: bool) -> bool {
     let local_app_data = match std::env::var("LOCALAPPDATA") {
         Ok(v) => v,
         Err(_) => return false,
@@ -110,21 +153,44 @@ fn update_translucenttb_config(style: &str) -> bool {
                             let current_accent = json.get("desktop_appearance")
                                 .and_then(|d| d.get("accent"))
                                 .and_then(|a| a.as_str());
+                            let current_show_line = json.get("desktop_appearance")
+                                .and_then(|d| d.get("show_line"))
+                                .and_then(|s| s.as_bool());
 
-                            if current_accent == Some(accent) {
+                            if current_accent == Some(accent) && current_show_line == Some(show_border) {
                                 return true;
                             }
 
+                            let update_entry = |obj: &mut serde_json::Value, enabled: bool| {
+                                obj["accent"] = serde_json::Value::String(accent.to_string());
+                                obj["color"] = serde_json::Value::String("#00000000".to_string());
+                                obj["show_line"] = serde_json::Value::Bool(show_border);
+                                obj["show_peek"] = serde_json::Value::Bool(false);
+                                if enabled {
+                                    obj["enabled"] = serde_json::Value::Bool(true);
+                                }
+                            };
+
                             if let Some(desktop) = json.get_mut("desktop_appearance") {
-                                desktop["accent"] = serde_json::Value::String(accent.to_string());
+                                update_entry(desktop, false);
                             }
                             if let Some(visible) = json.get_mut("visible_window_appearance") {
-                                visible["accent"] = serde_json::Value::String(accent.to_string());
-                                visible["enabled"] = serde_json::Value::Bool(false);
+                                update_entry(visible, true);
                             }
                             if let Some(maximized) = json.get_mut("maximized_window_appearance") {
-                                maximized["accent"] = serde_json::Value::String(accent.to_string());
-                                maximized["enabled"] = serde_json::Value::Bool(false);
+                                update_entry(maximized, true);
+                            }
+                            if let Some(start) = json.get_mut("start_opened_appearance") {
+                                update_entry(start, false);
+                            }
+                            if let Some(search) = json.get_mut("search_opened_appearance") {
+                                update_entry(search, false);
+                            }
+                            if let Some(taskview) = json.get_mut("task_view_opened_appearance") {
+                                update_entry(taskview, false);
+                            }
+                            if let Some(battery) = json.get_mut("battery_saver_appearance") {
+                                update_entry(battery, false);
                             }
 
                             if let Ok(serialized) = serde_json::to_string_pretty(&json) {
@@ -210,22 +276,27 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
     hwnds
 }
 
-fn apply_taskbar_style_internal(style: &str) -> Result<(), String> {
+fn apply_taskbar_style_internal(style: &str, show_border: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
+        // Auto-launch TranslucentTB if installed but not running
+        let _ = ensure_translucenttb_running();
+
         // When TranslucentTB is running, control it directly via its config and avoid conflicting WCA calls
         if is_translucenttb_running() {
-            if update_translucenttb_config(style) {
+            if update_translucenttb_config(style, show_border) {
                 return Ok(());
             }
         }
 
-        let (state, gradient, flags) = match style.to_lowercase().as_str() {
+        let (state, gradient, base_flags) = match style.to_lowercase().as_str() {
             "clear" | "transparent" => (ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x00000000, 0),
             "acrylic" => (ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x66101010, 2),
             "blur" => (ACCENT_ENABLE_BLURBEHIND, 0x00000000, 0),
             _ => (ACCENT_DISABLED, 0x00000000, 0),
         };
+
+        let flags = if show_border { base_flags | 2 } else { 0 };
 
         unsafe {
             let user32 = GetModuleHandleA(b"user32.dll\0".as_ptr());
@@ -267,20 +338,20 @@ fn apply_taskbar_style_internal(style: &str) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
-        let _ = style;
+        let _ = (style, show_border);
         Ok(())
     }
 }
 
-pub fn apply_taskbar_style(style: &str) -> Result<(), String> {
+pub fn apply_taskbar_style(style: &str, show_border: bool) -> Result<(), String> {
     // Record requested style without holding the lock across execution
     {
         if let Ok(mut lock) = CURRENT_TASKBAR_STYLE.lock() {
-            *lock = Some(style.to_string());
+            *lock = Some((style.to_string(), show_border));
         }
     }
 
-    apply_taskbar_style_internal(style)
+    apply_taskbar_style_internal(style, show_border)
 }
 
 pub fn maintain_taskbar_style() {
@@ -289,7 +360,7 @@ pub fn maintain_taskbar_style() {
         return;
     }
 
-    // Clone style string and drop lock immediately to prevent deadlocks
+    // Clone style tuple and drop lock immediately to prevent deadlocks
     let style_opt = {
         if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
             lock.clone()
@@ -298,13 +369,13 @@ pub fn maintain_taskbar_style() {
         }
     };
 
-    if let Some(style) = style_opt {
+    if let Some((style, border)) = style_opt {
         if style != "default" && !style.is_empty() {
-            let _ = apply_taskbar_style_internal(&style);
+            let _ = apply_taskbar_style_internal(&style, border);
         }
     }
 }
 
 pub fn restore_taskbar() {
-    let _ = apply_taskbar_style("default");
+    let _ = apply_taskbar_style("default", false);
 }

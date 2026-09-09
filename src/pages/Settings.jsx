@@ -41,6 +41,8 @@ export default function SettingsPage() {
   const setFps = useStore(s => s.setFps)
   const taskbarStyle = useStore(s => s.taskbarStyle) || 'default'
   const setTaskbarStyle = useStore(s => s.setTaskbarStyle)
+  const taskbarBorder = useStore(s => s.taskbarBorder) || false
+  const setTaskbarBorder = useStore(s => s.setTaskbarBorder)
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateResult, setUpdateResult] = useState(null)
@@ -279,9 +281,28 @@ export default function SettingsPage() {
               )
             })}
           </div>
+
+          {/* Border Option */}
+          <div className="flex items-center justify-between" style={{ marginTop: 14, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+            <div>
+              <div className="text-sm font-medium">Taskbar Top Border</div>
+              <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                {taskbarBorder ? 'Showing top border separator line' : 'Clean borderless edge (No border)'}
+              </div>
+            </div>
+            <button
+              className={`btn ${taskbarBorder ? 'btn-ghost' : 'btn-primary'}`}
+              style={{ fontSize: 12, padding: '6px 14px', height: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setTaskbarBorder(!taskbarBorder)}
+            >
+              {!taskbarBorder && <CheckCircle2 size={13} />}
+              {taskbarBorder ? 'Border: Visible' : 'No Border'}
+            </button>
+          </div>
+
           <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.9, lineHeight: 1.6, background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
             <div style={{ marginBottom: 8 }}>
-              💡 <strong>Windows 11 Notice:</strong> On recent Windows 11 builds (22H2 / 23H2 / 24H2), Microsoft draws an opaque XAML brush over the taskbar. AetherFlow's native API tints the taskbar, while <strong>100% invisible clear glass</strong> requires the free Microsoft Store utility <strong>TranslucentTB</strong>.
+              💡 <strong>TranslucentTB Auto-Integration:</strong> When TranslucentTB is installed, AetherFlow automatically launches it, removes borders, and keeps your taskbar 100% crystal-clear glass. You can control styles directly above.
             </div>
             <button
               className="btn btn-ghost"
@@ -297,7 +318,7 @@ export default function SettingsPage() {
                 })
               }}
             >
-              <ExternalLink size={12} /> Open TranslucentTB on Microsoft Store
+              <ExternalLink size={12} /> Get TranslucentTB on Microsoft Store (Free)
             </button>
           </div>
         </div>

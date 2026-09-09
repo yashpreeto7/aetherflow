@@ -182,13 +182,25 @@ export const useStore = create(
       audioSource: 'mic',             // 'mic' | 'system'
       fps: 60,                        // Target FPS cap
       taskbarStyle: 'default',        // 'default' | 'clear' | 'acrylic' | 'blur'
+      taskbarBorder: false,           // false = no border / clean glass, true = show top line
 
       setFps: (v) => set({ fps: v }),
       setTaskbarStyle: async (style) => {
+        const border = get().taskbarBorder
         set({ taskbarStyle: style })
         try {
           const { invoke } = await import('@tauri-apps/api/core')
-          await invoke('set_taskbar_style', { style })
+          await invoke('set_taskbar_style', { style, showBorder: border })
+        } catch {
+          // ignore outside tauri
+        }
+      },
+      setTaskbarBorder: async (border) => {
+        const style = get().taskbarStyle
+        set({ taskbarBorder: border })
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('set_taskbar_style', { style, showBorder: border })
         } catch {
           // ignore outside tauri
         }
@@ -246,6 +258,7 @@ export const useStore = create(
         customNames: s.customNames,
         isWallpaperRunning: s.isWallpaperRunning,
         taskbarStyle: s.taskbarStyle,
+        taskbarBorder: s.taskbarBorder,
       }),
     }
   )
