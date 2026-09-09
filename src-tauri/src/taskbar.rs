@@ -85,11 +85,17 @@ pub fn is_translucenttb_running() -> bool {
     false
 }
 
-/// Automatically starts TranslucentTB in the background if installed and not currently running
+static TRANSLUCENTTB_AUTOLAUNCH_ATTEMPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Automatically starts TranslucentTB in the background if installed and not currently running (runs at most once per session)
 #[cfg(windows)]
 pub fn ensure_translucenttb_running() -> bool {
     if is_translucenttb_running() {
         return true;
+    }
+
+    if TRANSLUCENTTB_AUTOLAUNCH_ATTEMPTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return false;
     }
 
     let local_app_data = match std::env::var("LOCALAPPDATA") {
@@ -115,7 +121,7 @@ pub fn ensure_translucenttb_running() -> bool {
                     .creation_flags(CREATE_NO_WINDOW)
                     .spawn();
 
-                std::thread::sleep(std::time::Duration::from_millis(350));
+                std::thread::sleep(std::time::Duration::from_millis(500));
                 return is_translucenttb_running();
             }
         }
@@ -197,7 +203,8 @@ fn update_translucenttb_config(style: &str, show_border: bool) -> bool {
                                 let _ = std::fs::write(&settings_file, serialized);
                             }
 
-                            restart_translucenttb_appx(&name);
+                            // TranslucentTB folderwatcher detects the settings.json file modification via ReadDirectoryChangesW
+                            // and reloads its configuration live in memory without any process killing or restarting.
                             return true;
                         }
                     }
@@ -227,36 +234,6 @@ fn disable_windows_accent_tint_on_taskbar() {
         ])
         .creation_flags(CREATE_NO_WINDOW)
         .status();
-}
-
-#[cfg(windows)]
-fn restart_translucenttb_appx(package_folder_name: &str) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let _ = std::process::Command::new("taskkill")
-        .args(["/F", "/IM", "TranslucentTB.exe"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-
-    // Wait until old TranslucentTB process is completely terminated to avoid "already running" error popup
-    let start = std::time::Instant::now();
-    while is_translucenttb_running() && start.elapsed() < std::time::Duration::from_millis(1500) {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    // Allow kernel to release named mutexes
-    std::thread::sleep(std::time::Duration::from_millis(300));
-
-    let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", package_folder_name);
-    let _ = std::process::Command::new("powershell")
-        .args([
-            "-WindowStyle",
-            "Hidden",
-            "-Command",
-            &format!("Start-Process '{}'", app_launch_target),
-        ])
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn();
 }
 
 #[cfg(windows)]

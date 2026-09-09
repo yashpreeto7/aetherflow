@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 23:42 IST — Resolved Windows accent color override (`ColorPrevalence = 0`) restoring 100% transparent taskbar glass, eliminated TranslucentTB "already running" popups via process termination synchronization, added No Border toggle, and verified native release binary.
+2026-09-09 23:52 IST — Eliminated all TranslucentTB process kills/restarts (TranslucentTB now reloads live in memory via `ReadDirectoryChangesW` folder watcher), eliminated all "already running" popups, and verified clean native release binary.
 
 ---
 

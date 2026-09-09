@@ -527,3 +527,20 @@
   - Deployed updated executable to `AetherFlow.exe` and verified running process (PID 276, 23.8MB RAM).
 - **Build status:** ✅ `npm run build` (637ms), `cargo build --release` passed with 0 errors.
 ---
+
+## Session: 2026-09-09 23:52 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Eliminated All Process Kills, Restarts, and "Already Running" Popups on Taskbar Settings Changes**:
+    - **Discovery**: Examined TranslucentTB source code (`folderwatcher.cpp`, `application.cpp`). TranslucentTB actively listens to its `RoamingState` folder via `ReadDirectoryChangesW`. When `settings.json` is modified, TranslucentTB detects the file change and reloads its configuration in memory instantly.
+    - **Root Cause of Popups & Broken Taskbar**:
+      1. Every settings change previously called `restart_translucenttb_appx()`, which executed `taskkill /F /IM TranslucentTB.exe` followed by `Start-Process shell:AppsFolder...`. Force-killing TranslucentTB with `/F` broke its injected `ExplorerHooks.dll` inside `explorer.exe`, causing Explorer to invalidate the XAML hook and revert the taskbar to an unstyled opaque solid gray bar.
+      2. Concurrently, attempting to launch `shell:AppsFolder...` while TranslucentTB was still tearing down or active caused Windows UWP / TranslucentTB's single-instance mutex check to display the modal error dialog: *"TranslucentTB is already running"*.
+    - **Fix**:
+      1. Completely deleted `restart_translucenttb_appx()`.
+      2. In `update_translucenttb_config()`, AetherFlow simply writes the updated JSON directly to `settings.json`. TranslucentTB's folder watcher detects the change via `ReadDirectoryChangesW` and updates live in memory with zero process kills and zero popups.
+      3. Guarded `ensure_translucenttb_running()` with `TRANSLUCENTTB_AUTOLAUNCH_ATTEMPTED.swap(true)` so auto-launch is attempted at most once on startup and never during settings changes.
+  - Rebuilt production release binary (`cargo build --release` 2m 23s) and deployed to `AetherFlow.exe` (PID 13372, 23.7MB).
+  - Verified TranslucentTB PID 27868 remains running smoothly without interruptions.
+- **Build status:** ✅ `npm run build` (504ms), `cargo build --release` passed with 0 errors.
+---
