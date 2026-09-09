@@ -81,13 +81,19 @@ export default function createVideoPlayer(canvas, options) {
       videoEl.volume = Math.max(0, Math.min(1, (options.volume ?? 50) / 100));
     }
     
-    // Style it to cover the container (in preview, zIndex 1 so it's above container background)
+    // Style it to cover the container (zIndex 0 so it stays behind overlays)
     videoEl.style.position = 'absolute';
     videoEl.style.inset = '0';
     videoEl.style.width = '100%';
     videoEl.style.height = '100%';
     videoEl.style.objectFit = 'cover';
-    videoEl.style.zIndex = '1';
+    videoEl.style.zIndex = '0';
+    if (options.opacity !== undefined) {
+      videoEl.style.opacity = options.opacity;
+    }
+    if (options.brightness !== undefined) {
+      videoEl.style.filter = `brightness(${options.brightness})`;
+    }
     
     container.insertBefore(videoEl, canvas);
     
@@ -143,6 +149,12 @@ export default function createVideoPlayer(canvas, options) {
       }
       if (newOpts.speedMultiplier !== undefined && videoEl) {
         videoEl.playbackRate = newOpts.speedMultiplier;
+      }
+      if (newOpts.opacity !== undefined && videoEl) {
+        videoEl.style.opacity = newOpts.opacity;
+      }
+      if (newOpts.brightness !== undefined && videoEl) {
+        videoEl.style.filter = `brightness(${newOpts.brightness})`;
       }
       if (newOpts.muted !== undefined && videoEl && !options.preview) {
         videoEl.muted = newOpts.muted;

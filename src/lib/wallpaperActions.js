@@ -28,6 +28,7 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
   const muted = options.muted ?? state.audioMuted ?? false
   const opacity = options.opacity ?? state.wallpaperOpacity ?? 1
   const brightness = options.brightness ?? state.wallpaperBrightness ?? 0.85
+  const fps = options.fps ?? state.fps ?? 60
 
   try {
     const resolvedEngine = wallpaper.engine
@@ -42,6 +43,7 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
         speedMultiplier: speed,
         volume,
         muted,
+        fps,
       },
       opacity,
       brightness,
@@ -49,10 +51,15 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
     })
 
     // Update Zustand state
-    state.setActiveWallpaper(wallpaper)
+    state.setCurrentDesktopWallpaper(wallpaper)
     state.setWallpaperRunning(true)
     if (targetLabel) {
       state.setMonitorWallpaper(targetLabel, wallpaper)
+    } else {
+      // In duplicate mode, clear individual monitor overrides so all screens share currentDesktopWallpaper
+      state.clearMonitorWallpapers()
+      state.setCurrentDesktopWallpaper(wallpaper)
+      state.setWallpaperRunning(true)
     }
 
     return true
@@ -71,8 +78,16 @@ export async function stopDesktopWallpaper(targetMonitor = null) {
     await tauriInvoke('stop_wallpaper', { monitorLabel: targetMonitor || null })
     if (targetMonitor) {
       state.setMonitorWallpaper(targetMonitor, null)
+      // If no other monitors have an active wallpaper, mark running as false
+      const remaining = Object.values(state.monitorWallpapers || {}).filter(Boolean)
+      if (remaining.length === 0) {
+        state.setWallpaperRunning(false)
+        state.setCurrentDesktopWallpaper(null)
+      }
     } else {
+      state.clearMonitorWallpapers()
       state.setWallpaperRunning(false)
+      state.setCurrentDesktopWallpaper(null)
     }
     return true
   } catch (err) {

@@ -117,6 +117,21 @@ pub fn is_main_hwnd(hwnd: HWND) -> bool {
 }
 
 #[cfg(windows)]
+pub fn set_hwnd_opacity(hwnd: HWND, opacity: f64) {
+    unsafe {
+        if hwnd.is_null() || IsWindow(hwnd) == 0 {
+            return;
+        }
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        if (ex & WS_EX_LAYERED) == 0 {
+            SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_LAYERED) as i32);
+        }
+        let alpha = (opacity.max(0.05).min(1.0) * 255.0).round() as u8;
+        SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+    }
+}
+
+#[cfg(windows)]
 pub fn is_running_on_battery() -> bool {
     let mut sps = SystemPowerStatus {
         ac_line_status: 255,
@@ -991,6 +1006,8 @@ async fn apply_wallpaper(
             }
         };
 
+        let speed_val = config.get("speedMultiplier").and_then(|v| v.as_f64()).or_else(|| config.get("speed").and_then(|v| v.as_f64())).unwrap_or(1.0);
+        let _fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
         let global_muted = config.get("muted").and_then(|v| v.as_bool()).unwrap_or(false);
         let global_volume = config.get("volume").and_then(|v| v.as_f64()).unwrap_or(50.0);
         let is_duplicated = target == "*";
@@ -1046,6 +1063,8 @@ async fn apply_wallpaper(
                     let mon_y = pos.y;
                     let mon_w = size.width as i32;
                     let mon_h = size.height as i32;
+                    let brightness_val = brightness;
+                    let opacity_val = opacity;
 
                     tauri::async_runtime::spawn_blocking(move || {
                         match mpv::spawn_mpv_wallpaper(
@@ -1057,14 +1076,17 @@ async fn apply_wallpaper(
                             mon_h,
                             Some(screen_volume),
                             Some(screen_muted),
+                            Some(speed_val),
+                            Some(brightness_val),
+                            Some(opacity_val),
                         ) {
                             Ok(proc) => {
                                 let hwnd = proc.hwnd as HWND;
                                 if !hwnd.is_null() {
                                     pin_hwnd_as_wallpaper(hwnd, Some((mon_x, mon_y, mon_w, mon_h)));
                                 }
-                                let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (HWND=0x{:X}, vol={}, muted={})", 
-                                    label_clone, proc.hwnd, screen_volume, screen_muted);
+                                let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (HWND=0x{:X}, vol={}, muted={}, speed={}, br={}, op={})", 
+                                    label_clone, proc.hwnd, screen_volume, screen_muted, speed_val, brightness_val, opacity_val);
                                 log_msg(&msg);
                                 println!("{}", msg);
                                 if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
@@ -1097,6 +1119,8 @@ async fn apply_wallpaper(
                 }
             }
         }
+
+        let fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
 
         // 2. Show canvas webview windows and send engine events
         let windows = app.webview_windows();
@@ -1137,6 +1161,7 @@ async fn apply_wallpaper(
                 let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
                 let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
                 let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
             }
         }
     }
@@ -1369,6 +1394,40 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
             }
         }
     }
+    if let Some(spd) = config.get("speedMultiplier").and_then(|v| v.as_f64()).or_else(|| config.get("speed").and_then(|v| v.as_f64())) {
+        if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+            if let Some(ref map) = *mpv_guard {
+                for (label, proc) in map {
+                    if target == "*" || target == *label {
+                        let _ = proc.set_speed(spd);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(br) = config.get("brightness").and_then(|v| v.as_f64()) {
+        if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+            if let Some(ref map) = *mpv_guard {
+                for (label, proc) in map {
+                    if target == "*" || target == *label {
+                        let _ = proc.set_brightness(br);
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(windows)]
+    if let Some(op) = config.get("opacity").and_then(|v| v.as_f64()) {
+        if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+            if let Some(ref map) = *mpv_guard {
+                for (label, proc) in map {
+                    if (target == "*" || target == *label) && proc.hwnd != 0 {
+                        set_hwnd_opacity(proc.hwnd as HWND, op);
+                    }
+                }
+            }
+        }
+    }
     if let Some(vol) = config.get("volume").and_then(|v| v.as_f64()) {
         set_mpv_volume(monitor_label.clone(), vol);
     }
@@ -1376,10 +1435,13 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
         set_mpv_mute(monitor_label.clone(), muted);
     }
     let windows = app.webview_windows();
-    for (label, win) in windows {
-        if label.starts_with("wallpaper_") && (target == "*" || target == label) {
+    for (label, win) in &windows {
+        if label.starts_with("wallpaper_") && (target == "*" || target == *label) {
             let payload = serde_json::json!({ "config": config.clone(), "target": target.clone() });
             let _ = win.emit_to(label.as_str(), "aura:update-config", payload);
+            if let Some(fps_val) = config.get("fps").and_then(|v| v.as_f64()) {
+                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
+            }
         }
     }
 }
@@ -1387,6 +1449,13 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
 /// Update brightness on the live wallpaper (no engine restart needed).
 #[tauri::command]
 fn set_wallpaper_brightness(app: AppHandle, brightness: f64) {
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (_, proc) in map {
+                let _ = proc.set_brightness(brightness);
+            }
+        }
+    }
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {
@@ -1398,6 +1467,16 @@ fn set_wallpaper_brightness(app: AppHandle, brightness: f64) {
 /// Update opacity on the live wallpaper (no engine restart needed).
 #[tauri::command]
 fn set_wallpaper_opacity(app: AppHandle, opacity: f64) {
+    #[cfg(windows)]
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (_, proc) in map {
+                if proc.hwnd != 0 {
+                    set_hwnd_opacity(proc.hwnd as HWND, opacity);
+                }
+            }
+        }
+    }
     let windows = app.webview_windows();
     for (label, win) in windows {
         if label.starts_with("wallpaper_") {

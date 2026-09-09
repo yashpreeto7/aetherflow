@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-08 20:15 IST — Fixed terminal popups on wallpaper application (eliminated where.exe in favor of in-memory split_paths and CREATE_NO_WINDOW), fixed custom video/picture wallpaper playback in release (resolved negative z-index, asset protocol scopes, and added binary blob fallback), and updated GitHub Actions release pipeline to bundle hardware-accelerated MPV into setup installer and portable zip package. Live GitHub Release v1.0.0 updated with all three download packages.
+2026-09-09 16:55 IST — Fixed FPS option across all wallpaper engines & MPV, created FPS Benchmark HUD wallpaper (live rolling FPS counter, gauge, and frame-time graph), eliminated false display badges & button state confusion on card clicks, fixed top hero preview controls on custom video wallpapers, and enabled real-time desktop wallpaper speed, opacity, and brightness updates.
 
 ---
 
@@ -57,6 +57,7 @@ src/engines/deep-space.js           Parallax stars, nebula, shooting stars
 src/engines/aurora.js               Borealis curtains over starfield
 src/engines/tokyo-rain.js           Procedural neon city + rain
 src/engines/audio-spectrum.js       Mic-reactive CAVA-style bars
+src/engines/fps-meter.js            Canvas 2D telemetry HUD with live rolling FPS counter & graph
 src/engines/image-player.js         Canvas 2D picture wallpaper engine (PNG/JPG/WebP)
 src/engines/index.js                Lazy-loaded engine registry + theme list
 src/store/useStore.js               Zustand persisted global state
@@ -157,5 +158,6 @@ npm run tauri:dev
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor custom video wallpaper pinning across screens and eliminated white boundary line artifact between displays |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Fixed multi-monitor border bleed on transition from video to canvas/image: re-asserted pin_hwnd_as_wallpaper with monitor clipping after unhiding WebView2 window |
 | 2026-09-08 | Antigravity (Gemini 3.8 Flash) | Real-time audio volume/mute sync (IPC & option merge), battery & fullscreen auto-pause monitor, and native registry autostart on branch fix/audio-power-fullscreen-startup |
+| 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed FPS pacing across all engines, created FPS Benchmark HUD, decoupled preview from desktop applied state to fix false display badges & Re-apply button state, restored video preview top controls, and enabled live speed/brightness/opacity on desktop wallpapers |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*

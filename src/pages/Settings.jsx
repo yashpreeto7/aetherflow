@@ -63,6 +63,14 @@ export default function SettingsPage() {
 
   const fps = useStore(s => s.fps)
   const setFps = useStore(s => s.setFps)
+
+  const handleFpsChange = (v) => {
+    setFps(v)
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('update_wallpaper_config', { config: { fps: v }, monitorLabel: null }).catch(() => {})
+    }).catch(() => {})
+  }
+
   const autoStart = useStore(s => s.autoStart)
   const runInTray = useStore(s => s.runInTray)
 
@@ -219,7 +227,7 @@ export default function SettingsPage() {
       icon: Monitor, title: 'Performance',
       content: (
         <>
-          <SliderRow label="FPS Cap" value={fps} set={setFps} min={10} max={120} step={10} fmt={v => v === 120 ? 'Unlimited' : `${v} FPS`} />
+          <SliderRow label="FPS Cap" value={fps} set={handleFpsChange} min={10} max={120} step={10} fmt={v => v === 120 ? 'Unlimited' : `${v} FPS`} />
           <ToggleRow label="Pause on Battery" desc="Saves power when unplugged" value={pauseOnBattery} toggle={handleTogglePauseOnBattery} />
           <ToggleRow label="Pause on Fullscreen Apps" desc="Hides wallpaper when playing games" value={pauseOnFullscreen} toggle={handleTogglePauseOnFullscreen} />
           

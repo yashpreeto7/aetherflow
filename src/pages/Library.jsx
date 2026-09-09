@@ -20,6 +20,7 @@ import {
 export default function LibraryPage() {
   const installed            = useStore(s => s.installed)
   const activeWallpaper      = useStore(s => s.activeWallpaper)
+  const currentDesktopWallpaper = useStore(s => s.currentDesktopWallpaper)
   const isWallpaperRunning   = useStore(s => s.isWallpaperRunning)
   const activeTheme          = useStore(s => s.activeTheme)
   const setActiveTheme       = useStore(s => s.setActiveTheme)
@@ -163,14 +164,17 @@ export default function LibraryPage() {
 
   // Check if wallpaper is currently active on desktop
   function getActiveStatus(item) {
-    if (!isWallpaperRunning) return null
+    if (!isWallpaperRunning || !item) return null
     if (screenArrangement === 'per-screen') {
       const activeScreens = Object.entries(monitorWallpapers || {})
         .filter(([_, wp]) => wp?.id === item.id)
-        .map(([monLabel]) => monLabel)
+        .map(([monLabel]) => {
+          const idx = monitors.findIndex(m => m.label === monLabel)
+          return idx >= 0 ? `Screen ${idx + 1}` : 'Screen'
+        })
       return activeScreens.length > 0 ? activeScreens : null
     }
-    return activeWallpaper?.id === item.id ? ['all'] : null
+    return currentDesktopWallpaper?.id === item.id ? ['all'] : null
   }
 
   // ── Combine All Wallpapers (Built-in + Custom) ───────────────────────────────

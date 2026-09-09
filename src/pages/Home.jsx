@@ -35,6 +35,7 @@ export default function HomePage() {
 
   const activeWallpaper       = useStore(s => s.activeWallpaper)
   const setActiveWallpaper    = useStore(s => s.setActiveWallpaper)
+  const currentDesktopWallpaper = useStore(s => s.currentDesktopWallpaper)
   const isWallpaperRunning    = useStore(s => s.isWallpaperRunning)
   const activeTheme           = useStore(s => s.activeTheme)
   const setActiveTheme        = useStore(s => s.setActiveTheme)
@@ -259,13 +260,17 @@ export default function HomePage() {
 
   // ── Check if a wallpaper is active on any screen ──────────────────────────
   function getWallpaperActiveScreens(wp) {
-    if (!isWallpaperRunning) return []
+    if (!isWallpaperRunning || !wp) return []
     if (screenArrangement === 'per-screen') {
-      return Object.entries(monitorWallpapers || {})
+      const matched = Object.entries(monitorWallpapers || {})
         .filter(([_, current]) => current?.id === wp.id)
-        .map(([label]) => label)
+        .map(([label]) => {
+          const idx = monitors.findIndex(m => m.label === label)
+          return idx >= 0 ? `Screen ${idx + 1}` : 'Screen'
+        })
+      return matched
     }
-    return activeWallpaper?.id === wp.id ? ['All Screens'] : []
+    return currentDesktopWallpaper?.id === wp.id ? ['All Screens'] : []
   }
 
   // ── Sliders live update ──────────────────────────────────────────────────
@@ -273,6 +278,7 @@ export default function HomePage() {
     setWallpaperBrightness(v)
     if (isWallpaperRunning) {
       await tauriInvoke('set_wallpaper_brightness', { brightness: v })
+      await tauriInvoke('update_wallpaper_config', { config: { brightness: v } })
     }
   }
 
@@ -280,14 +286,15 @@ export default function HomePage() {
     setWallpaperOpacity(v)
     if (isWallpaperRunning) {
       await tauriInvoke('set_wallpaper_opacity', { opacity: v })
+      await tauriInvoke('update_wallpaper_config', { config: { opacity: v } })
     }
   }
 
   async function handleSpeed(v) {
     setWallpaperSpeed(v)
-    if (isWallpaperRunning && activeWallpaper) {
+    if (isWallpaperRunning) {
       await tauriInvoke('update_wallpaper_config', {
-        config: { ...activeWallpaper.config, speedMultiplier: v }
+        config: { speedMultiplier: v, speed: v }
       })
     }
   }
@@ -316,6 +323,9 @@ export default function HomePage() {
 
   const isCurrentWallpaperImage = activeWallpaper?.engine === 'image-player' ||
     Boolean(activeWallpaper?.config?.imagePath && !activeWallpaper?.config?.videoPath)
+
+  const activeScreensForSelected = activeWallpaper ? getWallpaperActiveScreens(activeWallpaper) : []
+  const selectedIsLive = activeScreensForSelected.length > 0
 
   return (
     <div className="animate-fadeIn" style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -346,15 +356,16 @@ export default function HomePage() {
           />
           <div style={{
             position: 'absolute', inset: 0,
-            background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 60%, transparent 100%)',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 60%, transparent 100%)',
             display: 'flex', alignItems: 'flex-end', padding: 18,
+            zIndex: 10, pointerEvents: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end', gap: 12 }}>
               <div>
                 <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
-                  {isWallpaperRunning ? (
+                  {selectedIsLive ? (
                     <div className="badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)', gap: 5 }}>
-                      <div className="status-dot-live" /> LIVE ON DESKTOP
+                      <div className="status-dot-live" /> LIVE ON {activeScreensForSelected.join(', ').toUpperCase()}
                     </div>
                   ) : (
                     <div className="badge">SELECTED PREVIEW</div>
@@ -376,7 +387,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {isWallpaperRunning && (
                   <button
                     className="btn"
@@ -393,7 +404,7 @@ export default function HomePage() {
                   style={{ opacity: applying ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 140, justifyContent: 'center' }}
                 >
                   <MonitorPlay size={15} />
-                  {applying ? 'Applying…' : isWallpaperRunning ? 'Re-apply' : 'Apply to Desktop'}
+                  {applying ? 'Applying…' : selectedIsLive ? 'Re-apply' : 'Apply to Desktop'}
                 </button>
               </div>
             </div>

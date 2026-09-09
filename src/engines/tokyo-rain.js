@@ -5,17 +5,19 @@
  */
 
 export function createTokyoRain(canvas, options = {}) {
-  const {
+  let {
     rainColor = 'rgba(150,210,255,0.55)',
     neonColors = ['#ff2d78', '#00d4ff', '#b400ff', '#ffcc00'],
     speedMultiplier = 1,
     rainCount = 200,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
   let animId = null
   let drops = []
   let buildingsCache = null
+  let lastFrame = 0
 
   class RainDrop {
     constructor(w, h) { this.reset(w, h) }
@@ -98,7 +100,16 @@ export function createTokyoRain(canvas, options = {}) {
     drops = Array.from({ length: rainCount }, () => new RainDrop(canvas.width, canvas.height))
   }
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
+
     const W = canvas.width
     const H = canvas.height
 
@@ -122,8 +133,6 @@ export function createTokyoRain(canvas, options = {}) {
     // Fog overlay
     ctx.fillStyle = 'rgba(10,0,30,0.12)'
     ctx.fillRect(0, 0, W, H)
-
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -147,12 +156,22 @@ export function createTokyoRain(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.speedMultiplier !== undefined) {
+      speedMultiplier = newOpts.speedMultiplier
+      drops.forEach(d => {
+        d.speed = (Math.random() * 8 + 6) * speedMultiplier
+      })
+    }
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.rainColor !== undefined) rainColor = newOpts.rainColor
+    if (newOpts.neonColors !== undefined) neonColors = newOpts.neonColors
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

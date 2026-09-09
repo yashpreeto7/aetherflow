@@ -7,11 +7,12 @@
 const CHARS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF'
 
 export function createMatrixRain(canvas, options = {}) {
-  const {
+  let {
     color = '#00ff41',
     bgAlpha = 0.05,
     fontSize = 14,
     speedMultiplier = 1,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
@@ -27,11 +28,12 @@ export function createMatrixRain(canvas, options = {}) {
   }
 
   function frame(ts) {
-    const elapsed = ts - lastFrame
-    // Cap at ~60fps but allow speed multiplier
-    if (elapsed < 1000 / (60 * speedMultiplier)) {
-      animId = requestAnimationFrame(frame)
-      return
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
     }
     lastFrame = ts
 
@@ -60,8 +62,6 @@ export function createMatrixRain(canvas, options = {}) {
       }
       drops[i] += speedMultiplier * 0.5
     }
-
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -92,6 +92,11 @@ export function createMatrixRain(canvas, options = {}) {
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.color !== undefined) color = newOpts.color
+    if (newOpts.bgAlpha !== undefined) bgAlpha = newOpts.bgAlpha
+    if (newOpts.fontSize !== undefined) fontSize = newOpts.fontSize
+    if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
+    if (newOpts.fps !== undefined) fps = newOpts.fps
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

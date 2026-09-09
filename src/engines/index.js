@@ -106,6 +106,19 @@ export const ENGINES = {
     },
     load: () => import('./audio-spectrum.js').then(m => m.createAudioSpectrum),
   },
+  'fps-meter': {
+    id: 'fps-meter',
+    name: 'FPS Benchmark HUD',
+    description: 'Cyberpunk telemetry HUD showing real-time FPS counter, target limit, and frame-time graph',
+    preview: '/previews/fps-meter.svg',
+    tags: ['benchmark', 'fps', 'telemetry', 'cyberpunk', 'hud'],
+    defaultConfig: { color: '#00ffcc', accentColor: '#ff0055', speedMultiplier: 1 },
+    properties: {
+      color: { type: 'color', label: 'Primary Neon', default: '#00ffcc' },
+      accentColor: { type: 'color', label: 'Accent Neon', default: '#ff0055' },
+    },
+    load: () => import('./fps-meter.js').then(m => m.createFpsMeter),
+  },
   'video-player': {
     id: 'video-player',
     name: 'Video Wallpaper',

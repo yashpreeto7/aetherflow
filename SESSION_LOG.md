@@ -249,3 +249,26 @@
     - Release run `34238648775` completed successfully with all three assets uploaded to GitHub Releases `v1.0.0`.
 - **Build status:** ✅ `npm run build` (448ms), `cargo check` (1.1s), `cargo build --release` (1m 57s) clean, GitHub Release v1.0.0 live.
 ---
+
+## Session: 2026-09-09 16:55 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Fixed FPS Throttle & Added "FPS Benchmark HUD" Wallpaper**:
+    - Added timestamp-based interval pacing (`ts - lastFrame < 1000 / fps - 1`) across all 7 built-in canvas engines (`matrix-rain`, `cyber-particles`, `synthwave-grid`, `deep-space`, `tokyo-rain`, `aurora`, `audio-spectrum`).
+    - Added `aura:set-fps` listener in `src/wallpaper.jsx` to dynamically update active wallpaper engines on slider drag.
+    - Updated `Settings.jsx` slider to dispatch `update_wallpaper_config` live.
+    - Created `src/engines/fps-meter.js`: pure Canvas 2D telemetry HUD displaying real-time rolling FPS counter, target FPS cap indicator, frame-time in milliseconds, rolling oscilloscope graph, and rotating tachometer gauge arc.
+    - Registered `fps-meter` in `src/engines/index.js`, created `public/previews/fps-meter.svg`, and included in default `homeWallpaperIds`.
+  - **Fixed False Display 1/2 Badges & Card "Re-apply" Confusion**:
+    - Decoupled `activeWallpaper` (card preview selection) from `currentDesktopWallpaper` (live wallpaper applied to desktop) in `useStore.js`.
+    - Updated `Home.jsx` and `Library.jsx` to inspect `currentDesktopWallpaper` and mapped monitor labels (`Screen 1`, `Screen 2`) so previewing a card never marks it as "LIVE" or sets the button to "Re-apply".
+    - Top preview apply button displays "Apply to Desktop" for unapplied selections, and only "Re-apply" when the selected wallpaper matches the active desktop wallpaper.
+  - **Fixed Stop & Apply Controls on Custom Video Wallpapers in Top Hero Preview**:
+    - Resolved stacking context in `Home.jsx`: set overlay `zIndex: 10, pointerEvents: 'auto'` so the `<video>` element in `video-player.js` (`zIndex: 0`) cannot swallow pointer events or occlude the buttons.
+  - **Fixed Speed, Opacity, and Brightness on Desktop Video Wallpapers**:
+    - Enhanced `src-tauri/src/mpv.rs` with `set_speed` and `set_brightness` IPC commands.
+    - Added native Win32 `WS_EX_LAYERED` window opacity (`SetLayeredWindowAttributes`) to MPV's child window in `src-tauri/src/main.rs`.
+    - Wired `update_wallpaper_config`, `set_wallpaper_brightness`, and `set_wallpaper_opacity` to forward adjustments in real time to running MPV instances as well as webview windows.
+    - Fixed canvas engines' closure scopes so `updateOptions` updates `speedMultiplier` dynamically.
+- **Build status:** ✅ `npm run build` (566ms), `cargo check` clean with 0 errors.
+---

@@ -5,23 +5,33 @@
  */
 
 export function createSynthwaveGrid(canvas, options = {}) {
-  const {
+  let {
     horizonColor = '#ff2d78',
     gridColor = '#b400ff',
     sunColors = ['#ffdd00', '#ff8c00', '#ff2d78'],
     speedMultiplier = 1,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
   let animId = null
   let offset = 0
+  let lastFrame = 0
 
   function resize() {
     canvas.width = canvas.offsetWidth || window.innerWidth
     canvas.height = canvas.offsetHeight || window.innerHeight
   }
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
     const W = canvas.width
     const H = canvas.height
     const horizon = H * 0.5
@@ -114,7 +124,6 @@ export function createSynthwaveGrid(canvas, options = {}) {
     }
 
     offset += 0.003 * speedMultiplier
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -138,12 +147,18 @@ export function createSynthwaveGrid(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.horizonColor !== undefined) horizonColor = newOpts.horizonColor
+    if (newOpts.gridColor !== undefined) gridColor = newOpts.gridColor
+    if (newOpts.sunColors !== undefined) sunColors = newOpts.sunColors
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

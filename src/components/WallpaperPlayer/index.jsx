@@ -31,6 +31,9 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     speedMultiplier: (config.speedMultiplier ?? 1) * wallpaperSpeed,
     volume: audioVolume,
     muted: audioMuted,
+    opacity: wallpaperOpacity,
+    brightness: wallpaperBrightness,
+    fps: fps || 60,
     preview,   // audio-spectrum uses this to skip mic request in thumbnail mode
   }
 
@@ -125,7 +128,7 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
     if (engineRef.current?.updateOptions) {
       engineRef.current.updateOptions(mergedConfig)
     }
-  }, [config, wallpaperSpeed, audioVolume, audioMuted])
+  }, [config, wallpaperSpeed, wallpaperOpacity, wallpaperBrightness, fps, audioVolume, audioMuted])
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   const canvasStyle = preview
@@ -134,6 +137,8 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
         height: '100%',
         borderRadius: 8,
         display: 'block',
+        opacity: wallpaperOpacity,
+        filter: `brightness(${wallpaperBrightness})`,
       }
     : {
         position: 'fixed',

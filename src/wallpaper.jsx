@@ -206,6 +206,17 @@ function WallpaperCanvas() {
           })
         )
 
+        unlisteners.push(
+          await appWindow.listen('aura:set-fps', ({ payload }) => {
+            if (payload?.target && payload.target !== '*' && payload.target !== myLabel) {
+              return
+            }
+            if (payload?.fps) {
+              engineRef.current?.updateOptions?.({ fps: payload.fps })
+            }
+          })
+        )
+
         // Check if there is already an active wallpaper for this monitor (handles hot-plug & reload)
         try {
           const { invoke } = await import('@tauri-apps/api/core')

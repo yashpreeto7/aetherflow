@@ -5,17 +5,19 @@
  */
 
 export function createDeepSpace(canvas, options = {}) {
-  const {
+  let {
     starCount = 300,
     nebulaColors = ['#6600cc', '#003399', '#cc0066'],
     speedMultiplier = 1,
     shootingStars = true,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
   let animId = null
   let stars = []
   let shooters = []
+  let lastFrame = 0
 
   class Star {
     constructor(w, h) { this.reset(w, h, true) }
@@ -50,12 +52,21 @@ export function createDeepSpace(canvas, options = {}) {
   }
 
   function spawnShooter() {
+    if (!shootingStars) return
     if (shooters.length < 3 && Math.random() < 0.003) {
       shooters.push(new ShootingStar(canvas.width, canvas.height))
     }
   }
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
     const W = canvas.width
     const H = canvas.height
 
@@ -112,8 +123,6 @@ export function createDeepSpace(canvas, options = {}) {
       s.alpha -= 0.015
       if (s.alpha <= 0 || s.x > W || s.y > H) s.active = false
     }
-
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -137,12 +146,22 @@ export function createDeepSpace(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.speedMultiplier !== undefined) {
+      speedMultiplier = newOpts.speedMultiplier
+      stars.forEach(s => {
+        s.speed = (s.z * 0.3 + 0.05) * speedMultiplier
+      })
+    }
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.nebulaColors !== undefined) nebulaColors = newOpts.nebulaColors
+    if (newOpts.shootingStars !== undefined) shootingStars = newOpts.shootingStars
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

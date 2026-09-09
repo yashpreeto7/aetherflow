@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180">
+  <defs>
+    <radialGradient id="grad_fps-meter" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00ffcc" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#ff0055" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#010305" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="#03070b"/>
+  <rect width="100%" height="100%" fill="url(#grad_fps-meter)"/>
+  <circle cx="160" cy="80" r="50" fill="none" stroke="rgba(0, 255, 204, 0.2)" stroke-width="3" stroke-dasharray="6,6"/>
+  <circle cx="160" cy="80" r="42" fill="none" stroke="#00ffcc" stroke-width="4" stroke-dasharray="140, 200"/>
+  <text x="160" y="85" fill="#ffffff" font-family="'JetBrains Mono', monospace" font-size="28" font-weight="900" text-anchor="middle">60</text>
+  <text x="160" y="102" fill="#00ffcc" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="bold" letter-spacing="2" text-anchor="middle">FPS TELEMETRY</text>
+  <text x="160" y="150" fill="#ff0055" font-family="'JetBrains Mono', monospace" font-size="13" font-weight="bold" text-anchor="middle">FPS Benchmark HUD</text>
+</svg>

@@ -5,17 +5,19 @@
  */
 
 export function createAurora(canvas, options = {}) {
-  const {
+  let {
     colors = ['#00ff88', '#0088ff', '#8800ff', '#ff0088'],
     speedMultiplier = 1,
     starCount = 150,
     intensity = 0.7,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
   let animId = null
   let time = 0
   let stars = []
+  let lastFrame = 0
 
   function resize() {
     canvas.width = canvas.offsetWidth || window.innerWidth
@@ -68,7 +70,16 @@ export function createAurora(canvas, options = {}) {
     ctx.fill()
   }
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
+
     const W = canvas.width
     const H = canvas.height
 
@@ -108,7 +119,6 @@ export function createAurora(canvas, options = {}) {
     ctx.fillRect(0, H * 0.85, W, H * 0.15)
 
     time += 0.008 * speedMultiplier
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -132,12 +142,17 @@ export function createAurora(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.intensity !== undefined) intensity = newOpts.intensity
+    if (newOpts.colors !== undefined) colors = newOpts.colors
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

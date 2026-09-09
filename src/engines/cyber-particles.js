@@ -5,17 +5,19 @@
  */
 
 export function createCyberParticles(canvas, options = {}) {
-  const {
+  let {
     color = '#00d4ff',
     particleCount = 80,
     connectionDistance = 120,
     speedMultiplier = 1,
     mouseRepel = true,
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
   let particles = []
   let animId = null
+  let lastFrame = 0
   let mouse = { x: -9999, y: -9999 }
 
   class Particle {
@@ -25,8 +27,8 @@ export function createCyberParticles(canvas, options = {}) {
     reset(w, h) {
       this.x = Math.random() * w
       this.y = Math.random() * h
-      this.vx = (Math.random() - 0.5) * 0.8 * speedMultiplier
-      this.vy = (Math.random() - 0.5) * 0.8 * speedMultiplier
+      this.vx = (Math.random() - 0.5) * 0.8
+      this.vy = (Math.random() - 0.5) * 0.8
       this.size = Math.random() * 2 + 1
       this.alpha = Math.random() * 0.5 + 0.3
     }
@@ -51,9 +53,18 @@ export function createCyberParticles(canvas, options = {}) {
     return `${r},${g},${b}`
   }
 
-  const rgb = hexToRgb(color)
+  let rgb = hexToRgb(color)
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
+
     const w = canvas.width
     const h = canvas.height
 
@@ -76,8 +87,8 @@ export function createCyberParticles(canvas, options = {}) {
       p.vx *= 0.99
       p.vy *= 0.99
 
-      p.x += p.vx
-      p.y += p.vy
+      p.x += p.vx * speedMultiplier
+      p.y += p.vy * speedMultiplier
 
       // Wrap edges
       if (p.x < 0) p.x = w
@@ -109,8 +120,6 @@ export function createCyberParticles(canvas, options = {}) {
         }
       }
     }
-
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -136,12 +145,24 @@ export function createCyberParticles(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
 
   function updateOptions(newOpts) {
     Object.assign(options, newOpts)
+    if (newOpts.color !== undefined) {
+      color = newOpts.color
+      rgb = hexToRgb(color)
+    }
+    if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.connectionDistance !== undefined) connectionDistance = newOpts.connectionDistance
+    if (newOpts.particleCount !== undefined && newOpts.particleCount !== particleCount) {
+      particleCount = newOpts.particleCount
+      resize()
+    }
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

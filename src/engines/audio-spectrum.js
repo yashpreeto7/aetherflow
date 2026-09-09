@@ -7,7 +7,7 @@
  */
 
 export function createAudioSpectrum(canvas, options = {}) {
-  const {
+  let {
     color = '#00d4ff',
     accentColor = '#ff2d78',
     barCount = 80,
@@ -17,6 +17,7 @@ export function createAudioSpectrum(canvas, options = {}) {
     speedMultiplier = 1,
     preview = false,  // true = thumbnail card mode, skip mic request
     useMic = false,   // true = request mic for live sound, false = beat simulation
+    fps = 60,
   } = options
 
   const ctx = canvas.getContext('2d')
@@ -25,6 +26,7 @@ export function createAudioSpectrum(canvas, options = {}) {
   let analyser = null
   let dataArray = null
   let stream = null
+  let lastFrame = 0
 
   // Idle simulation (used in preview mode, default simulation, and when mic is denied)
   let idleTime = 0
@@ -110,7 +112,16 @@ export function createAudioSpectrum(canvas, options = {}) {
     return fake
   }
 
-  function frame() {
+  function frame(ts) {
+    animId = requestAnimationFrame(frame)
+    if (fps < 120) {
+      const minInterval = 1000 / fps
+      if (ts - lastFrame < minInterval - 1) {
+        return
+      }
+    }
+    lastFrame = ts
+
     let freqData
     if (analyser && dataArray) {
       analyser.getByteFrequencyData(dataArray)
@@ -119,7 +130,6 @@ export function createAudioSpectrum(canvas, options = {}) {
       freqData = idleFrame()
     }
     drawBars(freqData)
-    animId = requestAnimationFrame(frame)
   }
 
   function start() {
@@ -155,6 +165,7 @@ export function createAudioSpectrum(canvas, options = {}) {
 
   function resume() {
     if (!animId) {
+      lastFrame = performance.now()
       animId = requestAnimationFrame(frame)
     }
   }
@@ -162,6 +173,11 @@ export function createAudioSpectrum(canvas, options = {}) {
   function updateOptions(newOpts) {
     const prevUseMic = options.useMic
     Object.assign(options, newOpts)
+    if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
+    if (newOpts.fps !== undefined) fps = newOpts.fps
+    if (newOpts.color !== undefined) color = newOpts.color
+    if (newOpts.accentColor !== undefined) accentColor = newOpts.accentColor
+    if (newOpts.barCount !== undefined) barCount = newOpts.barCount
     if (newOpts.paused !== undefined) {
       if (newOpts.paused) pause()
       else resume()

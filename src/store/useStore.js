@@ -56,8 +56,9 @@ export async function syncCustomWallpapersFromDisk() {
 export const useStore = create(
   persist(
     (set, get) => ({
-      // ── Active Wallpaper ─────────────────────────────────────────────────
-      activeWallpaper: null,          // { id, name, engine, config }
+      // ── Active Wallpaper (UI Preview / Selection) ──────────────────────
+      activeWallpaper: null,          // { id, name, engine, config } — previewed/selected in UI
+      currentDesktopWallpaper: null,  // { id, name, engine, config } — actually running on desktop
       wallpaperOpacity: 1,
       wallpaperBrightness: 0.85,
       wallpaperSpeed: 1,              // Global speed multiplier
@@ -72,15 +73,16 @@ export const useStore = create(
       setMonitorWallpaper: (label, wp) => set((s) => ({
         monitorWallpapers: { ...s.monitorWallpapers, [label]: wp }
       })),
+      clearMonitorWallpapers: () => set({ monitorWallpapers: {}, currentDesktopWallpaper: null }),
       setAudioVolume: (v) => set({ audioVolume: v }),
       toggleAudioMuted: () => set((s) => ({ audioMuted: !s.audioMuted })),
 
       // isWallpaperRunning = true when the canvas is LIVE on the Windows desktop
       // (pinned into WorkerW via PROGMAN trick). Not the same as just being selected.
-      // NOT persisted — resets to false on every app restart.
       isWallpaperRunning: false,
 
       setActiveWallpaper: (wallpaper) => set({ activeWallpaper: wallpaper }),
+      setCurrentDesktopWallpaper: (wallpaper) => set({ currentDesktopWallpaper: wallpaper }),
       setWallpaperRunning: (v) => set({ isWallpaperRunning: v }),
       setWallpaperOpacity: (v) => set({ wallpaperOpacity: v }),
       setWallpaperBrightness: (v) => set({ wallpaperBrightness: v }),
@@ -88,6 +90,9 @@ export const useStore = create(
       updateWallpaperConfig: (updates) => set((s) => ({
         activeWallpaper: s.activeWallpaper 
           ? { ...s.activeWallpaper, config: { ...s.activeWallpaper.config, ...updates } }
+          : null,
+        currentDesktopWallpaper: s.currentDesktopWallpaper
+          ? { ...s.currentDesktopWallpaper, config: { ...s.currentDesktopWallpaper.config, ...updates } }
           : null
       })),
 
@@ -117,7 +122,7 @@ export const useStore = create(
       // ── Library (installed wallpapers & themes) ──────────────────────────
       installed: [],                   // [{ id, type, name, engine, config, installedAt }]
       homeWallpaperIds: [              // IDs of wallpapers curated for Home screen
-        'matrix-rain', 'cyber-particles', 'synthwave-grid',
+        'fps-meter', 'matrix-rain', 'cyber-particles', 'synthwave-grid',
         'deep-space', 'tokyo-rain', 'aurora', 'audio-spectrum'
       ],
       customNames: {},                 // { [id]: string } user-edited wallpaper names
@@ -162,7 +167,10 @@ export const useStore = create(
         const activeWallpaper = s.activeWallpaper?.id === id
           ? { ...s.activeWallpaper, name: newName }
           : s.activeWallpaper
-        return { customNames, installed, activeWallpaper }
+        const currentDesktopWallpaper = s.currentDesktopWallpaper?.id === id
+          ? { ...s.currentDesktopWallpaper, name: newName }
+          : s.currentDesktopWallpaper
+        return { customNames, installed, activeWallpaper, currentDesktopWallpaper }
       }),
 
       // ── Settings ──────────────────────────────────────────────────────────
@@ -203,6 +211,7 @@ export const useStore = create(
       // Only persist these keys
       partialize: (s) => ({
         activeWallpaper: s.activeWallpaper,
+        currentDesktopWallpaper: s.currentDesktopWallpaper,
         wallpaperOpacity: s.wallpaperOpacity,
         wallpaperBrightness: s.wallpaperBrightness,
         wallpaperSpeed: s.wallpaperSpeed,

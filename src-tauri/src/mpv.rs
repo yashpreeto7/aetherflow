@@ -47,6 +47,20 @@ impl MpvProcess {
         }
     }
 
+    pub fn set_speed(&self, speed: f64) -> Result<(), String> {
+        let speed_clamped = speed.max(0.1).min(10.0);
+        self.send_ipc_command(serde_json::json!({
+            "command": ["set_property", "speed", speed_clamped]
+        }))
+    }
+
+    pub fn set_brightness(&self, brightness: f64) -> Result<(), String> {
+        let mpv_br = ((brightness - 1.0) * 100.0).round().max(-100.0).min(100.0);
+        self.send_ipc_command(serde_json::json!({
+            "command": ["set_property", "brightness", mpv_br]
+        }))
+    }
+
     pub fn set_pause(&self, paused: bool) -> Result<(), String> {
         self.send_ipc_command(serde_json::json!({
             "command": ["set_property", "pause", paused]
@@ -245,6 +259,9 @@ pub fn spawn_mpv_wallpaper(
     mon_h: i32,
     volume: Option<f64>,
     muted: Option<bool>,
+    speed: Option<f64>,
+    brightness: Option<f64>,
+    opacity: Option<f64>,
 ) -> Result<MpvProcess, String> {
     let mpv_exe = find_mpv_binary()?;
     let safe_label = monitor_label.replace("\\", "").replace(".", "_").replace(" ", "_");
@@ -272,6 +289,18 @@ pub fn spawn_mpv_wallpaper(
         .arg("--demuxer-max-bytes=16M")
         .arg("--demuxer-max-back-bytes=4M")
         .arg(format!("--input-ipc-server={}", pipe_name));
+
+    // Speed handling
+    if let Some(spd) = speed {
+        let spd_clamped = spd.max(0.1).min(10.0);
+        cmd.arg(format!("--speed={}", spd_clamped));
+    }
+
+    // Brightness handling (-100 to 100 based on standard 0.1 to 1.5 brightness scale)
+    if let Some(br) = brightness {
+        let mpv_br = ((br - 1.0) * 100.0).round().max(-100.0).min(100.0);
+        cmd.arg(format!("--brightness={}", mpv_br));
+    }
 
     // Audio handling
     if muted.unwrap_or(false) {
@@ -312,6 +341,20 @@ pub fn spawn_mpv_wallpaper(
     let mpv_hwnd = match find_mpv_hwnd(mpv_pid) {
         Some(h) => {
             log_mpv_msg(&format!("[MPV] Located native MPV HWND: 0x{:X} for PID={}", h as usize, mpv_pid));
+            if let Some(op) = opacity {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowLongW, SetWindowLongW, SetLayeredWindowAttributes,
+                    GWL_EXSTYLE, WS_EX_LAYERED, LWA_ALPHA
+                };
+                unsafe {
+                    let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
+                    if (ex & WS_EX_LAYERED) == 0 {
+                        SetWindowLongW(h, GWL_EXSTYLE, (ex | WS_EX_LAYERED) as i32);
+                    }
+                    let alpha = (op.max(0.05).min(1.0) * 255.0).round() as u8;
+                    SetLayeredWindowAttributes(h, 0, alpha, LWA_ALPHA);
+                }
+            }
             h
         }
         None => {
