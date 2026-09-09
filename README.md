@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v1.0.0-00f0ff?style=for-the-badge&logo=github" alt="Release v1.0.0" />
+  <img src="https://img.shields.io/badge/Release-v1.0.1-00f0ff?style=for-the-badge&logo=github" alt="Release v1.0.1" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(x64)-0078d4?style=for-the-badge&logo=windows" alt="Platform" />
   <img src="https://img.shields.io/badge/Backend-Tauri%202%20%2B%20Rust-orange?style=for-the-badge&logo=rust" alt="Tauri 2 + Rust" />
   <img src="https://img.shields.io/badge/Frontend-React%2019%20%2B%20Canvas%202D-61dafb?style=for-the-badge&logo=react" alt="React 19" />
@@ -30,7 +30,8 @@ Unlike heavy Chromium-based alternatives that consume hundreds of megabytes of R
 
 ## ✨ Key Features
 
-### 🎨 7 Built-In Canvas 2D Animated Engines
+### 🎨 8 Built-In Canvas 2D Animated Engines
+- **FPS Benchmark HUD**: Cyberpunk telemetry wallpaper displaying a real-time rolling FPS counter, target FPS cap indicator, frame-time in milliseconds, rolling oscilloscope graph, and rotating tachometer gauges.
 - **Matrix Rain**: Classic green phosphor katakana digital rain with speed, density, and glyph customization.
 - **Cyber Particles**: Interconnected particle mesh with dynamic distance links and interactive cursor repulsion.
 - **Synthwave Grid**: Retro 80s neon perspective grid with scrolling horizon and sunset glow.
@@ -93,25 +94,25 @@ Unlike heavy Chromium-based alternatives that consume hundreds of megabytes of R
 ### Option 1: Standalone Executable (Recommended)
 No installation required! Just download and run:
 
-1. Download **[`AetherFlow.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow.exe)** directly.
+1. Download **[`AetherFlow.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow.exe)** directly.
 2. Double-click `AetherFlow.exe` to run.
 3. Choose any wallpaper from the dashboard and enjoy!
 
 | Package | Format | Direct Download Link |
 |---|---|---|
-| **Standalone Executable** | `.exe` (~7.3MB) | [⚡ **Download AetherFlow.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow.exe) |
-| **Portable Package (with MPV)** | `.zip` (Self-Contained) | [📦 **Download AetherFlow-v1.0.0-Portable.zip**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-v1.0.0-Portable.zip) |
-| **Windows Installer** | `.exe` (NSIS Setup) | [💿 **Download AetherFlow-Setup.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe) |
-| **All Releases & Notes** | GitHub Page | [🚀 **View GitHub Releases**](https://github.com/yashpreeto7/aetherflow/releases/tag/v1.0.0) |
+| **Standalone Executable** | `.exe` (~7.3MB) | [⚡ **Download AetherFlow.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow.exe) |
+| **Portable Package (with MPV)** | `.zip` (Self-Contained) | [📦 **Download AetherFlow-v1.0.1-Portable.zip**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow-v1.0.1-Portable.zip) |
+| **Windows Installer** | `.exe` (NSIS Setup) | [💿 **Download AetherFlow-Setup.exe**](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow-Setup.exe) |
+| **All Releases & Notes** | GitHub Page | [🚀 **View GitHub Releases**](https://github.com/yashpreeto7/aetherflow/releases/tag/v1.0.1) |
 
 ### Option 2: Windows Installer
 If you prefer a standard Windows installation with Desktop shortcuts and Start Menu integration:
-1. Download **[`AetherFlow-Setup.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-Setup.exe)**.
+1. Download **[`AetherFlow-Setup.exe`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow-Setup.exe)**.
 2. Run the installer and launch AetherFlow.
 
 ### Option 3: Full Portable Zip
 For zero installation with the dedicated hardware-accelerated MPV video engine included:
-1. Download **[`AetherFlow-v1.0.0-Portable.zip`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.0/AetherFlow-v1.0.0-Portable.zip)**.
+1. Download **[`AetherFlow-v1.0.1-Portable.zip`](https://github.com/yashpreeto7/aetherflow/releases/download/v1.0.1/AetherFlow-v1.0.1-Portable.zip)**.
 2. Extract the folder anywhere and run `AetherFlow.exe`.
 
 ---
