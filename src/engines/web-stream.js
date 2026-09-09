@@ -1,8 +1,8 @@
 /**
  * Web Stream & YouTube Wallpaper Engine
  * Renders live streams, ambient YouTube loops, or interactive web pages as wallpapers.
- * - Thumbnail / Canvas 2D fallback for performant grid previews
- * - Borderless zero-latency iframe for desktop wallpaper playback
+ * - Canvas 2D fallback for lightweight grid previews
+ * - Native YouTube IFrame API (YT.Player) integration for borderless, infinite-looping playback
  */
 
 export function parseYouTubeId(url) {
@@ -24,15 +24,41 @@ export function getYouTubeThumbnail(videoId) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
 }
 
+let ytApiPromise = null
+function loadYouTubeApi() {
+  if (typeof window !== 'undefined' && window.YT && window.YT.Player) {
+    return Promise.resolve(window.YT)
+  }
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise((resolve) => {
+      const prev = window.onYouTubeIframeAPIReady
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof prev === 'function') prev()
+        resolve(window.YT)
+      }
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+        const tag = document.createElement('script')
+        tag.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(tag)
+      }
+    })
+  }
+  return ytApiPromise
+}
+
 export function createWebStream(canvas, options = {}) {
   const ctx = canvas.getContext('2d')
   let animId = null
+  let containerEl = null
   let iframeEl = null
+  let ytPlayer = null
+  let loopTimer = null
   let thumbImg = null
   let thumbLoaded = false
   let currentUrl = options.streamUrl || ''
   let currentMuted = options.muted ?? true
   let isRunning = false
+  let isPausedByUser = false
 
   function resize() {
     if (!canvas) return
@@ -58,7 +84,6 @@ export function createWebStream(canvas, options = {}) {
       const sy = (ch - sh) / 2
       ctx.drawImage(thumbImg, sx, sy, sw, sh)
     } else {
-      // Sleek ambient gradient placeholder
       const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
       grad.addColorStop(0, '#090d16')
       grad.addColorStop(0.5, '#121b2d')
@@ -87,125 +112,114 @@ export function createWebStream(canvas, options = {}) {
     thumbImg.src = getYouTubeThumbnail(ytId)
   }
 
-  let isPausedByUser = false
-  let loopPingTimer = null
+  function mountPlayer() {
+    if (options.preview) return
+    if (!canvas.parentElement) return
 
-  function applyIframeStyles(isYt) {
-    if (!iframeEl) return
-    iframeEl.style.position = 'absolute'
-    iframeEl.style.border = 'none'
-    iframeEl.style.pointerEvents = 'none'
-    iframeEl.style.zIndex = '1'
-    iframeEl.style.opacity = String(options.opacity ?? 1)
-    iframeEl.style.filter = `brightness(${options.brightness ?? 1})`
+    unmountPlayer()
 
-    if (isYt) {
-      // Overscan YouTube player slightly so top title bar, share buttons,
-      // and bottom media controls/progress bar are pushed completely off-screen.
-      // This produces a pure, borderless cinematic wallpaper.
-      iframeEl.style.top = '-60px'
-      iframeEl.style.left = '-60px'
-      iframeEl.style.width = 'calc(100% + 120px)'
-      iframeEl.style.height = 'calc(100% + 120px)'
+    const ytId = parseYouTubeId(currentUrl)
+
+    if (ytId) {
+      // Container with overscan to push any YouTube edge elements completely off-screen
+      containerEl = document.createElement('div')
+      containerEl.setAttribute('data-aether-player', 'youtube')
+      containerEl.style.position = 'absolute'
+      containerEl.style.top = '-60px'
+      containerEl.style.left = '-60px'
+      containerEl.style.width = 'calc(100% + 120px)'
+      containerEl.style.height = 'calc(100% + 120px)'
+      containerEl.style.pointerEvents = 'none'
+      containerEl.style.zIndex = '1'
+      containerEl.style.opacity = String(options.opacity ?? 1)
+      containerEl.style.filter = `brightness(${options.brightness ?? 1})`
+      containerEl.style.overflow = 'hidden'
+
+      const playerMount = document.createElement('div')
+      playerMount.id = 'yt-mount-' + Math.random().toString(36).slice(2)
+      playerMount.style.width = '100%'
+      playerMount.style.height = '100%'
+      containerEl.appendChild(playerMount)
+      canvas.parentElement.appendChild(containerEl)
+
+      loadYouTubeApi().then((YT) => {
+        if (!isRunning || !containerEl) return
+        ytPlayer = new YT.Player(playerMount.id, {
+          videoId: ytId,
+          playerVars: {
+            autoplay: 1,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            rel: 0,
+            iv_load_policy: 3,
+            modestbranding: 1,
+            playsinline: 1,
+          },
+          events: {
+            onReady: (e) => {
+              if (currentMuted) e.target.mute()
+              else e.target.unMute()
+              if (options.volume !== undefined) {
+                e.target.setVolume(Math.round(options.volume))
+              }
+              e.target.playVideo()
+
+              // Proactive rewind: checks every 100ms and loops BEFORE video reaches the end
+              // Prevents pause, replay icon, and media controls from ever appearing
+              clearInterval(loopTimer)
+              loopTimer = setInterval(() => {
+                if (ytPlayer?.getCurrentTime && ytPlayer?.getDuration && isRunning && !isPausedByUser) {
+                  const cur = ytPlayer.getCurrentTime()
+                  const dur = ytPlayer.getDuration()
+                  if (dur > 1.5 && cur >= dur - 0.25) {
+                    ytPlayer.seekTo(0, true)
+                  }
+                }
+              }, 100)
+            },
+            onStateChange: (e) => {
+              // 0 = ENDED: instantaneous rewind fallback
+              if (e.data === 0 && isRunning && !isPausedByUser) {
+                e.target.seekTo(0, true)
+                e.target.playVideo()
+              }
+            }
+          }
+        })
+      })
     } else {
+      // General web URL / WebGL interactive wallpaper
+      iframeEl = document.createElement('iframe')
+      iframeEl.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen')
+      iframeEl.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
+      iframeEl.style.position = 'absolute'
       iframeEl.style.top = '0'
       iframeEl.style.left = '0'
       iframeEl.style.width = '100%'
       iframeEl.style.height = '100%'
-    }
-  }
-
-  function onWindowMessage(event) {
-    if (!iframeEl || !event.data) return
-    try {
-      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-      if (!data) return
-
-      // Handle onReady: confirm listening
-      if (data.event === 'onReady') {
-        iframeEl.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), '*')
-      }
-
-      // Check player state: 0 = ENDED
-      const state = data.info?.playerState !== undefined 
-        ? data.info.playerState 
-        : (data.event === 'onStateChange' ? data.info : null)
-
-      if (state === 0 && !isPausedByUser) {
-        // Instant loop: rewind to 0 and play to prevent reload screen
-        iframeEl.contentWindow?.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'seekTo',
-          args: [0, true]
-        }), '*')
-        iframeEl.contentWindow?.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'playVideo',
-          args: []
-        }), '*')
-      }
-
-      // Proactive loop: rewind 0.35s before hitting the very end
-      if (data.event === 'infoDelivery' && data.info && !isPausedByUser) {
-        const cur = data.info.currentTime
-        const dur = data.info.duration
-        if (typeof cur === 'number' && typeof dur === 'number' && dur > 2 && cur >= dur - 0.35) {
-          iframeEl.contentWindow?.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'seekTo',
-            args: [0, true]
-          }), '*')
-          iframeEl.contentWindow?.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'playVideo',
-            args: []
-          }), '*')
-        }
-      }
-    } catch {}
-  }
-
-  function buildEmbedUrl(url, muted) {
-    const ytId = parseYouTubeId(url)
-    if (ytId) {
-      const muteParam = muted ? '1' : '0'
-      // Use standard youtube.com/embed with strict-origin referrerpolicy to satisfy YouTube security & anti-bot checks
-      return `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=${muteParam}&controls=0&loop=1&playlist=${ytId}&enablejsapi=1&rel=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`
-    }
-    return url
-  }
-
-  function mountIframe() {
-    if (options.preview) return // Preview cards use canvas thumbnail to save resources
-
-    if (!iframeEl && canvas.parentElement) {
-      const ytId = parseYouTubeId(currentUrl)
-      iframeEl = document.createElement('iframe')
-      iframeEl.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen')
-      iframeEl.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')
-      applyIframeStyles(Boolean(ytId))
-      iframeEl.src = buildEmbedUrl(currentUrl, currentMuted)
+      iframeEl.style.border = 'none'
+      iframeEl.style.pointerEvents = 'none'
+      iframeEl.style.zIndex = '1'
+      iframeEl.style.opacity = String(options.opacity ?? 1)
+      iframeEl.style.filter = `brightness(${options.brightness ?? 1})`
+      iframeEl.src = currentUrl
       canvas.parentElement.appendChild(iframeEl)
-
-      window.addEventListener('message', onWindowMessage)
-
-      // Periodically ping listening so YouTube registers our listener
-      if (ytId) {
-        if (loopPingTimer) clearInterval(loopPingTimer)
-        loopPingTimer = setInterval(() => {
-          if (iframeEl?.contentWindow) {
-            iframeEl.contentWindow.postMessage(JSON.stringify({ event: 'listening' }), '*')
-          }
-        }, 1500)
-      }
     }
   }
 
-  function unmountIframe() {
-    window.removeEventListener('message', onWindowMessage)
-    if (loopPingTimer) {
-      clearInterval(loopPingTimer)
-      loopPingTimer = null
+  function unmountPlayer() {
+    if (loopTimer) {
+      clearInterval(loopTimer)
+      loopTimer = null
+    }
+    if (ytPlayer) {
+      try { ytPlayer.destroy() } catch {}
+      ytPlayer = null
+    }
+    if (containerEl) {
+      try { containerEl.remove() } catch {}
+      containerEl = null
     }
     if (iframeEl) {
       try {
@@ -234,7 +248,7 @@ export function createWebStream(canvas, options = {}) {
     }
 
     if (!options.preview) {
-      mountIframe()
+      mountPlayer()
     }
 
     animId = requestAnimationFrame(frame)
@@ -247,38 +261,20 @@ export function createWebStream(canvas, options = {}) {
       animId = null
     }
     window.removeEventListener('resize', resize)
-    unmountIframe()
+    unmountPlayer()
   }
 
   function pause() {
     isPausedByUser = true
-    if (iframeEl) {
-      const ytId = parseYouTubeId(currentUrl)
-      if (ytId) {
-        try {
-          iframeEl.contentWindow?.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'pauseVideo',
-            args: []
-          }), '*')
-        } catch {}
-      }
+    if (ytPlayer?.pauseVideo) {
+      try { ytPlayer.pauseVideo() } catch {}
     }
   }
 
   function resume() {
     isPausedByUser = false
-    if (iframeEl) {
-      const ytId = parseYouTubeId(currentUrl)
-      if (ytId) {
-        try {
-          iframeEl.contentWindow?.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'playVideo',
-            args: []
-          }), '*')
-        } catch {}
-      }
+    if (ytPlayer?.playVideo) {
+      try { ytPlayer.playVideo() } catch {}
     }
   }
 
@@ -288,43 +284,27 @@ export function createWebStream(canvas, options = {}) {
       currentUrl = newOpts.streamUrl
       const ytId = parseYouTubeId(currentUrl)
       if (ytId) loadThumbnail(ytId)
-      if (iframeEl) {
-        applyIframeStyles(Boolean(ytId))
-        iframeEl.src = buildEmbedUrl(currentUrl, currentMuted)
-      }
+      if (!options.preview) mountPlayer()
     }
     if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
       currentMuted = newOpts.muted
-      if (iframeEl) {
-        const ytId = parseYouTubeId(currentUrl)
-        if (ytId) {
-          try {
-            iframeEl.contentWindow?.postMessage(JSON.stringify({
-              event: 'command',
-              func: currentMuted ? 'mute' : 'unMute',
-              args: []
-            }), '*')
-          } catch {}
-        } else {
-          iframeEl.src = buildEmbedUrl(currentUrl, currentMuted)
-        }
-      }
-    }
-    if (newOpts.volume !== undefined && iframeEl) {
-      const ytId = parseYouTubeId(currentUrl)
-      if (ytId) {
+      if (ytPlayer) {
         try {
-          iframeEl.contentWindow?.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'setVolume',
-            args: [Math.round(newOpts.volume)]
-          }), '*')
+          if (currentMuted) ytPlayer.mute()
+          else ytPlayer.unMute()
         } catch {}
       }
     }
-    if (iframeEl) {
-      if (newOpts.opacity !== undefined) iframeEl.style.opacity = String(newOpts.opacity)
-      if (newOpts.brightness !== undefined) iframeEl.style.filter = `brightness(${newOpts.brightness})`
+    if (newOpts.volume !== undefined && ytPlayer?.setVolume) {
+      try { ytPlayer.setVolume(Math.round(newOpts.volume)) } catch {}
+    }
+    if (newOpts.opacity !== undefined) {
+      if (containerEl) containerEl.style.opacity = String(newOpts.opacity)
+      if (iframeEl) iframeEl.style.opacity = String(newOpts.opacity)
+    }
+    if (newOpts.brightness !== undefined) {
+      if (containerEl) containerEl.style.filter = `brightness(${newOpts.brightness})`
+      if (iframeEl) iframeEl.style.filter = `brightness(${newOpts.brightness})`
     }
   }
 

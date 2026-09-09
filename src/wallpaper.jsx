@@ -42,9 +42,9 @@ function WallpaperCanvas() {
         media.remove()
       } catch (e) {}
     })
-    document.querySelectorAll('iframe').forEach(frame => {
+    document.querySelectorAll('iframe, [data-aether-player]').forEach(frame => {
       try {
-        frame.src = 'about:blank'
+        if (frame.tagName === 'IFRAME') frame.src = 'about:blank'
         frame.remove()
       } catch (e) {}
     })
