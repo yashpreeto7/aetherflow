@@ -48,12 +48,16 @@ export async function signInWithProvider(provider) {
     if (error) throw error
 
     if (data?.url) {
+      console.log('[AetherFlow] Launching OAuth URL via open_url:', data.url)
       try {
         await invoke('open_url', { url: data.url })
       } catch (openErr) {
         console.warn('[AetherFlow] open_url failed, falling back to window.open:', openErr)
         window.open(data.url, '_blank')
       }
+    } else {
+      console.error('[AetherFlow] No URL returned by Supabase signInWithOAuth:', data)
+      throw new Error('Supabase did not return an authorization URL.')
     }
 
     return data
@@ -69,6 +73,9 @@ export async function signInWithProvider(provider) {
   })
 
   if (error) throw error
+  if (data?.url && typeof window !== 'undefined') {
+    window.location.href = data.url
+  }
   return data
 }
 

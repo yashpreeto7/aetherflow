@@ -1890,15 +1890,49 @@ fn restart_taskbar_explorer() -> Result<(), String> {
 /// Safely opens external URLs or Windows protocol links in the default application
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
+    log_msg(&format!("[AetherFlow] open_url requested: {}", url));
     #[cfg(windows)]
     {
-        use std::process::Command;
-        use std::os::windows::process::CommandExt;
-        Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", &url])
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        // 1. First attempt: Direct Win32 ShellExecuteW
+        let wide_url: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+        let wide_op: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+
+        let res = unsafe {
+            windows_sys::Win32::UI::Shell::ShellExecuteW(
+                std::ptr::null_mut(),
+                wide_op.as_ptr(),
+                wide_url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL as i32,
+            )
+        };
+
+        let res_val = res as isize;
+        log_msg(&format!("[AetherFlow] ShellExecuteW result: {}", res_val));
+
+        if res_val > 32 {
+            return Ok(());
+        }
+
+        // 2. Second attempt: PowerShell Start-Process with single-quoted URL (escapes $ & % properly)
+        log_msg("[AetherFlow] ShellExecuteW returned <= 32, falling back to powershell Start-Process");
+        let ps_script = format!("Start-Process '{}'", url.replace("'", "''"));
+        let ps_res = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .spawn();
+
+        if let Ok(_) = ps_res {
+            return Ok(());
+        }
+
+        // 3. Third attempt: explorer.exe
+        log_msg("[AetherFlow] PowerShell failed, falling back to explorer.exe");
+        std::process::Command::new("explorer")
+            .arg(&url)
             .spawn()
             .map_err(|e| e.to_string())?;
+
         Ok(())
     }
     #[cfg(not(windows))]
@@ -1927,9 +1961,14 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
     // Try binding to port 1420 first; if already in use, bind to port 0 for an ephemeral port
     let listener = TcpListener::bind("127.0.0.1:1420")
         .or_else(|_| TcpListener::bind("127.0.0.1:0"))
-        .map_err(|e| format!("Failed to bind OAuth listener: {}", e))?;
+        .map_err(|e| {
+            let err = format!("Failed to bind OAuth listener: {}", e);
+            log_msg(&format!("[AetherFlow] {}", err));
+            err
+        })?;
 
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    log_msg(&format!("[AetherFlow] Started OAuth loopback listener on port {}", port));
     println!("[AetherFlow] Started OAuth loopback listener on port {}", port);
 
     let app_clone = app.clone();
@@ -2047,6 +2086,7 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
                             let path = first_line.split_whitespace().nth(1).unwrap_or("/");
                             if path.contains("code=") || path.contains("error=") {
                                 let full_cb = format!("http://localhost:{}{}", port, path);
+                                log_msg(&format!("[AetherFlow] OAuth callback received via GET: {}", full_cb));
                                 println!("[AetherFlow] OAuth callback received via GET: {}", full_cb);
                                 let _ = app_clone.emit("aura:oauth-callback", full_cb);
                                 focus_main_window(&app_clone);
@@ -2073,6 +2113,7 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
                                         format!("http://localhost:{}/callback{}{}", port, search_val, hash_val)
                                     };
 
+                                    log_msg(&format!("[AetherFlow] OAuth callback received via POST: {}", final_url));
                                     println!("[AetherFlow] OAuth callback received via POST: {}", final_url);
                                     let _ = app_clone.emit("aura:oauth-callback", final_url);
                                     focus_main_window(&app_clone);
