@@ -43,6 +43,15 @@ export default function SettingsPage() {
   const setTaskbarStyle = useStore(s => s.setTaskbarStyle)
   const taskbarBorder = useStore(s => s.taskbarBorder) || false
   const setTaskbarBorder = useStore(s => s.setTaskbarBorder)
+  const translucentTbInstalled = useStore(s => s.translucentTbInstalled)
+  const translucentTbRunning = useStore(s => s.translucentTbRunning)
+  const syncTaskbarState = useStore(s => s.syncTaskbarState)
+  const restartTaskbar = useStore(s => s.restartTaskbar)
+  const [restartingTaskbar, setRestartingTaskbar] = useState(false)
+
+  useEffect(() => {
+    syncTaskbarState?.().catch(() => {})
+  }, [syncTaskbarState])
 
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updateResult, setUpdateResult] = useState(null)
@@ -300,26 +309,49 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.9, lineHeight: 1.6, background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
-            <div style={{ marginBottom: 8 }}>
-              💡 <strong>TranslucentTB Auto-Integration:</strong> When TranslucentTB is installed, AetherFlow automatically launches it, removes borders, and keeps your taskbar 100% crystal-clear glass. You can control styles directly above.
+          <div className="text-xs text-muted" style={{ marginTop: 12, opacity: 0.9, lineHeight: 1.6, background: 'rgba(255,255,255,0.03)', padding: '12px 14px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+              <div className="flex items-center gap-2">
+                <strong>TranslucentTB Engine:</strong>
+                <span className={`badge ${translucentTbInstalled && translucentTbRunning ? 'badge-brand' : translucentTbInstalled ? 'badge-amber' : 'badge-ghost'}`} style={{ fontSize: 10, padding: '2px 8px' }}>
+                  {translucentTbInstalled && translucentTbRunning ? 'Active & Synced' : translucentTbInstalled ? 'Installed (Stopped)' : 'Not Installed'}
+                </span>
+              </div>
+              <button
+                className="btn btn-ghost"
+                disabled={restartingTaskbar}
+                style={{ padding: '4px 10px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-main)', borderRadius: 6 }}
+                onClick={async () => {
+                  setRestartingTaskbar(true)
+                  await restartTaskbar()
+                  setTimeout(() => setRestartingTaskbar(false), 1200)
+                }}
+              >
+                <RefreshCw size={11} className={restartingTaskbar ? 'animate-spin' : ''} />
+                {restartingTaskbar ? 'Recovering...' : 'Fix / Recover Taskbar'}
+              </button>
             </div>
-            <button
-              className="btn btn-ghost"
-              style={{ padding: '5px 12px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-main)', borderRadius: 6 }}
-              onClick={() => {
-                import('@tauri-apps/api/core').then(({ invoke }) => {
-                  invoke('open_url', { url: 'ms-windows-store://pdp/?ProductId=9PF4KZ2VN4W9' })
-                    .catch(() => {
-                      invoke('open_url', { url: 'https://apps.microsoft.com/detail/9pf4kz2vn4w9' }).catch(() => {})
-                    })
-                }).catch(() => {
-                  window.open('https://apps.microsoft.com/detail/9pf4kz2vn4w9', '_blank')
-                })
-              }}
-            >
-              <ExternalLink size={12} /> Get TranslucentTB on Microsoft Store (Free)
-            </button>
+            <div style={{ marginBottom: translucentTbInstalled ? 0 : 8 }}>
+              💡 When TranslucentTB is installed, AetherFlow controls it directly, keeps your taskbar transparent, and prevents XAML conflicts. Switching styles takes effect instantly.
+            </div>
+            {!translucentTbInstalled && (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '5px 12px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--border-main)', borderRadius: 6, marginTop: 6 }}
+                onClick={() => {
+                  import('@tauri-apps/api/core').then(({ invoke }) => {
+                    invoke('open_url', { url: 'ms-windows-store://pdp/?ProductId=9PF4KZ2VN4W9' })
+                      .catch(() => {
+                        invoke('open_url', { url: 'https://apps.microsoft.com/detail/9pf4kz2vn4w9' }).catch(() => {})
+                      })
+                  }).catch(() => {
+                    window.open('https://apps.microsoft.com/detail/9pf4kz2vn4w9', '_blank')
+                  })
+                }}
+              >
+                <ExternalLink size={12} /> Get TranslucentTB on Microsoft Store (Free)
+              </button>
+            )}
           </div>
         </div>
       ),

@@ -183,6 +183,8 @@ export const useStore = create(
       fps: 60,                        // Target FPS cap
       taskbarStyle: 'default',        // 'default' | 'clear' | 'acrylic' | 'blur'
       taskbarBorder: false,           // false = no border / clean glass, true = show top line
+      translucentTbInstalled: true,
+      translucentTbRunning: true,
 
       setFps: (v) => set({ fps: v }),
       setTaskbarStyle: async (style) => {
@@ -191,8 +193,17 @@ export const useStore = create(
         try {
           const { invoke } = await import('@tauri-apps/api/core')
           await invoke('set_taskbar_style', { style, showBorder: border })
-        } catch {
-          // ignore outside tauri
+          const res = await invoke('get_taskbar_style')
+          if (res) {
+            set({
+              taskbarStyle: res.style || style,
+              taskbarBorder: res.showBorder ?? border,
+              translucentTbInstalled: res.translucentTbInstalled ?? true,
+              translucentTbRunning: res.translucentTbRunning ?? true,
+            })
+          }
+        } catch (e) {
+          console.warn('[Store] set_taskbar_style error:', e)
         }
       },
       setTaskbarBorder: async (border) => {
@@ -201,8 +212,52 @@ export const useStore = create(
         try {
           const { invoke } = await import('@tauri-apps/api/core')
           await invoke('set_taskbar_style', { style, showBorder: border })
+          const res = await invoke('get_taskbar_style')
+          if (res) {
+            set({
+              taskbarStyle: res.style || style,
+              taskbarBorder: res.showBorder ?? border,
+              translucentTbInstalled: res.translucentTbInstalled ?? true,
+              translucentTbRunning: res.translucentTbRunning ?? true,
+            })
+          }
+        } catch (e) {
+          console.warn('[Store] set_taskbar_border error:', e)
+        }
+      },
+      syncTaskbarState: async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const res = await invoke('get_taskbar_style')
+          if (res) {
+            set({
+              taskbarStyle: res.style || 'default',
+              taskbarBorder: res.showBorder ?? false,
+              translucentTbInstalled: res.translucentTbInstalled ?? true,
+              translucentTbRunning: res.translucentTbRunning ?? true,
+            })
+          }
         } catch {
           // ignore outside tauri
+        }
+      },
+      restartTaskbar: async () => {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          await invoke('restart_taskbar_explorer')
+          // Allow Explorer and TranslucentTB to initialize their windows
+          await new Promise(r => setTimeout(r, 3500))
+          const res = await invoke('get_taskbar_style')
+          if (res) {
+            set({
+              taskbarStyle: res.style || 'default',
+              taskbarBorder: res.showBorder ?? false,
+              translucentTbInstalled: res.translucentTbInstalled ?? true,
+              translucentTbRunning: res.translucentTbRunning ?? true,
+            })
+          }
+        } catch (e) {
+          console.warn('[Store] restartTaskbar error:', e)
         }
       },
       toggleAutoStart: () => set((s) => ({ autoStart: !s.autoStart })),

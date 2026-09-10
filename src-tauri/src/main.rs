@@ -1782,6 +1782,24 @@ fn set_taskbar_style(style: String, show_border: Option<bool>) -> Result<(), Str
     taskbar::apply_taskbar_style(&style, border)
 }
 
+/// Returns the current Windows taskbar styling and TranslucentTB integration status
+#[tauri::command]
+fn get_taskbar_style() -> serde_json::Value {
+    let (style, show_border, installed, running) = taskbar::get_current_taskbar_state();
+    serde_json::json!({
+        "style": style,
+        "showBorder": show_border,
+        "translucentTbInstalled": installed,
+        "translucentTbRunning": running,
+    })
+}
+
+/// Restarts Windows Explorer and TranslucentTB to cleanly recover from any corrupted taskbar state
+#[tauri::command]
+fn restart_taskbar_explorer() -> Result<(), String> {
+    taskbar::restart_explorer_and_taskbar()
+}
+
 /// Safely opens external URLs or Windows protocol links in the default application
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -2206,6 +2224,8 @@ fn main() {
             load_custom_wallpapers,
             set_system_wallpaper,
             set_taskbar_style,
+            get_taskbar_style,
+            restart_taskbar_explorer,
             open_url,
             get_detailed_memory_usage,
         ])

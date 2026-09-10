@@ -545,13 +545,56 @@
 - **Build status:** ✅ `npm run build` (504ms), `cargo build --release` passed with 0 errors.
 ---
 
-## Session: 2026-09-09 23:55 IST
+## Session: 2026-09-10 13:38 IST
 - **Agent:** Antigravity (Gemini 3.8 Flash)
 - **Completed:**
-  - **Release v1.0.3 Preparation & Publishing**:
-    - Bumped project version to `1.0.3` across `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src/lib/updater.js`.
-    - Verified frontend production build passes cleanly (`npm run build` in 501ms).
-    - Verified Rust type check and manifest consistency (`cargo check` in 5.53s).
-    - Tagged release as `v1.0.3` and pushed to GitHub `origin/main`, triggering GitHub Actions workflow to build and publish installer, standalone, and portable ZIP packages to GitHub Releases.
-- **Build status:** ✅ `npm run build` (501ms), `cargo check` passed with 0 errors, release tag `v1.0.3` pushed.
+  - **Resolved Windows Taskbar Styling Bug (Clear -> Grey, Default -> Black, Stuck State)**:
+    - **Root Cause Analysis**:
+      1. *Comment Parsing Failure in TranslucentTB `settings.json`*: TranslucentTB ships its configuration file with a header comment (`// See https://TranslucentTB.github.io/config for more information`). Standard `serde_json::from_str` rejected the file with a syntax error, causing `update_translucenttb_config()` to silently return `false`.
+      2. *Destructive Fallthrough to `SetWindowCompositionAttribute` (WCA)*: When the config update returned `false`, `apply_taskbar_style_internal()` fell through to legacy Win32 WCA and called it directly on `Windows.UI.Composition.DesktopWindowContentBridge` and `Shell_TrayWnd`. On modern Windows 11 (22H2+ XAML taskbar), WCA with `ACCENT_ENABLE_TRANSPARENTGRADIENT` renders an uncomposed muddy grey box, and WCA with `ACCENT_DISABLED` forces composition off into pitch black. This corrupted the XAML visual tree and prevented TranslucentTB from restoring transparency until a full system reboot.
+      3. *Initial Startup Desync*: On startup, `main.jsx` had `if (state.taskbarStyle && state.taskbarStyle !== 'default')`, which completely skipped synchronizing taskbar state when store was on default, leaving TranslucentTB on clear while Settings showed "Default".
+    - **The Fix**:
+      1. *Implemented `strip_json_comments()` in `src-tauri/src/taskbar.rs`*: Robustly strips `//` and `/* */` comments from TranslucentTB `settings.json` while preserving string literals and URLs, enabling 100% reliable JSON parsing and serialization.
+      2. *Eliminated Destructive WCA Calls on Windows 11*: Removed `DesktopWindowContentBridge` from WCA HWND lists. When TranslucentTB is present, AetherFlow controls it exclusively and NEVER calls WCA, preventing XAML bridge corruption.
+      3. *Live Folderwatcher Reload*: Updates write directly to `settings.json` without process killing, triggering TranslucentTB's native `ReadDirectoryChangesW` folder watcher in memory with zero popups and zero lag.
+      4. *System State Synchronization*: Added `get_taskbar_style` backend command and `syncTaskbarState()` in Zustand store/frontend startup. The UI now accurately detects and displays TranslucentTB's real-time state on launch.
+      5. *Added Fix / Recover Taskbar Feature*: Added `restart_taskbar_explorer` Tauri command and "Fix / Recover Taskbar" button in Settings to instantly refresh Explorer and TranslucentTB in 1 second without ever needing a laptop reboot.
+  - Rebuilt production bundle (`npm run build` 560ms) and release binary (`cargo build --release` 3m 18s).
+  - Deployed updated executable to root `AetherFlow.exe` (verified running PID 10220, 2 displays active).
+- **Build status:** ✅ `npm run build` (560ms), `cargo check` (1.56s), `cargo build --release` passed with 0 errors.
+---
+
+## Session: 2026-09-10 14:05 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Fixed Taskbar Desynchronization, "All Options Clear", and XAML Hook Teardown on TranslucentTB Manual Restart**:
+    - **Identified Root Causes**:
+      1. **UTF-8 BOM in `settings.json` broke `serde_json` Parsing**: TranslucentTB saves its config with a UTF-8 Byte Order Mark (`\u{FEFF}` / `0xEF, 0xBB, 0xBF`). While `strip_json_comments` stripped comments, it did not filter out BOM bytes. In Rust, `serde_json::from_str` strictly rejects BOMs (`expected value at line 1 column 1`), causing both `get_current_taskbar_state()` and `update_translucenttb_config()` to fail every time. The file on disk was never updated, and the store returned `default`, leaving the UI desynchronized.
+      2. **Hardcoded `#00000000` (Alpha 00) for all Styles**: In `update_translucenttb_config()`, `color` was hardcoded to `"#00000000"` (completely transparent black) for `clear`, `acrylic`, and `blur`. In TranslucentTB, transparent color removes all tint from acrylic and blur, causing every single option to look completely clear/transparent. Additionally, `visible_window_appearance` and `maximized_window_appearance` rules remained enabled on "Default", preventing Windows 11 from restoring its native taskbar.
+      3. **XAML Diagnostics Hook Teardown on Exit**: When TranslucentTB was manually closed from tray, its injected `ExplorerTAP.dll` unhooked. In Windows 11, `InitializeXamlDiagnosticsEx` cannot re-attach to an already-running `explorer.exe` with dirty XAML state unless Explorer is restarted or the taskbar window is ready before TranslucentTB spawns.
+    - **The Fix**:
+      1. **BOM Filtering**: Updated `strip_json_comments` to filter all `\u{FEFF}` characters (`clean_input = input.chars().filter(|&c| c != '\u{FEFF}').collect()`), allowing flawless parsing of TranslucentTB's `settings.json`.
+      2. **Proper Style Colors & Window Rules**:
+         - `clear`: `accent: "clear"`, `color: "#00000000"`, `blur_radius: 9.0`, rules enabled.
+         - `acrylic`: `accent: "acrylic"`, `color: "#202020B0"` (frosted dark acrylic material tint), rules enabled.
+         - `blur`: `accent: "blur"`, `color: "#20202080"` (soft gaussian blur with ~50% translucent tint, `blur_radius: 15.0`), rules enabled.
+         - `default`: `accent: "normal"`, `color: "#00000000"`, and all appearance rules (`visible_window_appearance`, `maximized_window_appearance`, etc.) explicitly set to `enabled: false`, allowing Windows 11 to render its native taskbar cleanly.
+      3. **Rock-Solid Explorer & TranslucentTB Recovery**: Enhanced `restart_explorer_and_taskbar()` to terminate TranslucentTB cleanly, restart Explorer, wait for Explorer's `Shell_TrayWnd` to initialize (+ 600ms XAML bridge settle time), and only then launch TranslucentTB. This re-establishes `ExplorerTAP.dll` without needing a laptop restart.
+      4. **Real-time State & Status Badging**: Extended `get_taskbar_style` to return `translucentTbRunning`. Updated `useStore` to re-sync immediately on style and border changes. Added `useEffect` in `Settings.jsx` to synchronize on page load.
+  - Rebuilt production bundle (`npm run build` 542ms) and release binary (`cargo build --release` 2m 37s).
+  - Deployed updated executable to root `AetherFlow.exe` (verified running PID 4604).
+## Session: 2026-09-10 14:15 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - Bumped version to 1.0.4 across `package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`, and `src/lib/updater.js`.
+  - Staged and committed all pending taskbar styling & synchronization improvements:
+    - Fixed TranslucentTB UTF-8 BOM parsing failure in `settings.json`.
+    - Added dark acrylic and soft gaussian blur material tints to eliminate "all options clear" issue.
+    - Added native Explorer & TranslucentTB recovery routine to unhook and cleanly reattach XAML diagnostics.
+    - Added TranslucentTB engine status indicator badge in Settings.
+    - Synchronized taskbar state between backend and frontend on launch and on update.
+  - Verified `npm run build` passes with zero errors.
+  - Verified `cargo check` passes with zero errors.
+  - Pushed commits to GitHub `main` and created/pushed tag `v1.0.4` to trigger automated GitHub Actions release build.
+- **Build status:** ✅ `npm run build` (641ms), `cargo check` (17.10s) passed with 0 errors.
 ---

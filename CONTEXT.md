@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-09 23:55 IST — Release v1.0.3: Bumped version across all packages, eliminated TranslucentTB restart conflicts via live folderwatcher reload, disabled Windows accent tint override, added Taskbar Top Border toggle, and triggered GitHub Release pipeline.
+2026-09-10 14:15 IST — Released v1.0.4: Crystal-clear borderless taskbar transparency, live TranslucentTB in-memory reload without popups, BOM stripping, dark acrylic/blur tints, Explorer/TranslucentTB recovery, and status indicators.
 
 ---
 
@@ -164,5 +164,9 @@ npm run tauri:dev
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Restored original top hero WallpaperPlayer preview banner on Home.jsx for selected/active wallpaper with rename modal & action buttons |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Fixed taskbar settings deadlock: separated mutex locking from execution, eliminated EnumWindows hangs, added DesktopWindowContentBridge bridge targets, and added SWP_FRAMECHANGED |
 | 2026-09-09 | Antigravity (Gemini 3.8 Flash) | Added native open_url backend command with Windows protocol handler support, fixing TranslucentTB Microsoft Store and browser redirection |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Fixed taskbar styling bug (Clear -> grey, Default -> black): added strip_json_comments() for TranslucentTB settings.json, eliminated destructive Win11 DesktopWindowContentBridge WCA calls, added startup system state sync, and added 1-click Fix / Recover Taskbar button |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Fixed taskbar desync, "all options clear", and XAML hook recovery: stripped UTF-8 BOM, added acrylic/blur dark tints, disabled window rules on Default, and perfected Explorer & TranslucentTB restart sequence |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Bumped version to 1.0.4 across all packages, updated updater.js, committed and pushed to GitHub with tag v1.0.4 triggering automated release workflow |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
+

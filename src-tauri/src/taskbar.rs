@@ -1,7 +1,7 @@
 //! Taskbar Styling Module
 //! Uses native Win32 SetWindowCompositionAttribute API to style Windows 10 & 11 taskbars
 //! Supports: Default, Clear (Transparent), Acrylic (Frosted Glass), and Blur.
-//! Seamlessly yields control to TranslucentTB when detected to prevent XAML brush conflicts.
+//! Seamlessly integrates with TranslucentTB on Windows 11 to prevent XAML brush conflicts.
 
 use std::ffi::c_void;
 use std::sync::Mutex;
@@ -42,13 +42,59 @@ const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
 
 static CURRENT_TASKBAR_STYLE: Mutex<Option<(String, bool)>> = Mutex::new(None);
 
+/// Strips single-line (//) and multi-line (/* */) comments as well as any UTF-8 BOM from JSON text
+/// while preserving quoted string literals and URLs.
+pub fn strip_json_comments(input: &str) -> String {
+    let clean_input: String = input.chars().filter(|&c| c != '\u{FEFF}').collect();
+    let mut out = String::with_capacity(clean_input.len());
+    let mut chars = clean_input.chars().peekable();
+    let mut in_string = false;
+    let mut escape = false;
+
+    while let Some(c) = chars.next() {
+        if in_string {
+            out.push(c);
+            if escape {
+                escape = false;
+            } else if c == '\\' {
+                escape = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+        } else {
+            if c == '"' {
+                in_string = true;
+                out.push(c);
+            } else if c == '/' && chars.peek() == Some(&'/') {
+                chars.next();
+                for next_c in chars.by_ref() {
+                    if next_c == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+            } else if c == '/' && chars.peek() == Some(&'*') {
+                chars.next();
+                while let Some(next_c) = chars.next() {
+                    if next_c == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+    }
+    out
+}
+
 /// Checks if TranslucentTB is active in background to avoid overriding its XAML hooks
 #[cfg(windows)]
 pub fn is_translucenttb_running() -> bool {
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
     };
-
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 
     unsafe {
@@ -85,134 +131,141 @@ pub fn is_translucenttb_running() -> bool {
     false
 }
 
-static TRANSLUCENTTB_AUTOLAUNCH_ATTEMPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Automatically starts TranslucentTB in the background if installed and not currently running (runs at most once per session)
-#[cfg(windows)]
-pub fn ensure_translucenttb_running() -> bool {
-    if is_translucenttb_running() {
-        return true;
-    }
-
-    if TRANSLUCENTTB_AUTOLAUNCH_ATTEMPTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        return false;
-    }
-
-    let local_app_data = match std::env::var("LOCALAPPDATA") {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
-    let packages_dir = std::path::PathBuf::from(local_app_data).join("Packages");
-    if let Ok(entries) = std::fs::read_dir(packages_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.contains("TranslucentTB") {
-                let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", name);
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-                let _ = std::process::Command::new("powershell")
-                    .args([
-                        "-WindowStyle",
-                        "Hidden",
-                        "-Command",
-                        &format!("Start-Process '{}'", app_launch_target),
-                    ])
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .spawn();
-
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                return is_translucenttb_running();
-            }
-        }
-    }
-    false
-}
-
-#[cfg(not(windows))]
-pub fn ensure_translucenttb_running() -> bool {
-    false
-}
-
-#[cfg(windows)]
-fn update_translucenttb_config(style: &str, show_border: bool) -> bool {
-    let local_app_data = match std::env::var("LOCALAPPDATA") {
-        Ok(v) => v,
-        Err(_) => return false,
-    };
+/// Finds the TranslucentTB settings file path and shell launch target
+pub fn find_translucenttb_info() -> Option<(std::path::PathBuf, String)> {
+    let local_app_data = std::env::var("LOCALAPPDATA").ok()?;
     let packages_dir = std::path::PathBuf::from(local_app_data).join("Packages");
     if let Ok(entries) = std::fs::read_dir(packages_dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.contains("TranslucentTB") {
                 let settings_file = entry.path().join("RoamingState").join("settings.json");
-                if settings_file.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&settings_file) {
-                        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            let accent = match style.to_lowercase().as_str() {
-                                "clear" | "transparent" => "clear",
-                                "acrylic" => "acrylic",
-                                "blur" => "blur",
-                                _ => "normal",
-                            };
-
-                            let current_accent = json.get("desktop_appearance")
-                                .and_then(|d| d.get("accent"))
-                                .and_then(|a| a.as_str());
-                            let current_show_line = json.get("desktop_appearance")
-                                .and_then(|d| d.get("show_line"))
-                                .and_then(|s| s.as_bool());
-
-                            if current_accent == Some(accent) && current_show_line == Some(show_border) {
-                                return true;
-                            }
-
-                            let update_entry = |obj: &mut serde_json::Value, enabled: bool| {
-                                obj["accent"] = serde_json::Value::String(accent.to_string());
-                                obj["color"] = serde_json::Value::String("#00000000".to_string());
-                                obj["show_line"] = serde_json::Value::Bool(show_border);
-                                obj["show_peek"] = serde_json::Value::Bool(false);
-                                if enabled {
-                                    obj["enabled"] = serde_json::Value::Bool(true);
-                                }
-                            };
-
-                            if let Some(desktop) = json.get_mut("desktop_appearance") {
-                                update_entry(desktop, false);
-                            }
-                            if let Some(visible) = json.get_mut("visible_window_appearance") {
-                                update_entry(visible, true);
-                            }
-                            if let Some(maximized) = json.get_mut("maximized_window_appearance") {
-                                update_entry(maximized, true);
-                            }
-                            if let Some(start) = json.get_mut("start_opened_appearance") {
-                                update_entry(start, false);
-                            }
-                            if let Some(search) = json.get_mut("search_opened_appearance") {
-                                update_entry(search, false);
-                            }
-                            if let Some(taskview) = json.get_mut("task_view_opened_appearance") {
-                                update_entry(taskview, false);
-                            }
-                            if let Some(battery) = json.get_mut("battery_saver_appearance") {
-                                update_entry(battery, false);
-                            }
-
-                            if let Ok(serialized) = serde_json::to_string_pretty(&json) {
-                                let _ = std::fs::write(&settings_file, serialized);
-                            }
-
-                            // TranslucentTB folderwatcher detects the settings.json file modification via ReadDirectoryChangesW
-                            // and reloads its configuration live in memory without any process killing or restarting.
-                            return true;
-                        }
-                    }
-                }
+                let app_launch_target = format!("shell:AppsFolder\\{}!TranslucentTB", name);
+                return Some((settings_file, app_launch_target));
             }
         }
     }
-    false
+    None
+}
+
+/// Gracefully restarts TranslucentTB in the background so it immediately applies settings.json
+#[cfg(windows)]
+pub fn restart_translucenttb(app_launch_target: &str) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // Gracefully terminate existing TranslucentTB if running
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/IM", "TranslucentTB.exe"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    // Relaunch TranslucentTB silently
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            &format!("Start-Process '{}'", app_launch_target),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+
+    std::thread::sleep(std::time::Duration::from_millis(350));
+}
+
+#[cfg(not(windows))]
+pub fn restart_translucenttb(_app_launch_target: &str) {}
+
+/// Updates TranslucentTB configuration file live; TranslucentTB's folder watcher detects
+/// changes via ReadDirectoryChangesW and reloads live in memory with zero process kills.
+#[cfg(windows)]
+fn update_translucenttb_config(style: &str, show_border: bool) -> Result<(), String> {
+    let (settings_file, app_launch_target) = match find_translucenttb_info() {
+        Some(info) => info,
+        None => return Err("TranslucentTB package not found".into()),
+    };
+
+    if !settings_file.exists() {
+        return Err("TranslucentTB settings.json not found".into());
+    }
+
+    let content = std::fs::read_to_string(&settings_file)
+        .map_err(|e| format!("Failed to read TranslucentTB settings.json: {}", e))?;
+
+    let clean = strip_json_comments(&content);
+    let mut json = serde_json::from_str::<serde_json::Value>(&clean)
+        .map_err(|e| format!("Failed to parse TranslucentTB settings.json: {}", e))?;
+
+    let (accent, color, blur_radius, is_default) = match style.to_lowercase().as_str() {
+        "clear" | "transparent" => ("clear", "#00000000", 9.0, false),
+        "acrylic" => ("acrylic", "#202020B0", 9.0, false),
+        "blur" => ("blur", "#20202080", 15.0, false),
+        _ => ("normal", "#00000000", 9.0, true),
+    };
+
+    let update_entry = |obj: &mut serde_json::Value, can_enable: bool| {
+        obj["accent"] = serde_json::Value::String(accent.to_string());
+        obj["color"] = serde_json::Value::String(color.to_string());
+        obj["show_line"] = serde_json::Value::Bool(if is_default { false } else { show_border });
+        obj["show_peek"] = serde_json::Value::Bool(false);
+        obj["blur_radius"] = serde_json::json!(blur_radius);
+        if can_enable {
+            obj["enabled"] = serde_json::Value::Bool(!is_default);
+        }
+    };
+
+    if let Some(desktop) = json.get_mut("desktop_appearance") {
+        update_entry(desktop, false);
+    }
+    if let Some(visible) = json.get_mut("visible_window_appearance") {
+        update_entry(visible, true);
+    }
+    if let Some(maximized) = json.get_mut("maximized_window_appearance") {
+        update_entry(maximized, true);
+    }
+    if let Some(start) = json.get_mut("start_opened_appearance") {
+        update_entry(start, true);
+    }
+    if let Some(search) = json.get_mut("search_opened_appearance") {
+        update_entry(search, true);
+    }
+    if let Some(taskview) = json.get_mut("task_view_opened_appearance") {
+        update_entry(taskview, true);
+    }
+    if let Some(battery) = json.get_mut("battery_saver_appearance") {
+        update_entry(battery, true);
+    }
+
+    let serialized = serde_json::to_string_pretty(&json)
+        .map_err(|e| format!("Failed to serialize TranslucentTB settings: {}", e))?;
+
+    std::fs::write(&settings_file, serialized)
+        .map_err(|e| format!("Failed to write TranslucentTB settings.json: {}", e))?;
+
+    // If TranslucentTB is installed but not running yet, auto-start it
+    if !is_translucenttb_running() {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = std::process::Command::new("powershell")
+            .args([
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                &format!("Start-Process '{}'", app_launch_target),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn update_translucenttb_config(_style: &str, _show_border: bool) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -237,6 +290,33 @@ fn disable_windows_accent_tint_on_taskbar() {
 }
 
 #[cfg(windows)]
+fn is_windows_11_or_newer() -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    if let Ok(out) = std::process::Command::new("reg")
+        .args(["query", r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "/v", "CurrentBuild"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        let text = String::from_utf8_lossy(&out.stdout);
+        for line in text.lines() {
+            if line.contains("CurrentBuild") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(build_str) = parts.last() {
+                    if let Ok(build) = build_str.parse::<u32>() {
+                        return build >= 22000;
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Discovers the primary and secondary taskbar HWNDs.
+/// CRITICAL: NEVER includes DesktopWindowContentBridge as calling SetWindowCompositionAttribute
+/// on the XAML bridge ruins composition and paints it opaque grey/black!
+#[cfg(windows)]
 fn get_all_taskbar_hwnds() -> Vec<HWND> {
     let mut hwnds = Vec::new();
     unsafe {
@@ -245,17 +325,6 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
         let primary = FindWindowW(primary_class.as_ptr(), std::ptr::null());
         if !primary.is_null() {
             hwnds.push(primary);
-
-            // Windows 11 XAML taskbar content bridge
-            let bridge_class: Vec<u16> = "Windows.UI.Composition.DesktopWindowContentBridge\0".encode_utf16().collect();
-            let mut bridge = std::ptr::null_mut();
-            loop {
-                bridge = FindWindowExW(primary, bridge, bridge_class.as_ptr(), std::ptr::null());
-                if bridge.is_null() {
-                    break;
-                }
-                hwnds.push(bridge);
-            }
         }
 
         // Secondary Taskbars on Multi-Monitor Setups (Shell_SecondaryTrayWnd)
@@ -267,16 +336,6 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
                 break;
             }
             hwnds.push(sec);
-
-            let bridge_class: Vec<u16> = "Windows.UI.Composition.DesktopWindowContentBridge\0".encode_utf16().collect();
-            let mut bridge = std::ptr::null_mut();
-            loop {
-                bridge = FindWindowExW(sec, bridge, bridge_class.as_ptr(), std::ptr::null());
-                if bridge.is_null() {
-                    break;
-                }
-                hwnds.push(bridge);
-            }
         }
     }
     hwnds
@@ -285,19 +344,19 @@ fn get_all_taskbar_hwnds() -> Vec<HWND> {
 fn apply_taskbar_style_internal(style: &str, show_border: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
-        // Disable Windows accent color on taskbar so Windows doesn't tint it red/acrylic
-        disable_windows_accent_tint_on_taskbar();
-
-        // Auto-launch TranslucentTB if installed but not running
-        let _ = ensure_translucenttb_running();
-
-        // When TranslucentTB is running, control it directly via its config and avoid conflicting WCA calls
-        if is_translucenttb_running() {
-            if update_translucenttb_config(style, show_border) {
-                return Ok(());
-            }
+        // 1. If TranslucentTB is installed, control it exclusively to avoid WCA conflicts
+        if find_translucenttb_info().is_some() {
+            disable_windows_accent_tint_on_taskbar();
+            return update_translucenttb_config(style, show_border);
         }
 
+        // 2. If TranslucentTB is NOT installed on Windows 11:
+        // Win11 XAML taskbars do not support direct WCA (it renders grey or black).
+        if is_windows_11_or_newer() {
+            return Err("Windows 11 requires TranslucentTB for taskbar styling. Please install TranslucentTB from the Microsoft Store.".into());
+        }
+
+        // 3. Fallback for Windows 10 only:
         let (state, gradient, base_flags) = match style.to_lowercase().as_str() {
             "clear" | "transparent" => (ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x00000000, 0),
             "acrylic" => (ACCENT_ENABLE_ACRYLICBLURBEHIND, 0x66101010, 2),
@@ -334,7 +393,6 @@ fn apply_taskbar_style_internal(style: &str, show_border: bool) -> Result<(), St
             let hwnds = get_all_taskbar_hwnds();
             for hwnd in hwnds {
                 set_wca(hwnd, &mut data);
-                // Force DWM frame update so the new accent policy takes effect immediately
                 SetWindowPos(
                     hwnd,
                     std::ptr::null_mut(),
@@ -353,7 +411,6 @@ fn apply_taskbar_style_internal(style: &str, show_border: bool) -> Result<(), St
 }
 
 pub fn apply_taskbar_style(style: &str, show_border: bool) -> Result<(), String> {
-    // Record requested style without holding the lock across execution
     {
         if let Ok(mut lock) = CURRENT_TASKBAR_STYLE.lock() {
             *lock = Some((style.to_string(), show_border));
@@ -363,24 +420,132 @@ pub fn apply_taskbar_style(style: &str, show_border: bool) -> Result<(), String>
     apply_taskbar_style_internal(style, show_border)
 }
 
+/// Returns the currently active taskbar style and whether TranslucentTB is installed & running.
+/// If no style was set in-memory yet, reads TranslucentTB's settings.json so initial state is 100% accurate.
+pub fn get_current_taskbar_state() -> (String, bool, bool, bool) {
+    let ttb_installed = find_translucenttb_info().is_some();
+    let ttb_running = is_translucenttb_running();
+
+    // If TranslucentTB is installed, read its settings.json to get actual current state
+    if let Some((settings_file, _)) = find_translucenttb_info() {
+        if let Ok(content) = std::fs::read_to_string(&settings_file) {
+            let clean = strip_json_comments(&content);
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&clean) {
+                let accent = json.get("desktop_appearance")
+                    .and_then(|d| d.get("accent"))
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("normal");
+                let show_border = json.get("desktop_appearance")
+                    .and_then(|d| d.get("show_line"))
+                    .and_then(|s| s.as_bool())
+                    .unwrap_or(false);
+
+                let style = match accent {
+                    "clear" => "clear",
+                    "acrylic" => "acrylic",
+                    "blur" => "blur",
+                    _ => "default",
+                };
+                return (style.to_string(), show_border, ttb_installed, ttb_running);
+            }
+        }
+    }
+
+    if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
+        if let Some(ref s) = *lock {
+            return (s.0.clone(), s.1, ttb_installed, ttb_running);
+        }
+    }
+
+    ("default".to_string(), false, ttb_installed, ttb_running)
+}
+
+/// Restarts Explorer and TranslucentTB in proper order to cleanly recover from any corrupted XAML state
+pub fn restart_explorer_and_taskbar() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        // 1. Gracefully terminate existing TranslucentTB first so it unhooks cleanly
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "TranslucentTB.exe"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        // 2. Kill Explorer to completely reset any stuck XAML Diagnostics or WCA hooks
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/IM", "explorer.exe"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        // 3. Restart Explorer
+        let _ = std::process::Command::new("explorer.exe")
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+
+        // 4. Wait for Explorer to recreate Shell_TrayWnd before starting TranslucentTB
+        for _ in 0..25 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let primary_class: Vec<u16> = "Shell_TrayWnd\0".encode_utf16().collect();
+            let primary = unsafe { FindWindowW(primary_class.as_ptr(), std::ptr::null()) };
+            if !primary.is_null() {
+                // Allow Explorer extra time for XAML DesktopWindowContentBridge to settle
+                std::thread::sleep(std::time::Duration::from_millis(600));
+                break;
+            }
+        }
+
+        // 5. Re-launch TranslucentTB if installed
+        if let Some((_, launch_target)) = find_translucenttb_info() {
+            let _ = std::process::Command::new("powershell")
+                .args([
+                    "-WindowStyle",
+                    "Hidden",
+                    "-Command",
+                    &format!("Start-Process '{}'", launch_target),
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
+
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(())
+    }
+}
+
 pub fn maintain_taskbar_style() {
     #[cfg(windows)]
-    if is_translucenttb_running() {
+    if find_translucenttb_info().is_some() {
+        // When TranslucentTB is installed, it maintains taskbar styling natively
         return;
     }
 
-    // Clone style tuple and drop lock immediately to prevent deadlocks
-    let style_opt = {
-        if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
-            lock.clone()
-        } else {
-            None
+    #[cfg(windows)]
+    {
+        if is_windows_11_or_newer() {
+            return;
         }
-    };
 
-    if let Some((style, border)) = style_opt {
-        if style != "default" && !style.is_empty() {
-            let _ = apply_taskbar_style_internal(&style, border);
+        let style_opt = {
+            if let Ok(lock) = CURRENT_TASKBAR_STYLE.lock() {
+                lock.clone()
+            } else {
+                None
+            }
+        };
+
+        if let Some((style, border)) = style_opt {
+            if style != "default" && !style.is_empty() {
+                let _ = apply_taskbar_style_internal(&style, border);
+            }
         }
     }
 }

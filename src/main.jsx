@@ -55,10 +55,8 @@ if (state.themes && state.themes[savedTheme]) {
   })
 }
 
-// Restore saved taskbar styling
-if (state.taskbarStyle && state.taskbarStyle !== 'default') {
-  tauriInvoke('set_taskbar_style', { style: state.taskbarStyle, showBorder: state.taskbarBorder ?? false }).catch(() => {})
-}
+// Synchronize taskbar styling with system state
+state.syncTaskbarState?.().catch(() => {})
 
 const root = ReactDOM.createRoot(document.getElementById('root'))
 root.render(
