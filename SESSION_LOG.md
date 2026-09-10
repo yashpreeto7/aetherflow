@@ -932,4 +932,18 @@
 - **Build status:** ✅ `npm run build` (510ms), `cargo check` (2.39s), `cargo build --release` (2m 25s) passed with 0 errors.
 ---
 
+## Session: 2026-09-10 20:47 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Diagnosed and Resolved "No Browser Opening" Bug**:
+    - **Root Cause**: `rundll32 url.dll,FileProtocolHandler` was previously spawned with `CREATE_NO_WINDOW (0x08000000)` which silently suppressed the desktop GUI window station association on Windows 11, preventing the browser window from appearing.
+    - **Fix 1 (`src-tauri/Cargo.toml`)**: Added `Win32_UI_Shell` to `windows-sys` dependencies.
+    - **Fix 2 (`src-tauri/src/main.rs`)**: Replaced `rundll32` with direct Win32 `ShellExecuteW(NULL, "open", wide_url, NULL, NULL, SW_SHOWNORMAL)`. Added tiered fallback to unsuppressed PowerShell `Start-Process '<url>'` and `explorer <url>`. Added debug logging via `log_msg` for execution tracking.
+    - **Fix 3 (`src/lib/supabase.js`)**: Added explicit authorization URL logging, error propagation, and browser-mode `window.location.href` redirection.
+  - Rebuilt production frontend (`npm run build` in 564ms) and release binary (`cargo build --release` in 2m 02s).
+  - Deployed updated `AetherFlow.exe` (7.39MB) to workspace root and verified live process (PID 28248).
+- **Build status:** ✅ `npm run build` (564ms), `cargo check` (2.49s), `cargo build --release` (2m 02s) passed with 0 errors.
+---
+
+
 

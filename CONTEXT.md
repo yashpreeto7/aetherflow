@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 20:35 IST — Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord login: replaced blank WebView2 popup with `start_oauth_listener` loopback HTTP server in `src-tauri/src/main.rs`, fixed `open_url` Windows shell URL splitting on ampersands using `rundll32 url.dll,FileProtocolHandler`, removed Discord auth provider from `AuthModal`, upgraded callback parsing in `App.jsx`, built frontend (510ms) and release binary (2m 25s), and verified live `AetherFlow.exe`.
+2026-09-10 20:47 IST — Fixed browser URL launching: replaced suppressed rundll32 with direct Win32 `ShellExecuteW` and unsuppressed PowerShell fallback, added `Win32_UI_Shell` to `Cargo.toml`, rebuilt frontend (564ms) and release binary (2m 02s), and verified live `AetherFlow.exe` process (PID 28248).
 
 ---
 
