@@ -972,3 +972,34 @@
   - Deployed updated `AetherFlow.exe` (7.39MB) to workspace root and verified live process (PID 4724).
 - **Build status:** ✅ `npm run build` (575ms), `cargo check` (1.60s), `cargo build --release` (2m 04s) passed with 0 errors.
 ---
+
+## Session: 2026-09-10 21:20 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Diagnosed and Resolved "Still No Login" Issue**:
+    - **Root Cause**:
+      1. In `src-tauri/src/main.rs`, `start_oauth_listener` executed a single `stream.read(&mut buf)` when receiving HTTP requests. In Windows loopback TCP, Chromium (Chrome/Brave/Edge) sends HTTP request headers in the first packet and the JSON body in a subsequent segment. The server read only the headers, found an empty body, failed `serde_json::from_str::<serde_json::Value>("")` silently with no error logging, returned `HTTP/1.1 200 OK` to the browser, and broke the listener loop. The browser displayed "Signed In Successfully!" because of the 200 OK, but no token event was ever emitted to the app.
+      2. In `start_oauth_listener`, subsequent clicks would fail to bind port 1420 and bind to an ephemeral port, which did not match the whitelisted Supabase redirect URL `http://localhost:1420/callback`.
+      3. In `src/components/AuthModal/index.jsx`, there was no manual fallback for users who already had the signed-in URL or token in their browser tab.
+      4. In `src/App.jsx`, `supabase.auth.setSession` could fail if `refresh_token` was missing or rejected without falling back to direct token validation via `supabase.auth.getUser`.
+    - **Fix 1 (`src-tauri/src/main.rs`)**:
+      - Implemented full-request TCP reader loop tracking `\r\n\r\n` and `Content-Length`, guaranteeing the complete HTTP body is read regardless of TCP packet fragmentation.
+      - Added dual GET and POST extraction: `html_page` sends both a GET request with `/token?url=` (immune to packet fragmentation) and a POST request.
+      - Added active listener tracking via `ACTIVE_OAUTH_PORT` to reuse port 1420 across modal interactions instead of failing or binding random ports.
+      - Added zero-dependency `urlencoding_decode` helper for query string parsing.
+      - Emitted callback event to both window-specific (`main_win.emit` and `main_win.emit_to`) and global app-level (`app_clone.emit`) listeners.
+      - Added Win32 `SW_RESTORE` and `SetForegroundWindow` in `focus_main_window` to bring AetherFlow to the front when sign-in completes.
+      - Added "Copy Sign-in Link" button directly on the browser callback page.
+      - Extended timeout from 180s to 600s (10 minutes).
+    - **Fix 2 (`src/lib/supabase.js`)**:
+      - Implemented and exported `processOAuthCallback(rawInput)`: handles full URLs, hash fragments, query strings, authorization codes, and raw JWT access tokens.
+      - Supports both `supabase.auth.setSession` (when refresh token is present) and automatic fallback to `supabase.auth.getUser(accessToken)`.
+    - **Fix 3 (`src/App.jsx`)**:
+      - Upgraded `aura:oauth-callback` listener to use `processOAuthCallback` and listen to both global and window-specific events.
+    - **Fix 4 (`src/components/AuthModal/index.jsx`)**:
+      - Added direct URL/token input box and "Paste from Clipboard" button inside the waiting card and as a collapsible option when not waiting.
+      - Clicking "Paste from Clipboard" or pasting the browser link immediately completes authentication and closes the modal.
+  - Rebuilt production frontend (`npm run build` in 525ms) and release binary (`cargo build --release` in 2m 04s).
+  - Deployed updated `AetherFlow.exe` to workspace root and verified live running process (PID 18132).
+- **Build status:** ✅ `npm run build` (525ms), `cargo check` (23.34s), `cargo build --release` (2m 04s) passed with 0 errors.
+---

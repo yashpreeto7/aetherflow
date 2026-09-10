@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 21:05 IST — Fixed sign-in modal stuck state with fallback controls (Open Browser, Copy Link, Cancel in AuthModal) and implemented recursive descendant process termination (`kill_all_descendant_processes`), MPV termination, and clean tray icon drop on tray quit, rebuilding frontend (575ms) and release binary (2m 04s) and verifying live `AetherFlow.exe` process (PID 4724).
+2026-09-10 21:20 IST — Resolved login completion issue: fixed TCP stream body fragmentation via full-request Content-Length reader, added dual GET (`/token?url=`) and POST (`/token`) channels, added `ACTIVE_OAUTH_PORT` reuse, added `processOAuthCallback` supporting both implicit tokens & PKCE codes, added direct link/token manual paste & clipboard fallback to AuthModal, added Win32 `SW_RESTORE` foreground focus on auth success, and built & deployed release binary.
 
 ---
 
@@ -175,6 +175,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved React ErrorBoundary crash (`convertFileSrc is not defined`): fixed missing import in `WallpaperThumbnail/index.jsx` by hooking `safeConvertFileSrc`, exporting `convertFileSrc = safeConvertFileSrc` in `wallpaperActions.js`, binding `window.convertFileSrc` in `main.jsx`, and rebuilding `AetherFlow.exe` |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord auth: created branch `fix-login`, implemented `start_oauth_listener` with branded callback page in `main.rs`, fixed `open_url` command splitting URLs at ampersands via `rundll32`, removed Discord from `AuthModal`, updated `supabase.js` and `App.jsx`, and compiled & deployed fresh `AetherFlow.exe` |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Fixed sign-in modal stuck state with fallback controls (Open Browser, Copy Link, Cancel in AuthModal) and implemented recursive descendant process termination (`kill_all_descendant_processes`), MPV termination, and clean tray icon drop on tray quit |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login completion issue: fixed TCP stream body fragmentation via full-request Content-Length reader, added dual GET (`/token?url=`) and POST (`/token`) channels, added `ACTIVE_OAUTH_PORT` reuse, added `processOAuthCallback` supporting both implicit tokens & PKCE codes, added direct link/token manual paste & clipboard fallback to AuthModal, added Win32 `SW_RESTORE` foreground focus on auth success, and built & deployed release binary |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 
