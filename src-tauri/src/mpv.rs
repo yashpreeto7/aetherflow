@@ -114,6 +114,19 @@ impl Drop for MpvProcess {
     }
 }
 
+/// Forcibly kills any running AetherFlow-VideoEngine.exe processes on the system
+#[cfg(windows)]
+pub fn kill_all_mpv_processes() {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("taskkill")
+        .args(&["/F", "/IM", "AetherFlow-VideoEngine.exe", "/T"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status();
+}
+
+#[cfg(not(windows))]
+pub fn kill_all_mpv_processes() {}
+
 /// Find the mpv executable path
 pub fn find_mpv_binary() -> Result<PathBuf, String> {
     // 1. Try bundled relative to the running executable

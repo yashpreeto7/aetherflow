@@ -1,4 +1,4 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { safeConvertFileSrc, isTauri } from '../lib/wallpaperActions.js'
 
 /**
  * Video Player Engine
@@ -22,14 +22,11 @@ export default function createVideoPlayer(canvas, options) {
           videoEl.load();
         } catch (e) {}
 
-        // Use Tauri asset protocol if it's an absolute local path
-        const normalized = path.replace(/\\/g, '/');
-        videoEl.src = (normalized.startsWith('http') || normalized.startsWith('data:') || normalized.startsWith('blob:')) 
-          ? normalized 
-          : convertFileSrc(normalized);
+        videoEl.src = safeConvertFileSrc(path);
           
         videoEl.onerror = async (err) => {
-          console.warn('[AuraOS] convertFileSrc video load failed, attempting fs blob fallback:', path, err);
+          console.warn('[AetherFlow] video load fallback attempting fs blob:', path, err);
+          if (!isTauri()) return;
           try {
             const { readFile } = await import('@tauri-apps/plugin-fs');
             const bytes = await readFile(path);
@@ -40,11 +37,11 @@ export default function createVideoPlayer(canvas, options) {
               videoEl.src = blobUrl;
               videoEl.load();
               if (isRunning) {
-                videoEl.play().catch(e => console.error("AuraOS: Auto-play blocked on fallback", e));
+                videoEl.play().catch(e => console.error("AetherFlow: Auto-play blocked on fallback", e));
               }
             }
           } catch (fsErr) {
-            console.error('[AuraOS] All video load strategies failed for:', path, fsErr);
+            console.error('[AetherFlow] All video load strategies failed for:', path, fsErr);
           }
         };
 

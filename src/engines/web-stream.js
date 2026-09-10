@@ -66,7 +66,7 @@ export function createWebStream(canvas, options = {}) {
   let iframeEl = null
   let thumbImg = null
   let thumbLoaded = false
-  let currentUrl = options.streamUrl || ''
+  let currentUrl = options.streamUrl || options.url || ''
   let currentMuted = options.muted ?? true
   let currentSpeed = Number(options.speedMultiplier ?? options.speed ?? 1)
   let isRunning = false
@@ -433,8 +433,9 @@ export function createWebStream(canvas, options = {}) {
 
   function updateOptions(newOpts = {}) {
     Object.assign(options, newOpts)
-    if (newOpts.streamUrl !== undefined && newOpts.streamUrl !== currentUrl) {
-      currentUrl = newOpts.streamUrl
+    const nextUrl = newOpts.streamUrl ?? newOpts.url
+    if (nextUrl !== undefined && nextUrl !== currentUrl) {
+      currentUrl = nextUrl
       const ytId = parseYouTubeId(currentUrl)
       if (ytId) loadThumbnail(ytId)
       if (!options.preview) mountPlayer()

@@ -1,4 +1,4 @@
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { safeConvertFileSrc, isTauri } from '../lib/wallpaperActions.js'
 
 /**
  * Image Player Engine
@@ -58,10 +58,7 @@ export function createImagePlayer(canvas, options = {}) {
     currentPath = path
     isLoaded = false
 
-    const normalized = path.replace(/\\/g, '/')
-    const src = (normalized.startsWith('http') || normalized.startsWith('data:') || normalized.startsWith('blob:'))
-      ? normalized
-      : convertFileSrc(normalized)
+    const src = safeConvertFileSrc(path)
 
     img = new Image()
     img.onload = () => {
@@ -69,7 +66,8 @@ export function createImagePlayer(canvas, options = {}) {
       render()
     }
     img.onerror = async (err) => {
-      console.warn('[AetherFlow] convertFileSrc image load failed, attempting fs fallback:', path, err)
+      console.warn('[AetherFlow] image load failed, attempting fs fallback:', path, err)
+      if (!isTauri()) return
       try {
         const { readFile } = await import('@tauri-apps/plugin-fs')
         const bytes = await readFile(path)

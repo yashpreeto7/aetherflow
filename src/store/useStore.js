@@ -1,13 +1,23 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-// ── Legacy Storage Migration ────────────────────────────────────────────────
+// ── Legacy Storage Migration & Cleanup ─────────────────────────────────────
 try {
   if (typeof window !== 'undefined' && window.localStorage) {
     const aether = localStorage.getItem('aetherflow-state')
     const aura = localStorage.getItem('auraos-state')
     if (!aether && aura) {
       localStorage.setItem('aetherflow-state', aura)
+    } else if (aether) {
+      try {
+        const parsed = JSON.parse(aether)
+        if (parsed?.state?.authSession) {
+          delete parsed.state.authSession
+          localStorage.setItem('aetherflow-state', JSON.stringify(parsed))
+        }
+      } catch (e) {
+        console.warn('[Store] Recovered corrupted aetherflow-state in localStorage')
+      }
     }
   }
 } catch {
@@ -16,9 +26,11 @@ try {
 
 async function persistCustomWallpapersToDisk(installed) {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const customs = (installed || []).filter(i => i.isCustom || i.engine === 'video-player' || i.engine === 'image-player')
-    await invoke('save_custom_wallpapers', { wallpapers: customs })
+    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const customs = (installed || []).filter(i => i.isCustom || i.engine === 'video-player' || i.engine === 'image-player')
+      await invoke('save_custom_wallpapers', { wallpapers: customs })
+    }
   } catch {
     // ignore
   }
@@ -26,26 +38,51 @@ async function persistCustomWallpapersToDisk(installed) {
 
 export async function syncCustomWallpapersFromDisk() {
   try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const diskItems = await invoke('load_custom_wallpapers')
+    let diskItems = []
+    if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+      const { invoke } = await import('@tauri-apps/api/core')
+      diskItems = await invoke('load_custom_wallpapers')
+    } else {
+      // Browser dev environment: load custom wallpapers from Vite dev endpoint
+      try {
+        const res = await fetch('/api/custom-wallpapers')
+        if (res.ok) {
+          diskItems = await res.json()
+        }
+      } catch {}
+    }
+
     if (Array.isArray(diskItems) && diskItems.length > 0) {
       const state = useStore.getState()
       const currentInstalled = state.installed || []
-      const currentIds = new Set(currentInstalled.map(i => i.id))
-      const toAdd = diskItems.filter(i => !currentIds.has(i.id))
-      if (toAdd.length > 0) {
-        const merged = [...currentInstalled, ...toAdd]
-        const homeList = state.homeWallpaperIds || []
-        const homeIds = new Set(homeList)
-        toAdd.forEach(i => homeIds.add(i.id))
-        useStore.setState({
-          installed: merged,
-          homeWallpaperIds: Array.from(homeIds)
+      const currentMap = new Map(currentInstalled.map(i => [i.id, i]))
+
+      // Ensure all disk items are present in installed with isCustom flag
+      for (const item of diskItems) {
+        currentMap.set(item.id, {
+          ...(currentMap.get(item.id) || {}),
+          ...item,
+          isCustom: true,
         })
       }
+
+      const merged = Array.from(currentMap.values())
+      const homeList = state.homeWallpaperIds || []
+      const homeIds = new Set(homeList)
+
+      // Ensure every custom wallpaper from disk is pinned to Home so it never disappears
+      for (const item of diskItems) {
+        homeIds.add(item.id)
+      }
+
+      useStore.setState({
+        installed: merged,
+        homeWallpaperIds: Array.from(homeIds)
+      })
+      console.log(`[Store] Synced ${diskItems.length} custom wallpapers from disk. Total pinned to Home: ${homeIds.size}`)
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn('[Store] syncCustomWallpapersFromDisk error:', err)
   }
 }
 
@@ -135,8 +172,12 @@ export const useStore = create(
         }),
       uninstallItem: (id) =>
         set((s) => {
-          const installed = s.installed.filter(i => i.id !== id)
-          persistCustomWallpapersToDisk(installed)
+          const installed = (s.installed || []).filter(i => i.id !== id)
+          if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) {
+            import('@tauri-apps/api/core').then(({ invoke }) => {
+              invoke('delete_custom_wallpaper', { id }).catch(() => {})
+            }).catch(() => {})
+          }
           return {
             installed,
             homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id),
@@ -274,6 +315,28 @@ export const useStore = create(
       setCurrentPage: (page) => set({ currentPage: page }),
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
+      // ── Auth State ──────────────────────────────────────────────────────────
+      authUser: null,        // { id, email, user_metadata: { full_name, avatar_url, ... } }
+      authSession: null,     // Supabase session with access_token
+      isAuthenticated: false,
+      showAuthModal: false,  // Whether the auth modal is visible
+
+      setAuthUser: (user, session) => set({
+        authUser: user ? {
+          id: user.id,
+          email: user.email,
+          user_metadata: user.user_metadata || {},
+        } : null,
+        authSession: session || null,
+        isAuthenticated: !!user,
+      }),
+      clearAuth: () => set({
+        authUser: null,
+        authSession: null,
+        isAuthenticated: false,
+      }),
+      setShowAuthModal: (v) => set({ showAuthModal: v }),
+
       // ── Glassmorphism Controls ─────────────────────────────────────────────
       cardOpacity: 0.92,
       cardBlur: 12,
@@ -285,7 +348,7 @@ export const useStore = create(
     }),
     {
       name: 'aetherflow-state',
-      // Only persist these keys
+      // Only persist these keys (NEVER persist complex session objects)
       partialize: (s) => ({
         activeWallpaper: s.activeWallpaper,
         currentDesktopWallpaper: s.currentDesktopWallpaper,
@@ -314,6 +377,12 @@ export const useStore = create(
         isWallpaperRunning: s.isWallpaperRunning,
         taskbarStyle: s.taskbarStyle,
         taskbarBorder: s.taskbarBorder,
+        authUser: s.authUser ? {
+          id: s.authUser.id,
+          email: s.authUser.email,
+          user_metadata: s.authUser.user_metadata || {},
+        } : null,
+        isAuthenticated: !!s.isAuthenticated,
       }),
     }
   )

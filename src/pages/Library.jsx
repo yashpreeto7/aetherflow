@@ -3,7 +3,6 @@ import {
   Trash2, Play, Image, Plus, Video, Monitor, Square, Check,
   Zap, Pin, PinOff, Pencil, Search, X, Globe
 } from 'lucide-react'
-import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { BUILTIN_THEMES, WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
@@ -16,6 +15,7 @@ import {
   addCustomVideoWallpaper,
   addCustomStreamWallpaper,
   tauriInvoke,
+  safeListen,
 } from '../lib/wallpaperActions.js'
 
 export default function LibraryPage() {
@@ -68,7 +68,7 @@ export default function LibraryPage() {
     }
     loadMonitors()
 
-    listen('aura:monitors-changed', () => {
+    safeListen('aura:monitors-changed', () => {
       loadMonitors()
     }).then(u => { unlistenMonitors = u }).catch(() => {})
 
@@ -116,7 +116,7 @@ export default function LibraryPage() {
   // ── Drag & Drop listener ───────────────────────────────────────────────────
   useEffect(() => {
     let unlistenFn
-    listen('tauri://drag-drop', event => {
+    safeListen('tauri://drag-drop', event => {
       const paths = event.payload?.paths
       if (!paths || paths.length === 0) return
 
@@ -189,9 +189,10 @@ export default function LibraryPage() {
 
   // ── Combine All Wallpapers (Built-in + Custom) ───────────────────────────────
   const allWallpapers = useMemo(() => {
+    const names = customNames || {}
     const builtins = WALLPAPER_LIST.map(w => ({
       id: w.id,
-      name: customNames[w.id] || w.name,
+      name: names[w.id] || w.name,
       engine: w.id,
       tags: w.tags || ['canvas'],
       config: w.defaultConfig || {},
@@ -199,11 +200,11 @@ export default function LibraryPage() {
       builtin: true,
     }))
 
-    const customs = installed
-      .filter(i => i.type === 'wallpaper')
+    const customs = (installed || [])
+      .filter(i => i && i.type === 'wallpaper')
       .map(i => ({
         ...i,
-        name: customNames[i.id] || i.name,
+        name: names[i.id] || i.name,
         engine: i.engine || 'video-player',
         isCustom: true,
       }))
@@ -212,8 +213,9 @@ export default function LibraryPage() {
   }, [installed, customNames])
 
   const filteredWallpapers = useMemo(() => {
+    const pinnedSet = new Set(homeWallpaperIds || [])
     return allWallpapers.filter(w => {
-      const isPinned = homeWallpaperIds.includes(w.id)
+      const isPinned = pinnedSet.has(w.id)
       if (filterCategory === 'builtin' && w.isCustom) return false
       if (filterCategory === 'custom' && (!w.isCustom || w.config?.streamUrl)) return false
       if (filterCategory === 'stream' && !w.config?.streamUrl) return false

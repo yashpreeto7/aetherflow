@@ -1,9 +1,16 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ErrorBoundary from './components/ErrorBoundary/index.jsx'
 import './styles/index.css'
 import { useStore, syncCustomWallpapersFromDisk } from './store/useStore.js'
-import { tauriInvoke } from './lib/wallpaperActions.js'
+import { tauriInvoke, safeConvertFileSrc } from './lib/wallpaperActions.js'
+
+// Global safety bridge: ensure convertFileSrc is always defined everywhere
+if (typeof window !== 'undefined') {
+  window.convertFileSrc = safeConvertFileSrc
+  globalThis.convertFileSrc = safeConvertFileSrc
+}
 
 // Automatically sync and restore custom wallpapers from disk
 syncCustomWallpapersFromDisk()
@@ -61,7 +68,9 @@ state.syncTaskbarState?.().catch(() => {})
 const root = ReactDOM.createRoot(document.getElementById('root'))
 root.render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 )
 console.log('[FRONTEND DIAG] React root rendered successfully at', performance.now())

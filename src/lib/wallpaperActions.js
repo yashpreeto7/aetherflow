@@ -1,14 +1,80 @@
 import { useStore } from '../store/useStore.js'
 
 /**
+ * Check if currently running inside the native Tauri runtime
+ */
+export function isTauri() {
+  return typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
+}
+
+/**
+ * Safely converts local file paths for WebView2 / browser display.
+ * In Tauri: uses convertFileSrc from window.__TAURI_INTERNALS__
+ * In Web Browser: uses local dev server /api/local-file streaming
+ */
+export function safeConvertFileSrc(filePath) {
+  if (!filePath) return ''
+  const normalized = filePath.replace(/\\/g, '/')
+  if (normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('data:') || normalized.startsWith('blob:')) {
+    return normalized
+  }
+  if (isTauri()) {
+    try {
+      if (typeof window.__TAURI_INTERNALS__?.convertFileSrc === 'function') {
+        return window.__TAURI_INTERNALS__.convertFileSrc(normalized, 'asset')
+      }
+    } catch (e) {
+      console.warn('[AetherFlow] convertFileSrc error:', e)
+    }
+  }
+  return `/api/local-file?path=${encodeURIComponent(filePath)}`
+}
+
+export const convertFileSrc = safeConvertFileSrc
+
+/**
+ * Safely listens to Tauri runtime events with automatic fallback when running in browser.
+ */
+export async function safeListen(eventName, callback) {
+  if (!isTauri()) {
+    return () => {}
+  }
+  try {
+    const { listen } = await import('@tauri-apps/api/event')
+    return await listen(eventName, callback)
+  } catch (err) {
+    console.warn('[AetherFlow] safeListen error:', eventName, err)
+    return () => {}
+  }
+}
+
+/**
+ * Safely opens a URL in the user's default system browser.
+ */
+export async function openExternalUrl(url) {
+  if (!url) return
+  if (isTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      await invoke('open_url', { url })
+      return
+    } catch {}
+  }
+  window.open(url, '_blank')
+}
+
+/**
  * Tauri invoke wrapper that fails gracefully when running in web browser dev mode
  */
 export async function tauriInvoke(cmd, args) {
+  if (!isTauri()) {
+    return null
+  }
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     return await invoke(cmd, args)
-  } catch {
-    console.warn('[AuraOS] Tauri not available — command skipped:', cmd)
+  } catch (err) {
+    console.warn('[AetherFlow] Tauri invoke skipped:', cmd, err)
     return null
   }
 }
@@ -34,13 +100,14 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
     const resolvedEngine = wallpaper.engine
       || (wallpaper.config?.videoPath ? 'video-player' : null)
       || (wallpaper.config?.imagePath ? 'image-player' : null)
-      || (wallpaper.config?.streamUrl ? 'web-stream' : null)
+      || (wallpaper.config?.streamUrl || wallpaper.config?.url ? 'web-stream' : null)
       || wallpaper.id
 
     await tauriInvoke('apply_wallpaper', {
       engineId: resolvedEngine,
       config: {
         ...(wallpaper.config || {}),
+        streamUrl: wallpaper.config?.streamUrl || wallpaper.config?.url || '',
         speedMultiplier: speed,
         volume,
         muted,

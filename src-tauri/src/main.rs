@@ -22,7 +22,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetClientRect,
     WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE,
     SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDCHANGE,
-    GetForegroundWindow, IsIconic,
+    GetForegroundWindow, SetForegroundWindow, IsIconic,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -49,9 +49,6 @@ struct SystemPowerStatus {
 
 #[cfg(windows)]
 extern "system" {
-    fn OpenDesktopW(lpszDesktop: *const u16, dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
-    fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> windows_sys::Win32::Foundation::HANDLE;
-    fn SetThreadDesktop(hDesktop: windows_sys::Win32::Foundation::HANDLE) -> i32;
     fn GetSystemPowerStatus(lpSystemPowerStatus: *mut SystemPowerStatus) -> i32;
 }
 
@@ -87,6 +84,7 @@ static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new
 
 // ─── Main AuraOS Window Protection & HWND Identity ───────────────────────────
 static MAIN_HWND: Mutex<Option<usize>> = Mutex::new(None);
+static TRAY_HOLDER: Mutex<Option<tauri::tray::TrayIcon>> = Mutex::new(None);
 
 #[cfg(windows)]
 pub fn set_main_hwnd(hwnd: HWND) {
@@ -418,8 +416,6 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
             progman = GetShellWindow();
         }
 
-        // On cold start / Windows boot after laptop restart, Windows Explorer may still be loading.
-        // Retry for up to 6 seconds (30 attempts x 200ms) to ensure Progman is ready.
         if progman.is_null() {
             log_msg("[AuraOS WP] Progman not ready on first attempt (cold boot / reboot). Waiting for Explorer...");
             for attempt in 0..30 {
@@ -443,17 +439,6 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
         } else {
             log_msg("[AuraOS WP] CRITICAL: Cannot find Progman or ShellWindow after retry timeout!");
             
-            unsafe extern "system" fn dump_cb(h: HWND, _: LPARAM) -> i32 {
-                let mut cls_buf = [0u16; 256];
-                let cls_len = GetClassNameW(h, cls_buf.as_mut_ptr(), 256);
-                let cls = String::from_utf16_lossy(&cls_buf[..cls_len as usize]);
-                if cls == "Progman" || cls == "WorkerW" || cls.contains("Shell") || cls.contains("Desktop") {
-                    log_msg(&format!("[AuraOS WP]   Found Desktop Class HWND 0x{:X}: class='{}'", h as usize, cls));
-                }
-                1
-            }
-            EnumWindows(Some(dump_cb), 0);
-            
             // HWND_BOTTOM fallback — use exact monitor screen coords directly
             // (no SetParent, so screen coordinates apply as-is).
             log_msg(&format!("[AuraOS WP] HWND_BOTTOM fallback: pos=({},{}) size={}x{}",
@@ -461,7 +446,7 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
             let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
             let new_style = (style | WS_VISIBLE) & !(WS_CAPTION | WS_THICKFRAME | WS_BORDER);
             SetWindowLongW(hwnd, GWL_STYLE, new_style as i32);
-            SetWindowPos(hwnd, HWND_BOTTOM, mon_screen_x, mon_screen_y, mon_w, mon_h,
+            SetWindowPos(hwnd, 1 as HWND, mon_screen_x, mon_screen_y, mon_w, mon_h,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
             return;
         };
@@ -715,6 +700,13 @@ fn pin_hwnd_as_wallpaper(hwnd: HWND, target_bounds: Option<(i32, i32, i32, i32)>
         );
         log_msg(&host_summary);
         println!("{}", host_summary);
+
+        // Reassert main window visibility so it is never obscured by the desktop wallpaper
+        if let Some(main_h) = get_main_hwnd() {
+            if IsWindow(main_h) != 0 && IsWindowVisible(main_h) != 0 {
+                SetWindowPos(main_h, 0 as HWND, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
     }
 }
 
@@ -878,9 +870,18 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                 let _ = win.set_position(tauri::LogicalPosition::new(logical_x, logical_y));
 
                 #[cfg(windows)]
-                if let Ok(hwnd) = win.hwnd() {
-                    let raw_hwnd = hwnd.0 as HWND;
-                    pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
+                {
+                    let mut raw_hwnd_opt = None;
+                    for _ in 0..20 {
+                        if let Ok(hwnd) = win.hwnd() {
+                            raw_hwnd_opt = Some(hwnd.0 as HWND);
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(40));
+                    }
+                    if let Some(raw_hwnd) = raw_hwnd_opt {
+                        pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
+                    }
                 }
             } else {
                 // NEW MONITOR: Create host using the exact working startup path
@@ -949,17 +950,26 @@ fn reconcile_wallpaper_windows(app: &AppHandle) {
                 match win_res {
                     Ok(win) => {
                         #[cfg(windows)]
-                        if let Ok(hwnd) = win.hwnd() {
-                            let raw_hwnd = hwnd.0 as HWND;
-                            let host_log = format!(
-                                "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
-                                raw_hwnd as usize
-                            );
-                            log_msg(&host_log);
-                            println!("{}", host_log);
+                        {
+                            let mut raw_hwnd_opt = None;
+                            for _ in 0..25 {
+                                if let Ok(hwnd) = win.hwnd() {
+                                    raw_hwnd_opt = Some(hwnd.0 as HWND);
+                                    break;
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(40));
+                            }
+                            if let Some(raw_hwnd) = raw_hwnd_opt {
+                                let host_log = format!(
+                                    "\n[WALLPAPER HOST]\nHWND created: 0x{:X}\nWebView2 created: true",
+                                    raw_hwnd as usize
+                                );
+                                log_msg(&host_log);
+                                println!("{}", host_log);
 
-                            pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
-                            let _ = win.show();
+                                pin_hwnd_as_wallpaper(raw_hwnd, Some((pos.x, pos.y, size.width as i32, size.height as i32)));
+                                let _ = win.show();
+                            }
                         }
                     }
                     Err(err) => {
@@ -1192,6 +1202,9 @@ async fn apply_wallpaper(
                 }
             }
         }
+        if target == "*" {
+            mpv::kill_all_mpv_processes();
+        }
 
         let fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
 
@@ -1286,7 +1299,15 @@ async fn apply_wallpaper(
                 eprintln!("{}", err);
                 SetParent(main_h, std::ptr::null_mut());
             }
+            ShowWindow(main_h, 9); // SW_RESTORE
+            SetForegroundWindow(main_h);
         }
+    }
+
+    if let Some(main_win) = app.get_webview_window("main") {
+        let _ = main_win.unminimize();
+        let _ = main_win.show();
+        let _ = main_win.set_focus();
     }
 
     // Immediately schedule a delayed working set compaction after switching wallpapers
@@ -1322,6 +1343,9 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
                 proc.terminate();
             }
         }
+    }
+    if target == "*" {
+        mpv::kill_all_mpv_processes();
     }
 
     let windows = app.webview_windows();
@@ -1403,14 +1427,77 @@ fn set_mpv_mute(monitor_label: Option<String>, muted: bool) {
 fn get_custom_wallpapers_file(app: &AppHandle) -> std::path::PathBuf {
     let base = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let _ = std::fs::create_dir_all(&base);
-    base.join("custom_wallpapers.json")
+    let primary = base.join("custom_wallpapers.json");
+    if primary.exists() {
+        return primary;
+    }
+
+    // AppData fallback check for existing installations
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let appdata_path = std::path::PathBuf::from(appdata);
+        let fallbacks = [
+            appdata_path.join("com.aetherflow.app").join("custom_wallpapers.json"),
+            appdata_path.join("com.aetherflow.dev").join("custom_wallpapers.json"),
+            appdata_path.join("aetherflow").join("custom_wallpapers.json"),
+            appdata_path.join("com.auraos.dev").join("custom_wallpapers.json"),
+            appdata_path.join("com.auraos.app").join("custom_wallpapers.json"),
+            appdata_path.join("auraos").join("custom_wallpapers.json"),
+        ];
+        for fb in fallbacks {
+            if fb.exists() {
+                return fb;
+            }
+        }
+    }
+    primary
 }
 
 #[tauri::command]
 fn save_custom_wallpapers(app: AppHandle, wallpapers: Vec<serde_json::Value>) -> Result<(), String> {
     let path = get_custom_wallpapers_file(&app);
-    let data = serde_json::to_string_pretty(&wallpapers).map_err(|e| e.to_string())?;
+    let mut merged_map: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
+
+    // Preserve existing wallpapers on disk so partial writes never wipe user's catalog
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(existing) = serde_json::from_str::<Vec<serde_json::Value>>(&data) {
+                for item in existing {
+                    if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+                        merged_map.insert(id.to_string(), item);
+                    }
+                }
+            }
+        }
+    }
+
+    // Merge or update incoming wallpapers
+    for item in wallpapers {
+        if let Some(id) = item.get("id").and_then(|v| v.as_str()) {
+            merged_map.insert(id.to_string(), item);
+        }
+    }
+
+    let merged_list: Vec<serde_json::Value> = merged_map.into_values().collect();
+    let data = serde_json::to_string_pretty(&merged_list).map_err(|e| e.to_string())?;
     std::fs::write(path, data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_custom_wallpaper(app: AppHandle, id: String) -> Result<(), String> {
+    let path = get_custom_wallpapers_file(&app);
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(existing) = serde_json::from_str::<Vec<serde_json::Value>>(&data) {
+                let filtered: Vec<serde_json::Value> = existing
+                    .into_iter()
+                    .filter(|item| item.get("id").and_then(|v| v.as_str()) != Some(&id))
+                    .collect();
+                let new_data = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
+                let _ = std::fs::write(path, new_data);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1821,6 +1908,53 @@ fn open_url(url: String) -> Result<(), String> {
     }
 }
 
+/// Opens an OAuth popup window and intercepts the callback URL
+#[tauri::command]
+async fn open_oauth_window(app: AppHandle, url: String) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("oauth_popup") {
+        let _ = existing.close();
+    }
+
+    let parsed_url: tauri::Url = url.parse().map_err(|e: <tauri::Url as std::str::FromStr>::Err| e.to_string())?;
+    let app_clone = app.clone();
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "oauth_popup",
+        tauri::WebviewUrl::External(parsed_url)
+    )
+    .title("Sign In - AetherFlow")
+    .inner_size(480.0, 680.0)
+    .center()
+    .resizable(false)
+    .always_on_top(true)
+    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+    .on_navigation(move |nav_url| {
+        let url_str = nav_url.as_str();
+        if url_str.contains("access_token=") 
+            || url_str.contains("code=") 
+            || url_str.starts_with("http://localhost:1420") 
+            || url_str.starts_with("http://127.0.0.1:1420") 
+            || url_str.starts_with("tauri://localhost") 
+        {
+            println!("[AetherFlow] Intercepted OAuth navigation: {}", url_str);
+            let _ = app_clone.emit("aura:oauth-callback", url_str.to_string());
+            let app_inner = app_clone.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                if let Some(w) = app_inner.get_webview_window("oauth_popup") {
+                    let _ = w.close();
+                }
+            });
+            return false;
+        }
+        true
+    });
+
+    builder.build().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(windows)]
 fn trim_all_process_memory() {
     use std::collections::HashSet;
@@ -2018,6 +2152,24 @@ fn get_diagnostics(app: AppHandle) -> serde_json::Value {
                 IsWindow(h) != 0,
             )
         }
+    } else if let Some(win) = app.get_webview_window("main") {
+        let (h_str, p_str, is_win) = if let Ok(h) = win.hwnd() {
+            let raw_h = h.0 as HWND;
+            unsafe {
+                (format!("0x{:X}", raw_h as usize), format!("0x{:X}", GetParent(raw_h) as usize), IsWindow(raw_h) != 0)
+            }
+        } else {
+            let title_wide: Vec<u16> = "AetherFlow\0".encode_utf16().collect();
+            let found = unsafe { FindWindowW(std::ptr::null(), title_wide.as_ptr()) };
+            if !found.is_null() {
+                unsafe {
+                    (format!("0x{:X}", found as usize), format!("0x{:X}", GetParent(found) as usize), IsWindow(found) != 0)
+                }
+            } else {
+                ("unknown".to_string(), "0x0".to_string(), false)
+            }
+        };
+        (h_str, p_str, win.is_visible().unwrap_or(false), is_win)
     } else {
         ("0x0".to_string(), "0x0".to_string(), false, false)
     };
@@ -2093,19 +2245,7 @@ fn get_diagnostics(app: AppHandle) -> serde_json::Value {
 fn main() {
     #[cfg(windows)]
     {
-        // 0. Ensure main thread attaches to the interactive "Default" desktop on "WinSta0"
-        unsafe {
-            let desktop_name: Vec<u16> = "Default\0".encode_utf16().collect();
-            let mut hdesk = OpenDesktopW(desktop_name.as_ptr(), 0, 0, 0x01FF);
-            if hdesk.is_null() {
-                hdesk = OpenInputDesktop(0, 0, 0x01FF);
-            }
-            if !hdesk.is_null() {
-                SetThreadDesktop(hdesk);
-            }
-        }
-
-        // 1. Link all child processes (WebView2, MPV) into a Windows Job Object so they form a single managed unit
+        // Link all child processes (WebView2, MPV) into a Windows Job Object so they form a single managed unit
         unsafe {
             use windows_sys::Win32::System::JobObjects::{
                 CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject,
@@ -2117,7 +2257,8 @@ fn main() {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if !job.is_null() {
                 let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                // 0x00001000 = JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK, required for Chromium/WebView2 sandboxes
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | 0x00001000;
                 SetInformationJobObject(
                     job,
                     JobObjectExtendedLimitInformation,
@@ -2157,10 +2298,19 @@ fn main() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            log_msg("[SINGLE INSTANCE] Second instance signal received, restoring main window");
             // Second instance: show existing control panel
             if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
                 let _ = win.show();
                 let _ = win.set_focus();
+            }
+            #[cfg(windows)]
+            if let Some(main_h) = get_main_hwnd() {
+                unsafe {
+                    ShowWindow(main_h, 9); // SW_RESTORE
+                    SetForegroundWindow(main_h);
+                }
             }
 
             if let Some(pos) = argv.iter().position(|arg| arg == "--apply-video") {
@@ -2221,17 +2371,21 @@ fn main() {
             report_frontend_error,
             get_diagnostics,
             save_custom_wallpapers,
+            delete_custom_wallpaper,
             load_custom_wallpapers,
             set_system_wallpaper,
             set_taskbar_style,
             get_taskbar_style,
             restart_taskbar_explorer,
             open_url,
+            open_oauth_window,
             get_detailed_memory_usage,
         ])
         .setup(|app| {
             let is_minimized = is_minimized_boot();
-            println!("AuraOS: Creating main window (minimized/autostart={})...", is_minimized);
+            let start_log = format!("AuraOS: Creating main window (minimized/autostart={})...", is_minimized);
+            log_msg(&start_log);
+            println!("{}", start_log);
             let win = tauri::WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -2241,18 +2395,18 @@ fn main() {
             .inner_size(1200.0, 780.0)
             .min_inner_size(900.0, 600.0)
             .center()
+            .devtools(true)
             .visible(!is_minimized)
             .focused(!is_minimized)
             .build();
             
             match win {
                 Ok(w) => {
+                    log_msg("AuraOS: Main window created successfully.");
                     println!("AuraOS: Main window created successfully.");
-                    let hwnd = w.hwnd();
-                    println!("AuraOS: Main window HWND: {:?}", hwnd);
-
+                    
                     #[cfg(windows)]
-                    if let Ok(raw_h) = hwnd {
+                    if let Ok(raw_h) = w.hwnd() {
                         let raw_hwnd = raw_h.0 as HWND;
                         set_main_hwnd(raw_hwnd);
                         unsafe {
@@ -2267,6 +2421,7 @@ fn main() {
                     w.on_window_event(move |event| {
                         match event {
                             tauri::WindowEvent::CloseRequested { api, .. } => {
+                                log_msg("[MAIN WIN EVENT] CloseRequested -> hiding window to tray");
                                 let _ = w_clone.hide();
                                 api.prevent_close();
 
@@ -2288,12 +2443,15 @@ fn main() {
                     });
 
                     if !is_minimized {
+                        let _ = w.unminimize();
                         let _ = w.show();
                         let _ = w.set_focus();
                     }
                 }
                 Err(e) => {
-                    println!("AuraOS: ERROR creating main window - {}", e);
+                    let err = format!("AuraOS: ERROR creating main window - {}", e);
+                    log_msg(&err);
+                    eprintln!("{}", err);
                 }
             }
 
@@ -2314,7 +2472,7 @@ fn main() {
                 }
             });
 
-            // Pre-create and pin the wallpaper windows in the background so applying is instant
+            // Pre-create and pin the wallpaper windows directly on the main thread
             ensure_wallpaper_windows(app.handle());
 
             // Check if --apply-video was supplied on initial cold launch
@@ -2407,16 +2565,24 @@ fn main() {
                 &quit_item,
             ])?;
 
-            let _tray = TrayIconBuilder::new()
+            let tray_built = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
-                .tooltip("AuraOS — Live Wallpaper Engine")
+                .tooltip("AetherFlow — Live Wallpaper Engine")
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "open" => {
                             if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.unminimize();
                                 let _ = win.show();
                                 let _ = win.set_focus();
+                            }
+                            #[cfg(windows)]
+                            if let Some(main_h) = get_main_hwnd() {
+                                unsafe {
+                                    ShowWindow(main_h, 9);
+                                    SetForegroundWindow(main_h);
+                                }
                             }
                         }
                         "pause" => {
@@ -2461,9 +2627,16 @@ fn main() {
                         | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } => {
                             let app = tray.app_handle();
                             if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.show();
                                 let _ = win.unminimize();
+                                let _ = win.show();
                                 let _ = win.set_focus();
+                            }
+                            #[cfg(windows)]
+                            if let Some(main_h) = get_main_hwnd() {
+                                unsafe {
+                                    ShowWindow(main_h, 9);
+                                    SetForegroundWindow(main_h);
+                                }
                             }
                         }
                         _ => {}
@@ -2471,8 +2644,12 @@ fn main() {
                 })
                 .build(app)?;
 
+            if let Ok(mut guard) = TRAY_HOLDER.lock() {
+                *guard = Some(tray_built);
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running AuraOS")
+        .expect("error while running AetherFlow")
 }

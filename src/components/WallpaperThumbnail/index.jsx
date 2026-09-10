@@ -1,10 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react'
-import { convertFileSrc } from '@tauri-apps/api/core'
 import { ENGINES } from '../../engines/index.js'
 import {
   Video, Image as ImageIcon, Globe, Terminal, Sparkles,
   Waves, Compass, Flame, CloudRain, Activity, Code
 } from 'lucide-react'
+import { safeConvertFileSrc } from '../../lib/wallpaperActions.js'
 
 /**
  * WallpaperThumbnail — Zero-RAM Vector Badge with On-Demand Hover Previews.
@@ -210,100 +210,106 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
   let previewMedia = null
 
   if (isHovered && !imgLoadError) {
-    if (isVideo) {
-      const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath || ''
-      const videoSrc = videoPath
-        ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : convertFileSrc(videoPath))
-        : ''
+    try {
+      if (isVideo) {
+        const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath || ''
+        const videoSrc = videoPath
+          ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath))
+          : ''
 
-      if (debouncedHover && videoSrc) {
-        previewMedia = (
-          <video
-            ref={handleVideoRef}
-            src={videoSrc}
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="auto"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-              zIndex: 1,
-            }}
-          />
-        )
-      }
-    } else if (isImage) {
-      const imgSrc = imgPath
-        ? (imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : convertFileSrc(imgPath))
-        : (wallpaper.preview || wallpaper.thumbnail || '')
+        if (debouncedHover && videoSrc) {
+          previewMedia = (
+            <video
+              ref={handleVideoRef}
+              src={videoSrc}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
+              onError={() => setImgLoadError(true)}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+                zIndex: 1,
+              }}
+            />
+          )
+        }
+      } else if (isImage) {
+        const imgSrc = imgPath
+          ? (imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : safeConvertFileSrc(imgPath))
+          : (wallpaper.preview || wallpaper.thumbnail || '')
 
-      if (imgSrc) {
-        previewMedia = (
-          <img
-            src={imgSrc}
-            alt={wallpaper.name}
-            onError={() => setImgLoadError(true)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-              zIndex: 1,
-              animation: 'fadeIn 0.2s ease forwards',
-            }}
-          />
-        )
+        if (imgSrc) {
+          previewMedia = (
+            <img
+              src={imgSrc}
+              alt={wallpaper.name}
+              onError={() => setImgLoadError(true)}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+                zIndex: 1,
+                animation: 'fadeIn 0.2s ease forwards',
+              }}
+            />
+          )
+        }
+      } else if (isStream) {
+        if (ytThumb) {
+          previewMedia = (
+            <img
+              src={ytThumb}
+              alt={wallpaper.name}
+              onError={() => setImgLoadError(true)}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+                zIndex: 1,
+                animation: 'fadeIn 0.2s ease forwards',
+              }}
+            />
+          )
+        }
+      } else {
+        // Built-in canvas engine SVG preview
+        const svgPath = descriptor?.preview || `/previews/${engineId}.svg`
+        if (svgPath) {
+          previewMedia = (
+            <img
+              src={svgPath}
+              alt={wallpaper.name}
+              onError={() => setImgLoadError(true)}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+                zIndex: 1,
+                animation: 'fadeIn 0.2s ease forwards',
+              }}
+            />
+          )
+        }
       }
-    } else if (isStream) {
-      if (ytThumb) {
-        previewMedia = (
-          <img
-            src={ytThumb}
-            alt={wallpaper.name}
-            onError={() => setImgLoadError(true)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-              zIndex: 1,
-              animation: 'fadeIn 0.2s ease forwards',
-            }}
-          />
-        )
-      }
-    } else {
-      // Built-in canvas engine SVG preview
-      const svgPath = descriptor?.preview || `/previews/${engineId}.svg`
-      if (svgPath) {
-        previewMedia = (
-          <img
-            src={svgPath}
-            alt={wallpaper.name}
-            onError={() => setImgLoadError(true)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-              zIndex: 1,
-              animation: 'fadeIn 0.2s ease forwards',
-            }}
-          />
-        )
-      }
+    } catch (err) {
+      console.warn('[WallpaperThumbnail] Error preparing preview media:', err)
+      previewMedia = null
     }
   }
 

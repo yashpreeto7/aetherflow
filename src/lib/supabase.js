@@ -5,84 +5,91 @@ const supabaseKey  = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 // Returns a real client if env vars are set, null otherwise (offline mode)
 export const supabase = supabaseUrl && supabaseKey
+  && !supabaseUrl.includes('YOUR_PROJECT_ID')
   ? createClient(supabaseUrl, supabaseKey)
   : null
 
 export const isOnline = () => Boolean(supabase)
 
-// ── Wallpaper Marketplace API ─────────────────────────────────────────────────
+// ── OAuth Authentication ──────────────────────────────────────────────────────
 
-export async function fetchFeatured() {
-  if (!supabase) return []
-  const { data } = await supabase
-    .from('wallpapers')
-    .select('*')
-    .eq('is_featured', true)
-    .order('downloads', { ascending: false })
-    .limit(12)
-  return data ?? []
-}
+/**
+ * Sign in with an OAuth provider (Google, GitHub, or Discord).
+ * Opens the provider's login page in the user's default browser.
+ * For Tauri desktop apps, uses the redirectTo parameter to come back to the app.
+ */
+export async function signInWithProvider(provider) {
+  if (!supabase) throw new Error('Supabase not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env')
 
-export async function searchWallpapers({ query = '', tags = [], page = 0 }) {
-  if (!supabase) return []
-  let q = supabase.from('wallpapers').select('*').order('downloads', { ascending: false })
-  if (query) q = q.ilike('name', `%${query}%`)
-  if (tags.length) q = q.overlaps('tags', tags)
-  const { data } = await q.range(page * 20, page * 20 + 19)
-  return data ?? []
-}
+  const isTauriApp = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
 
-export async function publishWallpaper({ name, description, tags, packageFile, previewFile }) {
-  if (!supabase) throw new Error('Marketplace not connected')
+  // In Tauri: redirect to http://localhost:1420 so our on_navigation interceptor catches the tokens
+  // In Browser: redirect to current origin
+  const redirectUrl = isTauriApp ? 'http://localhost:1420' : window.location.origin
 
-  const user = (await supabase.auth.getUser()).data.user
-  if (!user) throw new Error('Not signed in')
-
-  // Upload preview image
-  const previewPath = `previews/${user.id}/${Date.now()}_${previewFile.name}`
-  await supabase.storage.from('wallpapers').upload(previewPath, previewFile)
-  const { data: previewData } = supabase.storage.from('wallpapers').getPublicUrl(previewPath)
-
-  // Upload .aura package
-  const pkgPath = `packages/${user.id}/${Date.now()}_${packageFile.name}`
-  await supabase.storage.from('wallpapers').upload(pkgPath, packageFile)
-  const { data: pkgData } = supabase.storage.from('wallpapers').getPublicUrl(pkgPath)
-
-  const { data, error } = await supabase.from('wallpapers').insert({
-    author_id:   user.id,
-    name,
-    description,
-    tags,
-    preview_url: previewData.publicUrl,
-    package_url: pkgData.publicUrl,
-  }).select().single()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider, // 'google' | 'github' | 'discord'
+    options: {
+      redirectTo: redirectUrl,
+      skipBrowserRedirect: isTauriApp,
+    },
+  })
 
   if (error) throw error
+
+  if (isTauriApp && data?.url) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      // Try dedicated popup window with clean Chrome user agent first
+      try {
+        await invoke('open_oauth_window', { url: data.url })
+      } catch (popupErr) {
+        console.warn('[AetherFlow] open_oauth_window failed, falling back to open_url:', popupErr)
+        await invoke('open_url', { url: data.url })
+      }
+    } catch {
+      window.open(data.url, '_blank')
+    }
+  }
+
   return data
 }
 
-export async function likeWallpaper(id) {
-  if (!supabase) return
-  await supabase.rpc('increment_likes', { row_id: id })
-}
-
-export async function signIn(email, password) {
-  if (!supabase) throw new Error('Marketplace not connected')
-  return supabase.auth.signInWithPassword({ email, password })
-}
-
-export async function signUp(email, password) {
-  if (!supabase) throw new Error('Marketplace not connected')
-  return supabase.auth.signUp({ email, password })
-}
-
+/**
+ * Sign out the current user.
+ */
 export async function signOut() {
   if (!supabase) return
-  return supabase.auth.signOut()
+  const { error } = await supabase.auth.signOut()
+  if (error) throw error
 }
 
+/**
+ * Get the current session (null if not logged in).
+ */
 export async function getSession() {
   if (!supabase) return null
   const { data } = await supabase.auth.getSession()
   return data.session
+}
+
+/**
+ * Get the current user object (null if not logged in).
+ */
+export async function getUser() {
+  if (!supabase) return null
+  const { data } = await supabase.auth.getUser()
+  return data.user
+}
+
+/**
+ * Listen for auth state changes (login, logout, token refresh).
+ * Returns an unsubscribe function.
+ */
+export function onAuthStateChange(callback) {
+  if (!supabase) return () => {}
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event, session) => callback(event, session)
+  )
+  return () => subscription.unsubscribe()
 }

@@ -4,7 +4,6 @@ import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
   Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe
 } from 'lucide-react'
-import { listen } from '@tauri-apps/api/event'
 import { useStore } from '../store/useStore.js'
 import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
@@ -19,6 +18,7 @@ import {
   addCustomStreamWallpaper,
   setSystemWallpaper,
   tauriInvoke,
+  safeListen,
 } from '../lib/wallpaperActions.js'
 
 export default function HomePage() {
@@ -87,7 +87,7 @@ export default function HomePage() {
     }
     loadMonitors()
 
-    listen('aura:monitors-changed', () => {
+    safeListen('aura:monitors-changed', () => {
       loadMonitors()
     }).then(u => { unlistenMonitors = u }).catch(() => {})
 
@@ -135,7 +135,7 @@ export default function HomePage() {
   // ── Drag & Drop listener ───────────────────────────────────────────────────
   useEffect(() => {
     let unlistenFn
-    listen('tauri://drag-drop', event => {
+    safeListen('tauri://drag-drop', event => {
       const paths = event.payload?.paths
       if (!paths || paths.length === 0) return
 
@@ -186,9 +186,10 @@ export default function HomePage() {
   // ── Curated Home Wallpapers List ───────────────────────────────────────────
   // Combine all items, but display ONLY those where homeWallpaperIds.includes(w.id)
   const homeWallpapers = useMemo(() => {
+    const names = customNames || {}
     const builtins = WALLPAPER_LIST.map(w => ({
       id: w.id,
-      name: customNames[w.id] || w.name,
+      name: names[w.id] || w.name,
       engine: w.id,
       tags: w.tags || ['canvas'],
       config: w.defaultConfig || {},
@@ -196,11 +197,11 @@ export default function HomePage() {
       builtin: true,
     }))
 
-    const customs = installed
-      .filter(item => item.type === 'wallpaper')
+    const customs = (installed || [])
+      .filter(item => item && item.type === 'wallpaper')
       .map(item => ({
         id: item.id,
-        name: customNames[item.id] || item.name,
+        name: names[item.id] || item.name,
         engine: item.engine || 'video-player',
         tags: item.tags || ['custom', 'video'],
         config: item.config || {},
@@ -209,8 +210,13 @@ export default function HomePage() {
       }))
 
     const all = [...customs, ...builtins]
-    // Filter to ONLY wallpapers pinned to Home
-    return all.filter(w => homeWallpaperIds.includes(w.id))
+    const homeIds = homeWallpaperIds || []
+    // Filter to ONLY wallpapers pinned to Home (or all if not yet initialized)
+    if (homeIds.length === 0) return all
+    return all.filter(w => {
+      if (w.isCustom) return true
+      return homeIds.includes(w.id)
+    })
   }, [installed, homeWallpaperIds, customNames])
 
   const filteredWallpapers = useMemo(() => {
@@ -394,7 +400,7 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="font-bold text-lg flex items-center gap-2">
-                  <span>{customNames[activeWallpaper.id] || activeWallpaper.name}</span>
+                  <span>{(customNames || {})[activeWallpaper?.id] || activeWallpaper?.name}</span>
                   <button
                     className="btn-icon"
                     style={{ padding: 2 }}

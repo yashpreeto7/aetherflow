@@ -1,254 +1,161 @@
-# AuraOS — Session Handoff File
-> **Created:** 2026-09-02 | **Status:** ✅ COMPLETE — Native Translucent Taskbar, YouTube & Live Web Stream Wallpapers, and In-App Auto-Updater implemented and verified!
-> Copy this file verbatim into your new session's first message.
+# AetherFlow — Session Handoff File
+> **Updated:** 2026-09-10 20:15 IST | **Status:** ✅ COMPLETE — Production Release v1.0.4 verified and running stably
 
 ---
 
 ## 🧠 Context Snapshot (Read First)
 
-We are building **AetherFlow** (formerly AuraOS) — a **standalone Windows desktop app** similar to Wallpaper Engine + Lively. It is a **completely separate project** from the Personal AI OS at `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT`.
+We are building **AetherFlow** (formerly AuraOS) — a **high-performance, standalone Windows desktop application** similar to Wallpaper Engine + Lively. It runs animated live desktop wallpapers, manages multi-monitor setups, natively styles the Windows taskbar, and provides an offline-safe community wallpaper marketplace.
 
-**Project location:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
-
-### Key Features
-1. **Live Animated Desktop Wallpapers**: Runs behind Windows desktop icons using the PROGMAN/WorkerW trick.
-2. **Comprehensive Media Support**: Local MP4/WebM/MKV videos with MPV hardware acceleration, high-res pictures, 7 procedural Canvas 2D engines, and live YouTube/web streams.
-3. **Native Translucent Taskbar**: Built-in styling (Clear, Acrylic, Blur, Default) with auto-persistence against Explorer resets.
-4. **In-App Auto-Updater**: Directly connects with GitHub Releases to notify, view changelogs, and download updates.
-5. **Theme System**: 6 Sovereign themes + visual Theme Editor.
-6. **Multi-Monitor**: Duplicate or distinct per-screen wallpaper assignments.
+- **Project Location:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
+- **Independent Project:** Completely separated from `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT\` (do NOT touch).
+- **Current Version:** `1.0.4`
+- **Release Executable:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\AetherFlow.exe`
 
 ---
 
-## ✅ What Has Been Built (DO NOT REBUILD)
+## 🚀 Key Features & Capabilities
 
-### Project Bootstrap
-- [x] `AURAOS/` directory created at `C:\Users\Yashpreet_o7\Desktop\AURAOS\`
-- [x] Vite + React scaffold
-- [x] All npm deps installed
-- [x] **Tech stack: Tauri 2 + React + Vite** (8MB app, 30MB RAM)
-- [x] **Build verified: `npm run build` succeeds in 409ms, 0 errors**
-- [x] **Dev server running: `npm run dev` → http://localhost:1420/**
-
-### Configuration Files
-- [x] `vite.config.js` — oxc minifier, rolldown-compatible manualChunks function
-- [x] `src-tauri/Cargo.toml` — release profile: lto, strip, opt-level s
-- [x] `src-tauri/src/main.rs` — wallpaper window, single-instance, tray
-- [x] `src-tauri/tauri.conf.json` — system tray, NSIS, window settings
-- [x] `package.json` — tauri, tauri:dev, tauri:build scripts added
-- [x] `index.html` — AuraOS title, data-theme default
-
-### State Management
-- [x] `src/store/useStore.js` — Zustand persisted store (all state)
-
-### Wallpaper Engines (7/7 complete)
-- [x] `matrix-rain.js` · `cyber-particles.js` · `synthwave-grid.js`
-- [x] `deep-space.js` · `aurora.js` · `tokyo-rain.js` · `audio-spectrum.js`
-- [x] `index.js` — lazy-loaded engine registry + builtin themes list
-
-### Theme System
-- [x] `src/styles/themes.css` — 6 Sovereign themes
-
-### Frontend (100% done)
-- [x] `src/styles/index.css` — Global CSS, cards, buttons, sliders, toggles, glass
-- [x] `src/components/WallpaperPlayer/index.jsx` — engine lifecycle manager
-- [x] `src/components/StatusBar/index.jsx` — Waybar-style bar with live FPS
-- [x] `src/lib/supabase.js` — offline-safe Supabase client + marketplace API
-- [x] `src/pages/Home.jsx` — wallpaper grid + previews + controls + themes
-- [x] `src/pages/Marketplace.jsx` — search, tags, publish form, offline fallback
-- [x] `src/pages/Library.jsx` — installed items, activate/uninstall
-- [x] `src/pages/Settings.jsx` — FPS, audio, glassmorphism, system toggles
-- [x] `src/App.jsx` — Router, sidebar nav, wallpaper layer, layout
-- [x] `src/main.jsx` — React entry, theme applied before first paint
+1. **Live Animated Desktop Wallpapers**:
+   - Pinned into the Windows desktop shell layer behind desktop icons (`Progman` / `WorkerW`).
+   - Reasserts `MAIN_HWND` foreground priority so the main control panel is never obscured.
+2. **Comprehensive Media Engine Support**:
+   - **Local Video Engine**: Standalone high-performance MPV player (`AetherFlow-VideoEngine.exe`) supporting MP4, WebM, MKV with hardware decoding, per-monitor volume/mute, speed, brightness, and opacity controls.
+   - **Procedural Canvas 2D Engines**: 7 ultra-lightweight built-in engines (`matrix-rain`, `cyber-particles`, `synthwave-grid`, `deep-space`, `aurora`, `tokyo-rain`, `audio-spectrum`).
+   - **Image Engine**: Picture wallpaper player for PNG, JPG, WebP.
+   - **Live Web & YouTube Streams**: Dual-player buffer with iframe UI cleaning and strict-origin embed policies.
+3. **Native Translucent Taskbar**:
+   - Live real-time styling (Clear, Acrylic, Blur, Default) with auto-persistence across Windows Explorer restarts.
+4. **Theme System**:
+   - 6 Sovereign themes (Onyx, Emerald, Velvet, Cyberpunk, Manifesto, Sakura) + CSS variable customization.
+5. **In-App Auto-Updater**:
+   - Integrates with GitHub Releases to check for updates and download latest installers.
+6. **Community Marketplace & OAuth Authentication**:
+   - Supabase-backed community wallpaper browsing, installation, and publication.
+   - Dedicated clean OAuth popup window with Chrome 130 User-Agent avoiding Google disallowed user-agent blocks.
+   - 1-click installation without mandatory login requirement.
 
 ---
 
-## ❌ What Remains (Pick Up Here)
+## 🔍 Recent Bug Fixes & Architecture Notes
 
-> [!IMPORTANT]
-> **The frontend is 100% complete and builds cleanly.** The ONLY thing left is setting up the Rust toolchain and running `npm run tauri:dev` to get the native Windows app.
+### 1. App "Pops Up and Closes but in System Tray" (Resolved 2026-09-10)
+- **Root Cause**: Win32 `SetThreadDesktop` / `attach_thread_to_desktop()` calls were placed on the main GUI thread in `main()` and window pinning routines. In Windows, switching a thread's desktop changes its message queue and window station desktop association, corrupting Tao and Microsoft Edge WebView2 initialization. Additionally, `ensure_wallpaper_windows` was placed inside a background `std::thread::spawn`, where `win.hwnd()` returned `RawHandleError(Unavailable)`.
+- **Solution**:
+  - Removed all `SetThreadDesktop` and `attach_thread_to_desktop()` calls from `main()`, `pin_hwnd_as_wallpaper`, and `reconcile_wallpaper_windows`.
+  - Restored synchronous execution of `ensure_wallpaper_windows(app.handle())` on the main UI thread inside `.setup(|app| { ... })`.
+  - Registered `MAIN_HWND` directly on the main thread right after `build()`.
+  - Verified `AetherFlow.exe` launches smoothly, stays focused and visible (`[MAIN WIN EVENT] Focused: true`), and sends continuous heartbeats (`page=/, visibility=visible, mounted=true`).
 
-### Step 1 — Verify / Install Rust toolchain
-```powershell
-# Check if Rust is installed
-rustup --version
+### 2. System Tray Retention & Single-Instance IPC (Resolved 2026-09-10)
+- **Root Cause**: Local variable `let _tray = TrayIconBuilder::new()...build(app)?` inside `.setup` dropped when `setup` exited, sending `NIM_DELETE` and removing the icon from the Windows system tray.
+- **Solution**: Stored the built tray into static memory `static TRAY_HOLDER: Mutex<Option<tauri::tray::TrayIcon>> = Mutex::new(None);`. Replaced custom mutex exit with `tauri-plugin-single-instance` IPC and tray menu restore hooks.
 
-# If NOT installed:
-winget install Rustlang.Rustup
-# Then restart terminal and:
-rustup default stable
-rustup target add x86_64-pc-windows-msvc
-```
+### 3. Sign-In & Authentication Flow (Resolved 2026-09-10)
+- **Root Cause**: `onAuthStateChange` in `src/App.jsx` was previously clearing auth on initial undefined sessions on cold boot, wiping saved users. `AuthModal` was leaving `loading` active indefinitely if external browser logins occurred, intercepting all app clicks.
+- **Solution**:
+  - `onAuthStateChange` now only calls `clearAuth()` on an explicit `event === 'SIGNED_OUT'`.
+  - `AuthModal` auto-closes on `isAuthenticated`, has a 2.5s timeout on `loading` state to prevent UI freeze, and supports click-outside dismissal.
+  - Native `open_oauth_window` in `src-tauri/src/main.rs` intercepts `on_navigation` callbacks for `access_token` and emits `aura:oauth-callback` to the desktop app.
+  - `Marketplace.jsx` falls back to fetching `access_token` directly from Supabase session if `authSession` was not in state.
 
-### Step 2 — First Tauri dev run
-```powershell
-cd C:\Users\Yashpreet_o7\Desktop\AURAOS
-npm run tauri:dev
-# First run will compile Rust deps (~5-10 min)
-# Subsequent runs: ~10-30 seconds
-```
-
-### Step 3 — Build Windows installer
-```powershell
-npm run tauri:build
-# Output: src-tauri/target/release/bundle/nsis/AuraOS_1.0.0_x64-setup.exe
-```
-
-### Step 4 (Optional) — Connect marketplace
-Create `.env` file:
-```
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
-```
-
-### Step 5 (Optional) — Add Supabase DB tables
-Run in Supabase SQL editor:
-```sql
-CREATE TABLE wallpapers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  author_id UUID REFERENCES auth.users,
-  name TEXT NOT NULL,
-  description TEXT,
-  tags TEXT[],
-  preview_url TEXT,
-  package_url TEXT,
-  downloads INT DEFAULT 0,
-  likes INT DEFAULT 0,
-  is_featured BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-ALTER TABLE wallpapers ENABLE ROW LEVEL SECURITY;
-```
+### 4. React Error Boundary Crash: convertFileSrc is not defined (Resolved 2026-09-10)
+- **Root Cause**: `src/components/WallpaperThumbnail/index.jsx` invoked bare `convertFileSrc(videoPath)` and `convertFileSrc(imgPath)` on lines 215 and 242 when hovering custom video or image cards without importing `convertFileSrc`. This triggered a runtime ReferenceError that crashed the React tree into `<ErrorBoundary>` ("Something went wrong: convertFileSrc is not defined").
+- **Solution**:
+  - Imported and hooked `safeConvertFileSrc` in `WallpaperThumbnail/index.jsx` wrapped inside a `try / catch` block with video `onError` fallback to the zero-RAM vector badge.
+  - Exported `export const convertFileSrc = safeConvertFileSrc` in `src/lib/wallpaperActions.js`.
+  - Added global bindings `window.convertFileSrc = safeConvertFileSrc` and `globalThis.convertFileSrc = safeConvertFileSrc` in `src/main.jsx`.
+  - Rebuilt production frontend and release binary `AetherFlow.exe` (v1.0.4).
 
 ---
 
-## 📁 Current File Tree
+## 📁 Complete File Tree
 
 ```
-C:\Users\Yashpreet_o7\Desktop\AURAOS\
+C:\Users\Yashpreet_o7\Desktop\AetherFlow\
+├── AetherFlow.exe                  ✅ Standalone native executable (v1.0.4)
+├── package.json                    ✅ npm scripts and dependencies
+├── vite.config.js                  ✅ Vite 8 build config (oxc minifier, rolldown manualChunks)
+├── index.html                      ✅ Control panel HTML entrypoint
+├── wallpaper.html                  ✅ Dedicated wallpaper host HTML entrypoint
 ├── src-tauri/
-│   ├── src/
-│   │   └── main.rs                 ✅ done
-│   ├── Cargo.toml                  ✅ done
-│   └── tauri.conf.json             ✅ done
+│   ├── Cargo.toml                  ✅ Tauri 2 + windows-sys + release optimization profile
+│   ├── tauri.conf.json             ✅ App identity (com.aetherflow.app), window configs, bundle
+│   └── src/
+│       ├── main.rs                 ✅ Core Rust backend (window management, tray, IPC commands)
+│       ├── mpv.rs                  ✅ Native MPV video engine integration & process manager
+│       └── taskbar.rs              ✅ Win32 taskbar composition & TranslucentTB integration
 ├── src/
-│   ├── engines/
-│   │   ├── matrix-rain.js          ✅ done
-│   │   ├── cyber-particles.js      ✅ done
-│   │   ├── synthwave-grid.js       ✅ done
-│   │   ├── deep-space.js           ✅ done
-│   │   ├── aurora.js               ✅ done
-│   │   ├── tokyo-rain.js           ✅ done
-│   │   ├── audio-spectrum.js       ✅ done
-│   │   └── index.js                ✅ done
-│   ├── store/
-│   │   └── useStore.js             ✅ done
-│   ├── styles/
-│   │   ├── themes.css              ✅ done
-│   │   └── index.css               ❌ TODO
+│   ├── main.jsx                    ✅ React entrypoint, error boundary, theme hydration
+│   ├── wallpaper.jsx               ✅ Wallpaper host entrypoint & canvas renderer
+│   ├── App.jsx                     ✅ Main control panel shell, layout, router, update toasts
 │   ├── components/
-│   │   ├── WallpaperPlayer/        ❌ TODO
-│   │   ├── ThemeEditor/            ❌ TODO
-│   │   ├── Marketplace/            ❌ TODO
-│   │   ├── Library/                ❌ TODO
-│   │   ├── StatusBar/              ❌ TODO
-│   │   └── Settings/               ❌ TODO
-│   ├── pages/
-│   │   ├── Home.jsx                ❌ TODO
-│   │   ├── Marketplace.jsx         ❌ TODO
-│   │   ├── Library.jsx             ❌ TODO
-│   │   └── Settings.jsx            ❌ TODO
+│   │   ├── AuthModal/              ✅ Clean OAuth modal with auto-close & reset timeout
+│   │   ├── ErrorBoundary/          ✅ React error catcher with reload/cache reset buttons
+│   │   ├── UserAvatar/             ✅ Cross-origin safe user avatar with gradient fallback
+│   │   ├── StatusBar/              ✅ Waybar-style status bar with live FPS & metrics
+│   │   ├── WallpaperPlayer/        ✅ Interactive wallpaper preview player
+│   │   ├── WallpaperThumbnail/     ✅ Hover preview thumbnail card component
+│   │   └── Modals/                 ✅ AddWallpaperModal, AddWebStreamModal, RenameWallpaperModal
+│   ├── engines/
+│   │   ├── index.js                ✅ Lazy-loaded engine registry & builtin themes list
+│   │   ├── matrix-rain.js          ✅ Procedural Canvas 2D Katakana rain
+│   │   ├── cyber-particles.js      ✅ Interactive particle network
+│   │   ├── synthwave-grid.js       ✅ Retro 80s perspective grid
+│   │   ├── deep-space.js           ✅ Parallax starfield & nebula
+│   │   ├── aurora.js               ✅ Northern lights simulation
+│   │   ├── tokyo-rain.js           ✅ Procedural neon cyberpunk rain
+│   │   ├── audio-spectrum.js       ✅ Microphone-reactive CAVA-style visualizer
+│   │   ├── fps-meter.js            ✅ Telemetry HUD with rolling FPS graph
+│   │   ├── image-player.js         ✅ Picture wallpaper engine (PNG/JPG/WebP)
+│   │   ├── video-player.js         ✅ MPV bridge engine
+│   │   └── web-stream.js           ✅ YouTube & live web stream engine
 │   ├── lib/
-│   │   ├── supabase.js             ❌ TODO
-│   │   └── package-format.js       ❌ TODO
-│   ├── App.jsx                     ❌ TODO
-│   └── main.jsx                    ❌ TODO
-├── public/
-│   └── previews/                   ❌ TODO (wallpaper preview images)
-├── vite.config.js                  ✅ done
-└── package.json                    ❌ needs tauri scripts added
+│   │   ├── supabase.js             ✅ Offline-safe Supabase client & OAuth handlers
+│   │   ├── marketplace.js          ✅ Wallpaper upload/download & metadata sync
+│   │   ├── updater.js              ✅ GitHub Releases auto-updater module
+│   │   └── wallpaperActions.js     ✅ Desktop wallpaper apply, pause, and IPC bridge
+│   ├── pages/
+│   │   ├── Home.jsx                ✅ Active wallpaper preview, hero card, controls, theme switcher
+│   │   ├── Marketplace.jsx         ✅ Browse, search, tag filter, direct 1-click apply, submit
+│   │   ├── Library.jsx             ✅ Installed wallpapers, custom media add, activate/uninstall
+│   │   └── Settings.jsx            ✅ Taskbar styling, power management, autostart, updates
+│   ├── store/
+│   │   └── useStore.js             ✅ Zustand persisted store with custom wallpaper disk sync
+│   └── styles/
+│       ├── index.css               ✅ Design tokens, utility classes, buttons, toggles
+│       └── themes.css              ✅ 6 Sovereign CSS custom property theme sets
+├── CONTEXT.md                      ✅ Living project context & status
+├── HANDOFF.md                      ✅ This file
+├── REMAINING_TASKS.md              ✅ Task guide & optional feature list
+└── SESSION_LOG.md                  ✅ Detailed chronologically maintained session logs
 ```
 
 ---
 
-## 🔧 Architecture Decisions (Do Not Change)
+## 🛠️ Verification & Build Commands
 
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Desktop framework | **Tauri 2** (not Electron) | 8MB app, 30MB RAM vs 150MB/300MB |
-| Frontend | **React + Vite** | Fast HMR, optimized builds |
-| State | **Zustand** (persisted) | Minimal, no boilerplate |
-| Wallpaper rendering | **Canvas 2D** (not WebGL) | Lightweight, wide compatibility |
-| Marketplace backend | **Supabase** (free tier) | Auth + DB + Storage in one |
-| Windows wallpaper pinning | **Frameless Tauri window** pinned below desktop | Simpler than COM API, same visual result |
-| Distribution | **NSIS installer** (.exe) | Standard Windows install experience |
-| Package format | `.aura` (zip archive) | JSON manifest + entrypoint |
+```powershell
+# 1. Build frontend
+npm run build
 
----
+# 2. Check Rust backend
+cargo check --manifest-path src-tauri/Cargo.toml
 
-## 🗝️ Credentials Needed
+# 3. Build optimized release executable
+cargo build --release --manifest-path src-tauri/Cargo.toml
 
-### Supabase (for Marketplace)
-The marketplace requires a Supabase project. Steps to set up:
-1. Go to https://supabase.com → New project → Free tier
-2. Create table `wallpapers` and `themes` (schema in implementation_plan.md)
-3. Create `.env` at `C:\Users\Yashpreet_o7\Desktop\AURAOS\.env`:
-```
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
-```
-4. The `src/lib/supabase.js` file reads these at build time.
+# 4. Copy binary to workspace root (for direct launching)
+Copy-Item src-tauri\target\release\aetherflow.exe .\AetherFlow.exe -Force
 
-> [!NOTE]
-> The app works 100% offline WITHOUT Supabase. Marketplace just shows "Connect to marketplace" prompt.
-
----
-
-## 🛠️ Skills to Install in New Session
-
-Tell the new session to install/use these skills:
-
-1. **`google-antigravity-sdk`** — for autonomous agent orchestration if spawning subagents
-2. **`planning-with-files`** — for maintaining task.md / progress.md during long builds
-3. **`subagent-driven-development`** — for parallel execution of independent components
-4. **`impeccable`** or **`ui-ux-pro-max`** — for UI polish and design review
-
----
-
-## 📋 Exact Prompt for New Session
-
-Paste this to resume:
-
-```
-I am resuming work on the AuraOS project. Read the handoff file at:
-C:\Users\Yashpreet_o7\Desktop\AURAOS\HANDOFF.md
-
-Then read the task list at:
-C:\Users\Yashpreet_o7\.gemini\antigravity-ide\brain\ba0f1252-a761-4ecf-a4e8-82d3cc4eb3fe\task.md
-
-Resume building from where we left off. The next tasks are:
-1. Create src/styles/index.css (global styles)
-2. Create src/components/WallpaperPlayer/index.jsx
-3. Create src/App.jsx and src/main.jsx
-4. Create all pages (Home, Marketplace, Library, Settings)
-5. Create src/lib/supabase.js
-6. Update package.json with tauri scripts
-7. Run npm run tauri:dev to verify the app launches
-
-Do NOT rebuild anything already marked ✅ in the HANDOFF.md file tree.
-Keep the engine lightweight — Canvas 2D only, no heavy libraries.
+# 5. Launch & verify
+Start-Process .\AetherFlow.exe
 ```
 
 ---
 
-## 📌 Reference Files
-
-| File | Purpose |
-|------|---------|
-| [implementation_plan.md](file:///C:/Users/Yashpreet_o7/.gemini/antigravity-ide/brain/ba0f1252-a761-4ecf-a4e8-82d3cc4eb3fe/implementation_plan.md) | Full architecture plan |
-| [task.md](file:///C:/Users/Yashpreet_o7/.gemini/antigravity-ide/brain/ba0f1252-a761-4ecf-a4e8-82d3cc4eb3fe/task.md) | Task checklist |
-| [dashboard_template.py](file:///C:/Users/Yashpreet_o7/Desktop/PERSONALAGENT/server/dashboard_template.py) | Original engine source to port from |
-
----
-
-*Handoff created by Antigravity (Gemini) — AuraOS session 2026-09-02*
+## 📌 Active Runtime State
+- **Process Status**: `AetherFlow.exe` running with parent `0x0`, top-level foreground access.
+- **Heartbeat**: Active (`[FRONTEND HEARTBEAT] page=/, visibility=visible, mounted=true`).
+- **Video Engine**: `AetherFlow-VideoEngine.exe` instances running on all active displays with proper Z-ordering behind desktop icons.
+- **Tray**: `TRAY_HOLDER` holds system tray icon persistently with working click/double-click restore actions.
