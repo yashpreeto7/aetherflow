@@ -913,3 +913,23 @@
 - **Build status:** ✅ `npm run build` (522ms), `cargo build --release` (2m 00s) passed with 0 errors.
 ---
 
+## Session: 2026-09-10 20:35 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Saved Baseline & Created Feature Branch**: Committed working state to `main` (`0860c8f`) and checked out new branch `fix-login`.
+  - **Removed Discord Login**:
+    - Removed `DiscordIcon` and removed `{ id: 'discord', ... }` from `PROVIDERS` in `src/components/AuthModal/index.jsx`.
+    - Updated JSDoc and provider comments in `src/lib/supabase.js`.
+  - **Diagnosed and Resolved Google OAuth Blank Window & Shell URL Splitting**:
+    - **Root Cause 1 (Blank Popup on Google OAuth)**: `open_oauth_window` was opening an embedded WebView2 popup window to Google login. Google explicitly blocks embedded webviews (`disallowed_useragent`) and refuses to render account selection.
+    - **Root Cause 2 (Shell URL Truncation at `&`)**: Windows `open_url` command in `main.rs` used `cmd.exe /C start "" <url>`. In Windows shell syntax, `&` acts as an unescaped command delimiter, causing `cmd.exe` to truncate OAuth URLs at `&redirect_uri=...` and attempt to execute remaining query arguments as shell commands.
+    - **Fix 1 (`src-tauri/src/main.rs`)**: Updated `open_url` to use `rundll32 url.dll,FileProtocolHandler <url>`, preserving the complete URL and all query parameters without shell splitting.
+    - **Fix 2 (`start_oauth_listener`)**: Implemented native zero-dependency loopback HTTP server in `src-tauri/src/main.rs` using `std::net::TcpListener`. Listens on `http://127.0.0.1:<port>/callback` (port 1420 or ephemeral fallback).
+    - **Fix 3 (`Branded Completion Page & Token Exchange`)**: The loopback receiver serves an elegant dark-mode HTML response in the browser, extracts both URL hash (`#access_token=...`) and query parameters (`?code=...`), POSTs to `/token`, emits `aura:oauth-callback` to AetherFlow, restores the desktop window, and closes the browser tab.
+    - **Fix 4 (`src/lib/supabase.js` & `src/App.jsx`)**: Updated `signInWithProvider` to invoke `start_oauth_listener` and launch the default system browser. Upgraded `App.jsx` OAuth callback parser to extract both search and hash parameters and smoothly authenticate with Supabase. Added browser guidance notice to `AuthModal`.
+  - Built production frontend (`npm run build` in 510ms) and release binary (`cargo build --release` in 2m 25s).
+  - Deployed updated `AetherFlow.exe` (7.39MB) to workspace root and verified live process (PID 21228).
+- **Build status:** ✅ `npm run build` (510ms), `cargo check` (2.39s), `cargo build --release` (2m 25s) passed with 0 errors.
+---
+
+

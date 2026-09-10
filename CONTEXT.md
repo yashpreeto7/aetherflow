@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 20:15 IST — Fixed React ErrorBoundary crash (`convertFileSrc is not defined`): resolved missing import in `WallpaperThumbnail/index.jsx` by hooking `safeConvertFileSrc` from `wallpaperActions.js` wrapped inside `try/catch` with video `onError` fallback, exported `convertFileSrc = safeConvertFileSrc` in `wallpaperActions.js`, bound global `window.convertFileSrc` and `globalThis.convertFileSrc` in `main.jsx`, rebuilt frontend (522ms) and release binary (2m 00s), and verified live `AetherFlow.exe` running stably without crashes on hovering custom media cards.
+2026-09-10 20:35 IST — Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord login: replaced blank WebView2 popup with `start_oauth_listener` loopback HTTP server in `src-tauri/src/main.rs`, fixed `open_url` Windows shell URL splitting on ampersands using `rundll32 url.dll,FileProtocolHandler`, removed Discord auth provider from `AuthModal`, upgraded callback parsing in `App.jsx`, built frontend (510ms) and release binary (2m 25s), and verified live `AetherFlow.exe`.
 
 ---
 
@@ -173,6 +173,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved app not launching / missing in system tray: retained TrayIcon in global TRAY_HOLDER to prevent Drop destructors from deleting tray icon on startup, removed premature CreateMutexW return in main() that killed taskbar re-launches in 5ms, enhanced tauri-plugin-single-instance and tray menu with unminimize/show/set_focus and Win32 SW_RESTORE, upgraded HWND detection, and deployed updated AetherFlow.exe |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved app popping up and closing on startup: removed thread-desktop switching `attach_thread_to_desktop()` which corrupted Tao/WebView2 window creation, eliminated background worker thread around `ensure_wallpaper_windows` in `.setup` by restoring synchronous main UI thread execution, acquired and registered `MAIN_HWND` directly on the main thread, and verified `AetherFlow.exe` launches smoothly, stays open with active heartbeats (`visibility=visible`), keeps system tray icon alive in `TRAY_HOLDER`, and plays background video wallpaper cleanly |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved React ErrorBoundary crash (`convertFileSrc is not defined`): fixed missing import in `WallpaperThumbnail/index.jsx` by hooking `safeConvertFileSrc`, exporting `convertFileSrc = safeConvertFileSrc` in `wallpaperActions.js`, binding `window.convertFileSrc` in `main.jsx`, and rebuilding `AetherFlow.exe` |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord auth: created branch `fix-login`, implemented `start_oauth_listener` with branded callback page in `main.rs`, fixed `open_url` command splitting URLs at ampersands via `rundll32`, removed Discord from `AuthModal`, updated `supabase.js` and `App.jsx`, and compiled & deployed fresh `AetherFlow.exe` |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 
