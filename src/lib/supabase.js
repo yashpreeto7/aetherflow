@@ -14,44 +14,61 @@ export const isOnline = () => Boolean(supabase)
 // ── OAuth Authentication ──────────────────────────────────────────────────────
 
 /**
- * Sign in with an OAuth provider (Google, GitHub, or Discord).
- * Opens the provider's login page in the user's default browser.
- * For Tauri desktop apps, uses the redirectTo parameter to come back to the app.
+ * Sign in with an OAuth provider (Google or GitHub).
+ * In desktop mode (Tauri), starts a local loopback server and opens the provider's
+ * login page in the user's default system browser.
+ * In browser mode, redirects the current tab to the OAuth provider.
  */
 export async function signInWithProvider(provider) {
   if (!supabase) throw new Error('Supabase not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env')
 
   const isTauriApp = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
 
-  // In Tauri: redirect to http://localhost:1420 so our on_navigation interceptor catches the tokens
-  // In Browser: redirect to current origin
-  const redirectUrl = isTauriApp ? 'http://localhost:1420' : window.location.origin
+  if (isTauriApp) {
+    const { invoke } = await import('@tauri-apps/api/core')
 
+    // Start local loopback server to receive the OAuth redirect
+    let port = 1420
+    try {
+      port = await invoke('start_oauth_listener')
+    } catch (listenerErr) {
+      console.warn('[AetherFlow] Failed to start oauth listener, falling back to 1420:', listenerErr)
+    }
+
+    const redirectUrl = `http://localhost:${port}/callback`
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider, // 'google' | 'github'
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    })
+
+    if (error) throw error
+
+    if (data?.url) {
+      try {
+        await invoke('open_url', { url: data.url })
+      } catch (openErr) {
+        console.warn('[AetherFlow] open_url failed, falling back to window.open:', openErr)
+        window.open(data.url, '_blank')
+      }
+    }
+
+    return data
+  }
+
+  // Standard web browser fallback
+  const redirectUrl = window.location.origin
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider, // 'google' | 'github' | 'discord'
+    provider,
     options: {
       redirectTo: redirectUrl,
-      skipBrowserRedirect: isTauriApp,
     },
   })
 
   if (error) throw error
-
-  if (isTauriApp && data?.url) {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core')
-      // Try dedicated popup window with clean Chrome user agent first
-      try {
-        await invoke('open_oauth_window', { url: data.url })
-      } catch (popupErr) {
-        console.warn('[AetherFlow] open_oauth_window failed, falling back to open_url:', popupErr)
-        await invoke('open_url', { url: data.url })
-      }
-    } catch {
-      window.open(data.url, '_blank')
-    }
-  }
-
   return data
 }
 

@@ -82,16 +82,22 @@ export default function App() {
       try {
         const hashIdx = urlStr.indexOf('#')
         const queryIdx = urlStr.indexOf('?')
-        let params = new URLSearchParams()
-        if (hashIdx !== -1) {
-          params = new URLSearchParams(urlStr.substring(hashIdx + 1))
-        } else if (queryIdx !== -1) {
-          params = new URLSearchParams(urlStr.substring(queryIdx + 1))
-        }
 
-        const accessToken = params.get('access_token')
-        const refreshToken = params.get('refresh_token')
-        const code = params.get('code')
+        const searchStr = queryIdx !== -1 ? (hashIdx > queryIdx ? urlStr.substring(queryIdx + 1, hashIdx) : urlStr.substring(queryIdx + 1)) : ''
+        const hashStr = hashIdx !== -1 ? urlStr.substring(hashIdx + 1) : ''
+
+        const searchParams = new URLSearchParams(searchStr)
+        const hashParams = new URLSearchParams(hashStr)
+
+        const accessToken = hashParams.get('access_token') || searchParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token')
+        const code = searchParams.get('code') || hashParams.get('code')
+        const errorMsg = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('error')
+
+        if (errorMsg) {
+          console.warn('[AetherFlow] OAuth callback returned error:', errorMsg)
+          return
+        }
 
         if (accessToken && supabase) {
           const { data } = await supabase.auth.setSession({
