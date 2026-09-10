@@ -1,7 +1,8 @@
 import React from 'react'
-import { X, Zap } from 'lucide-react'
+import { X, Zap, ExternalLink, Copy, Check } from 'lucide-react'
 import { useStore } from '../../store/useStore.js'
 import { signInWithProvider, isOnline } from '../../lib/supabase.js'
+import { openExternalUrl } from '../../lib/wallpaperActions.js'
 
 // SVG icons for OAuth providers (inline to avoid extra dependencies)
 function GoogleIcon() {
@@ -33,6 +34,8 @@ export default function AuthModal() {
   const setShowAuthModal = useStore(s => s.setShowAuthModal)
   const isAuthenticated = useStore(s => s.isAuthenticated)
   const [loading, setLoading] = React.useState(null) // provider id or null
+  const [authUrl, setAuthUrl] = React.useState(null)
+  const [copied, setCopied] = React.useState(false)
   const [error, setError] = React.useState(null)
 
   // Automatically close modal when user becomes authenticated
@@ -40,6 +43,7 @@ export default function AuthModal() {
     if (isAuthenticated) {
       setShowAuthModal(false)
       setLoading(null)
+      setAuthUrl(null)
       setError(null)
     }
   }, [isAuthenticated, setShowAuthModal])
@@ -48,6 +52,8 @@ export default function AuthModal() {
   React.useEffect(() => {
     if (!showAuthModal) {
       setLoading(null)
+      setAuthUrl(null)
+      setCopied(false)
       setError(null)
     }
   }, [showAuthModal])
@@ -58,22 +64,52 @@ export default function AuthModal() {
 
   const handleClose = () => {
     setLoading(null)
+    setAuthUrl(null)
+    setCopied(false)
     setError(null)
     setShowAuthModal(false)
+  }
+
+  const handleCancel = () => {
+    setLoading(null)
+    setAuthUrl(null)
+    setCopied(false)
+    setError(null)
   }
 
   const handleSignIn = async (provider) => {
     setLoading(provider)
     setError(null)
     try {
-      await signInWithProvider(provider)
-      // Keep guidance visible while user completes login in browser
+      const data = await signInWithProvider(provider)
+      if (data?.url) {
+        setAuthUrl(data.url)
+      }
+      // Timeout fallback: clear loading after 90 seconds if abandoned
       setTimeout(() => {
         setLoading(current => current === provider ? null : current)
-      }, 30000)
+      }, 90000)
     } catch (err) {
       setError(err.message || 'Sign-in failed. Please try again.')
       setLoading(null)
+      setAuthUrl(null)
+    }
+  }
+
+  const handleOpenBrowser = () => {
+    if (authUrl) {
+      openExternalUrl(authUrl)
+    }
+  }
+
+  const handleCopyLink = async () => {
+    if (!authUrl) return
+    try {
+      await navigator.clipboard.writeText(authUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.warn('Clipboard write failed:', err)
     }
   }
 
@@ -94,7 +130,7 @@ export default function AuthModal() {
           border: '1px solid var(--border-main)',
           borderRadius: 16,
           padding: '36px 32px 28px',
-          width: 380,
+          width: 400,
           maxWidth: '90vw',
           boxShadow: '0 24px 80px rgba(0, 0, 0, 0.6)',
           position: 'relative',
@@ -111,6 +147,7 @@ export default function AuthModal() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             borderRadius: 8,
           }}
+          title="Close"
         >
           <X size={14} />
         </button>
@@ -184,26 +221,90 @@ export default function AuthModal() {
           ))}
         </div>
 
-        {/* Waiting for browser notice */}
+        {/* Waiting for browser card */}
         {loading && (
           <div style={{
-            marginTop: 14, padding: '10px 14px',
-            background: 'rgba(56, 189, 248, 0.08)',
+            marginTop: 16,
+            padding: '14px 16px',
+            background: 'rgba(56, 189, 248, 0.07)',
             border: '1px solid rgba(56, 189, 248, 0.25)',
-            borderRadius: 10, textAlign: 'center',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            borderRadius: 12,
             animation: 'fadeIn 0.2s ease',
           }}>
-            <div style={{
-              width: 14, height: 14,
-              border: '2px solid rgba(56, 189, 248, 0.3)',
-              borderTopColor: '#38bdf8',
-              borderRadius: '50%',
-              animation: 'spin 0.6s linear infinite',
-            }} />
-            <span className="text-xs font-medium" style={{ color: '#38bdf8' }}>
-              Browser opened. Please complete sign in there...
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{
+                width: 16, height: 16, flexShrink: 0,
+                border: '2px solid rgba(56, 189, 248, 0.3)',
+                borderTopColor: '#38bdf8',
+                borderRadius: '50%',
+                animation: 'spin 0.6s linear infinite',
+              }} />
+              <div style={{ textAlign: 'left', flex: 1 }}>
+                <div className="text-xs font-semibold" style={{ color: '#38bdf8' }}>
+                  Browser sign-in in progress
+                </div>
+                <div className="text-xs text-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                  Complete the sign-in in your browser window to continue.
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons: Open Browser, Copy Link, Cancel */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {authUrl && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleOpenBrowser}
+                    className="btn btn-secondary text-xs"
+                    style={{
+                      flex: 1, padding: '7px 8px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      fontSize: 11,
+                    }}
+                    title="Open the authorization link in your default browser"
+                  >
+                    <ExternalLink size={13} />
+                    Open Browser
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="btn btn-secondary text-xs"
+                    style={{
+                      flex: 1, padding: '7px 8px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                      fontSize: 11,
+                      color: copied ? '#4ade80' : 'inherit',
+                    }}
+                    title="Copy sign-in link to paste into Chrome, Brave, Edge, etc."
+                  >
+                    {copied ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
+                    {copied ? 'Copied!' : 'Copy Link'}
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="btn btn-ghost text-xs"
+                style={{
+                  padding: '7px 10px',
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            {authUrl && (
+              <div className="text-xs text-subtle" style={{ fontSize: 10, marginTop: 10, textAlign: 'center' }}>
+                Tip: If your browser didn't open, click "Copy Link" and paste into any browser.
+              </div>
+            )}
           </div>
         )}
 

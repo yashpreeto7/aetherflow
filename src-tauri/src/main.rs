@@ -2148,6 +2148,58 @@ async fn open_oauth_window(url: String) -> Result<(), String> {
 }
 
 #[cfg(windows)]
+fn kill_all_descendant_processes() {
+    use std::collections::HashSet;
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+    };
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::Foundation::CloseHandle;
+
+    unsafe {
+        let current_pid = GetCurrentProcessId();
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot != windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+            let mut entry: PROCESSENTRY32 = std::mem::zeroed();
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+
+            let mut proc_list: Vec<(u32, u32)> = Vec::new(); // (pid, parent_pid)
+            if Process32First(snapshot, &mut entry) != 0 {
+                loop {
+                    proc_list.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                    if Process32Next(snapshot, &mut entry) == 0 {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+
+            // Recursively collect all descendant PIDs (children, grandchildren: WebView2 renderers, GPU, etc.)
+            let mut target_pids = HashSet::new();
+            let mut frontier = vec![current_pid];
+
+            while let Some(parent) = frontier.pop() {
+                for &(pid, parent_id) in &proc_list {
+                    if parent_id == parent && target_pids.insert(pid) {
+                        frontier.push(pid);
+                    }
+                }
+            }
+
+            for pid in target_pids {
+                let h_proc = OpenProcess(PROCESS_TERMINATE, 0, pid);
+                if !h_proc.is_null() {
+                    let _ = TerminateProcess(h_proc, 1);
+                    CloseHandle(h_proc);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
 fn trim_all_process_memory() {
     use std::collections::HashSet;
     use windows_sys::Win32::System::Threading::{
@@ -2800,7 +2852,13 @@ fn main() {
                             stop_wallpaper(app.clone(), None);
                         }
                         "quit" => {
+                            log_msg("[AetherFlow] Shutdown requested via system tray Quit menu");
+                            println!("[AetherFlow] Shutdown requested via system tray Quit menu");
+
+                            // 1. Restore taskbar state cleanly
                             taskbar::restore_taskbar();
+
+                            // 2. Terminate all MPV players and video engines
                             if let Ok(mut mpv_guard) = MPV_PLAYERS.lock() {
                                 if let Some(ref mut map) = *mpv_guard {
                                     for (_, mut proc) in map.drain() {
@@ -2808,6 +2866,26 @@ fn main() {
                                     }
                                 }
                             }
+                            mpv::kill_all_mpv_processes();
+
+                            // 3. Destroy all webview windows
+                            let windows = app.webview_windows();
+                            for (label, win) in windows {
+                                log_msg(&format!("[AetherFlow] Destroying window on quit: {}", label));
+                                let _ = win.destroy();
+                            }
+
+                            // 4. Drop tray icon to clear it from system notification area immediately
+                            if let Ok(mut tray_guard) = TRAY_HOLDER.lock() {
+                                if let Some(tray) = tray_guard.take() {
+                                    drop(tray);
+                                }
+                            }
+
+                            // 5. Terminate all child and descendant processes (WebView2, renderers, GPU, etc.)
+                            #[cfg(windows)]
+                            kill_all_descendant_processes();
+
                             std::process::exit(0);
                         }
                         _ => {}

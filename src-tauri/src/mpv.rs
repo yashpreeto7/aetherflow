@@ -122,6 +122,10 @@ pub fn kill_all_mpv_processes() {
         .args(&["/F", "/IM", "AetherFlow-VideoEngine.exe", "/T"])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .status();
+    let _ = std::process::Command::new("taskkill")
+        .args(&["/F", "/IM", "mpv.exe", "/T"])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .status();
 }
 
 #[cfg(not(windows))]
