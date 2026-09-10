@@ -280,3 +280,4 @@ Mark these off as you complete them:
 - [x] TASK 9: Native Win32 Translucent Taskbar (Clear, Acrylic, Blur, Default)
 - [x] TASK 10: YouTube & Live Web Stream Wallpapers (embedded iframes + instant thumbnails)
 - [x] TASK 11: In-App GitHub Releases Auto-Updater (Settings check + startup toast notification)
+- [x] TASK 12: Community Marketplace Backend & Live Database Migration (Supabase RPCs, 20-wallpaper catalog, real-time likes & installs, Staff Pick curation, My Submissions)

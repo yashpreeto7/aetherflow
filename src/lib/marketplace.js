@@ -1,15 +1,17 @@
 /**
- * AetherFlow Marketplace — GitHub-backed wallpaper catalog
+ * AetherFlow Marketplace — Hybrid GitHub + Supabase Backend
  *
- * All wallpaper data lives in the yashpreeto7/aetherflow-community GitHub repo.
- * This module fetches, caches, and searches the catalog from the GitHub CDN.
+ * Catalog data (browse): fetched from yashpreeto7/aetherflow-community GitHub repo
+ * User actions (submit, like, track): routed through Supabase RPC + tables
+ * No external Worker needed — all serverless via Supabase RLS + RPC
  */
 
-const PRIMARY_CATALOG_URL = 'https://cdn.jsdelivr.net/gh/yashpreeto7/aetherflow-community@main/index.json'
-const FALLBACK_CATALOG_URL = 'https://raw.githubusercontent.com/yashpreeto7/aetherflow-community/main/index.json'
-const WORKER_URL = import.meta.env.VITE_WORKER_URL || ''
+import { supabase, isOnline } from './supabase.js'
 
-// ── In-Memory Cache ───────────────────────────────────────────────────────────
+// ── GitHub Catalog CDN ────────────────────────────────────────────────────────
+
+const PRIMARY_CATALOG_URL = 'https://raw.githubusercontent.com/yashpreeto7/aetherflow-community/main/index.json'
+const FALLBACK_CATALOG_URL = 'https://cdn.jsdelivr.net/gh/yashpreeto7/aetherflow-community@main/index.json'
 
 let catalogCache = null
 let catalogETag = null
@@ -103,75 +105,235 @@ export async function searchCatalog({ query = '', tags = [], type = '' } = {}) {
   return results
 }
 
+// ── Supabase-Backed User Actions ──────────────────────────────────────────────
+
 /**
- * Track a wallpaper install (increments download counter via Worker).
- * Requires a valid Supabase JWT.
+ * Track a wallpaper install. Calls Supabase RPC to upsert into installs table.
+ * Returns the updated total install count as a number, or null on error.
+ * Works for both authenticated and anonymous users.
  */
-export async function trackInstall(wallpaperId, accessToken) {
-  if (!WORKER_URL) return
+export async function trackInstall(wallpaperId) {
+  if (!isOnline()) return null
   try {
-    await fetch(`${WORKER_URL}/install`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ wallpaperId }),
-    })
+    const { data, error } = await supabase.rpc('track_install', { p_wallpaper_id: wallpaperId })
+    if (error) throw error
+    return typeof data === 'number' ? data : Number(data)
   } catch (err) {
     console.warn('[Marketplace] Failed to track install:', err.message)
+    return null
   }
 }
 
 /**
- * Submit a wallpaper for review (creates a GitHub Issue via Worker).
- * Requires a valid Supabase JWT.
+ * Fetch aggregate download and like counts for all wallpapers from Supabase.
+ * Returns { downloadCounts: { [id]: number }, likeCounts: { [id]: number } }
  */
-export async function submitWallpaper({ title, description, tags, type, source, previewBase64 }, accessToken) {
-  if (!WORKER_URL) {
-    throw new Error('Submission service not configured. The marketplace worker is not available yet.')
+export async function fetchMarketplaceCounts() {
+  if (!isOnline()) return { downloadCounts: {}, likeCounts: {} }
+  try {
+    const [installsRes, likesRes] = await Promise.all([
+      supabase.from('installs').select('wallpaper_id'),
+      supabase.from('likes').select('wallpaper_id'),
+    ])
+
+    const downloadCounts = {}
+    for (const row of installsRes.data || []) {
+      if (row.wallpaper_id) {
+        downloadCounts[row.wallpaper_id] = (downloadCounts[row.wallpaper_id] || 0) + 1
+      }
+    }
+
+    const likeCounts = {}
+    for (const row of likesRes.data || []) {
+      if (row.wallpaper_id) {
+        likeCounts[row.wallpaper_id] = (likeCounts[row.wallpaper_id] || 0) + 1
+      }
+    }
+
+    return { downloadCounts, likeCounts }
+  } catch (err) {
+    console.warn('[Marketplace] Failed to fetch aggregate counts:', err.message)
+    return { downloadCounts: {}, likeCounts: {} }
   }
-
-  const response = await fetch(`${WORKER_URL}/submit`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ title, description, tags, type, source, previewBase64 }),
-  })
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Submission failed' }))
-    throw new Error(err.error || `Server returned ${response.status}`)
-  }
-
-  return response.json()
 }
 
 /**
- * Fetch community stats (user count, wallpaper count).
+ * Toggle a like on a wallpaper.
+ * Returns { liked: boolean, totalLikes: number } or null on failure.
+ * Requires authentication.
+ */
+export async function toggleLike(wallpaperId) {
+  if (!isOnline()) return null
+  try {
+    const { data, error } = await supabase.rpc('toggle_like', { p_wallpaper_id: wallpaperId })
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.warn('[Marketplace] Failed to toggle like:', err.message)
+    return null
+  }
+}
+
+/**
+ * Get the current user's liked wallpaper IDs.
+ * Returns string[] of wallpaper IDs.
+ */
+export async function getUserLikes() {
+  if (!isOnline()) return []
+  try {
+    const { data, error } = await supabase.rpc('get_user_likes')
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.warn('[Marketplace] Failed to fetch likes:', err.message)
+    return []
+  }
+}
+
+/**
+ * Submit a wallpaper for community review.
+ * Inserts directly into the `submissions` table with 'pending' status.
+ * Requires authentication.
+ */
+export async function submitWallpaper({ title, description, tags, type, source }) {
+  if (!isOnline()) {
+    throw new Error('Cannot submit while offline. Please check your internet connection.')
+  }
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    throw new Error('You must be signed in to submit wallpapers.')
+  }
+
+  const { data, error } = await supabase
+    .from('submissions')
+    .insert({
+      author_id: user.id,
+      title: title.trim(),
+      description: (description || '').trim(),
+      type,
+      source: source.trim(),
+      tags: tags || [],
+      status: 'pending',
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[Marketplace] Submit error:', error)
+    throw new Error(error.message || 'Failed to submit wallpaper')
+  }
+
+  return data
+}
+
+/**
+ * Get the user's own submissions (all statuses).
+ */
+export async function getUserSubmissions() {
+  if (!isOnline()) return []
+  try {
+    const { data, error } = await supabase
+      .from('submissions')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.warn('[Marketplace] Failed to fetch submissions:', err.message)
+    return []
+  }
+}
+
+/**
+ * Fetch community stats from Supabase RPC.
+ * Falls back to catalog-only stats if Supabase is unavailable.
  */
 export async function fetchStats() {
-  // Primary: get wallpaper count from cached catalog
   const catalog = await fetchCatalog()
   const stats = {
     totalWallpapers: catalog.totalWallpapers || 0,
     activeUsers: 0,
+    totalInstalls: 0,
   }
 
-  // Secondary: get user count from Worker if available
-  if (WORKER_URL) {
+  if (isOnline()) {
     try {
-      const res = await fetch(`${WORKER_URL}/stats`)
-      if (res.ok) {
-        const data = await res.json()
+      const { data, error } = await supabase.rpc('marketplace_stats')
+      if (!error && data) {
         stats.activeUsers = data.activeUsers || 0
+        stats.totalInstalls = data.totalInstalls || 0
+        // Add approved submissions to community count
+        if (data.approvedWallpapers > 0) {
+          stats.totalWallpapers += data.approvedWallpapers
+        }
       }
     } catch {
-      // Worker not available yet, that's fine
+      // Supabase tables may not exist yet — that's fine
     }
   }
 
   return stats
+}
+
+/**
+ * Get the user's profile from Supabase.
+ */
+export async function getUserProfile() {
+  if (!isOnline()) return null
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+
+    if (error) {
+      // Profile might not exist yet — create it
+      if (error.code === 'PGRST116') {
+        const { data: newProfile } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: user.id,
+            display_name: user.user_metadata?.full_name || user.user_metadata?.name || 'User',
+            avatar_url: user.user_metadata?.avatar_url || '',
+          })
+          .select()
+          .single()
+        return newProfile
+      }
+      throw error
+    }
+    return data
+  } catch (err) {
+    console.warn('[Marketplace] Failed to fetch profile:', err.message)
+    return null
+  }
+}
+
+/**
+ * Update the user's profile bio.
+ */
+export async function updateUserProfile({ bio }) {
+  if (!isOnline()) return null
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update({ bio, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.warn('[Marketplace] Failed to update profile:', err.message)
+    return null
+  }
 }

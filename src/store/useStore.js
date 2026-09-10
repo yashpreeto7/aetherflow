@@ -13,8 +13,11 @@ try {
         const parsed = JSON.parse(aether)
         if (parsed?.state?.authSession) {
           delete parsed.state.authSession
-          localStorage.setItem('aetherflow-state', JSON.stringify(parsed))
         }
+        if (parsed?.state?.homeWallpaperIds) {
+          parsed.state.homeWallpaperIds = parsed.state.homeWallpaperIds.filter(id => !id.startsWith('community-'))
+        }
+        localStorage.setItem('aetherflow-state', JSON.stringify(parsed))
       } catch (e) {
         console.warn('[Store] Recovered corrupted aetherflow-state in localStorage')
       }
@@ -68,12 +71,8 @@ export async function syncCustomWallpapersFromDisk() {
 
       const merged = Array.from(currentMap.values())
       const homeList = state.homeWallpaperIds || []
-      const homeIds = new Set(homeList)
-
-      // Ensure every custom wallpaper from disk is pinned to Home so it never disappears
-      for (const item of diskItems) {
-        homeIds.add(item.id)
-      }
+      // Never force community marketplace wallpapers into Home on sync
+      const homeIds = new Set(homeList.filter(id => !id.startsWith('community-')))
 
       useStore.setState({
         installed: merged,

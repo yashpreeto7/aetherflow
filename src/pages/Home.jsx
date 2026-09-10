@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
-  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe
+  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe, Eye
 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
@@ -19,7 +20,389 @@ import {
   setSystemWallpaper,
   tauriInvoke,
   safeListen,
+  safeConvertFileSrc,
 } from '../lib/wallpaperActions.js'
+
+function getWallpaperTypeInfo(wallpaper) {
+  const engineId = wallpaper.engine || wallpaper.id
+  const isStream = engineId === 'web-stream' || Boolean(wallpaper.config?.streamUrl)
+  const isImage = engineId === 'image-player' || wallpaper.mediaType === 'image' || Boolean(wallpaper.config?.imagePath && !wallpaper.config?.videoPath)
+  const isVideo = !isImage && !isStream && (wallpaper.isCustom || engineId === 'video-player' || wallpaper.mediaType === 'video')
+
+  if (isStream) {
+    const streamUrl = wallpaper.config?.streamUrl || wallpaper.config?.url || ''
+    const isYt = /(?:youtu\.be\/|youtube\.com)/.test(streamUrl)
+    return {
+      label: isYt ? 'YouTube' : 'Stream',
+      color: isYt ? 'var(--color-rose)' : 'var(--color-cyan)',
+      icon: isYt ? MonitorPlay : Globe,
+      type: isYt ? 'youtube' : 'stream',
+    }
+  }
+  if (isImage) {
+    return { label: 'Image', color: 'var(--color-emerald)', icon: ImageIcon, type: 'image' }
+  }
+  if (isVideo) {
+    return { label: 'Video', color: 'var(--color-brand)', icon: Video, type: 'video' }
+  }
+  return { label: 'Canvas 2D', color: 'var(--color-purple)', icon: Sparkles, type: 'canvas' }
+}
+
+function getWallpaperStaticThumbnail(wallpaper) {
+  if (wallpaper.preview && typeof wallpaper.preview === 'string') {
+    if (wallpaper.preview.startsWith('http') || wallpaper.preview.startsWith('/') || wallpaper.preview.startsWith('data:')) {
+      return wallpaper.preview
+    }
+    return safeConvertFileSrc(wallpaper.preview)
+  }
+
+  const engineId = wallpaper.engine || wallpaper.id
+  const builtinPreviews = {
+    'matrix-rain': '/previews/matrix-rain.svg',
+    'cyber-particles': '/previews/cyber-particles.svg',
+    'synthwave-grid': '/previews/synthwave-grid.svg',
+    'deep-space': '/previews/deep-space.svg',
+    'aurora': '/previews/aurora.svg',
+    'tokyo-rain': '/previews/tokyo-rain.svg',
+    'audio-spectrum': '/previews/audio-spectrum.svg',
+  }
+  if (builtinPreviews[engineId]) {
+    return builtinPreviews[engineId]
+  }
+
+  const streamUrl = wallpaper.config?.streamUrl || wallpaper.config?.url
+  if (streamUrl) {
+    const ytMatch = streamUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/)
+    if (ytMatch && ytMatch[1]) {
+      return `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`
+    }
+  }
+
+  const imgPath = wallpaper.config?.imagePath || wallpaper.defaultConfig?.imagePath
+  if (imgPath) {
+    return imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : safeConvertFileSrc(imgPath)
+  }
+
+  return null
+}
+
+/**
+ * VideoThumbnailCard — Hardware-accelerated, zero-leak video frame renderer.
+ * Loads only container metadata and seeks to 1.0s to render the static poster frame.
+ * Plays muted preview on hover, pauses when unhovered.
+ * Completely cleans up decoders upon unmount.
+ */
+function VideoThumbnailCard({ videoSrc, name, isHovered }) {
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const videoRef = useRef(null)
+
+  useEffect(() => {
+    const v = videoRef.current
+    return () => {
+      if (v) {
+        try {
+          v.pause()
+        } catch (e) {}
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (isHovered) {
+      v.play().catch(() => {})
+    } else {
+      v.pause()
+      try {
+        v.currentTime = 0.5
+      } catch (e) {}
+    }
+  }, [isHovered])
+
+  const markLoaded = () => setHasLoaded(true)
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#08080c' }}>
+      <video
+        ref={videoRef}
+        src={`${videoSrc}#t=0.5`}
+        preload="metadata"
+        muted
+        loop
+        playsInline
+        onLoadedData={markLoaded}
+        onLoadedMetadata={(e) => {
+          markLoaded()
+          try {
+            if (e.target.currentTime === 0) e.target.currentTime = 0.5
+          } catch(err) {}
+        }}
+        onSeeked={markLoaded}
+        onCanPlay={markLoaded}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          display: 'block',
+          opacity: hasLoaded ? 1 : 0,
+          transition: 'opacity 0.25s ease',
+        }}
+      />
+      {!hasLoaded && (
+        <div className="flex items-center justify-center w-full h-full" style={{ position: 'absolute', inset: 0, color: 'var(--color-brand)' }}>
+          <Video size={36} style={{ opacity: 0.6 }} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Full Live Preview Modal for Home Page Wallpapers (Canvas 2D, Video, Image, Stream)
+ */
+function HomePreviewModal({ wallpaper, onClose, onApply, isLive }) {
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  if (!wallpaper) return null
+
+  const typeInfo = getWallpaperTypeInfo(wallpaper)
+  const isVideo = typeInfo.type === 'video'
+  const isImage = typeInfo.type === 'image'
+  const isStream = typeInfo.type === 'stream' || typeInfo.type === 'youtube'
+
+  const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath
+  const videoSrc = videoPath ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath)) : ''
+
+  const imgPath = wallpaper.config?.imagePath || wallpaper.defaultConfig?.imagePath
+  const imgSrc = imgPath ? (imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : safeConvertFileSrc(imgPath)) : (wallpaper.preview || '')
+
+  const streamUrl = wallpaper.config?.streamUrl || wallpaper.config?.url || ''
+  const ytMatch = streamUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/)
+  const ytId = ytMatch ? ytMatch[1] : null
+
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 99999,
+        background: 'rgba(0, 0, 0, 0.82)',
+        backdropFilter: 'blur(12px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px 16px',
+        animation: 'fadeIn 0.18s ease-out',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="card"
+        style={{
+          width: '100%',
+          maxWidth: 720,
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-main)',
+          borderRadius: 14,
+          boxShadow: '0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: '92vh',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header with clean 14px gap */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 20px',
+            borderBottom: '1px solid var(--border-main)',
+            background: 'rgba(var(--rgb-card), 0.5)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
+            <span
+              style={{
+                padding: '4px 10px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                background: 'rgba(0,0,0,0.6)',
+                color: typeInfo.color || 'var(--text-main)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+            >
+              <typeInfo.icon size={12} />
+              <span>{typeInfo.label}</span>
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                className="font-semibold text-base"
+                style={{
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 460,
+                  color: 'var(--text-main)',
+                }}
+                title={wallpaper.name}
+              >
+                {wallpaper.name}
+              </div>
+              <div className="text-xs text-muted" style={{ fontSize: 12, marginTop: 2 }}>
+                {wallpaper.communityMeta?.author
+                  ? `by ${wallpaper.communityMeta.author}`
+                  : wallpaper.isCustom
+                  ? `Custom ${typeInfo.label}`
+                  : `Built-in Canvas 2D Engine`}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--border-main)',
+              borderRadius: 8,
+              padding: '6px',
+              cursor: 'pointer',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginLeft: 12,
+            }}
+            title="Close preview (Esc)"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        {/* Modal Body: Active Wallpaper Preview */}
+        <div style={{ padding: 20, flex: 1, overflowY: 'auto' }}>
+          <div
+            style={{
+              width: '100%',
+              aspectRatio: '16/9',
+              maxHeight: '52vh',
+              background: '#050505',
+              borderRadius: 8,
+              overflow: 'hidden',
+              position: 'relative',
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)',
+            }}
+          >
+            {isVideo && videoSrc ? (
+              <video
+                src={videoSrc}
+                autoPlay
+                loop
+                muted
+                controls
+                playsInline
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : isImage && imgSrc ? (
+              <img
+                src={imgSrc}
+                alt={wallpaper.name}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : isStream && ytId ? (
+              <iframe
+                src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=1&loop=1&playlist=${ytId}&playsinline=1&rel=0`}
+                title={wallpaper.name}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <WallpaperPlayer
+                engineId={wallpaper.engine || wallpaper.id}
+                config={wallpaper.config}
+                preview
+              />
+            )}
+          </div>
+
+          {wallpaper.tags && wallpaper.tags.length > 0 && (
+            <div className="flex gap-1.5" style={{ flexWrap: 'wrap', marginTop: 14 }}>
+              {wallpaper.tags.map(t => (
+                <span
+                  key={t}
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid var(--border-main)',
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div
+          style={{
+            padding: '12px 20px',
+            borderTop: '1px solid var(--border-main)',
+            background: 'rgba(var(--rgb-card), 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 10,
+          }}
+        >
+          <button
+            className="btn btn-ghost"
+            style={{ padding: '7px 14px', fontSize: 12 }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+          {isLive ? (
+            <span
+              className="btn btn-success"
+              style={{ padding: '7px 16px', fontSize: 12, cursor: 'default', display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Check size={13} /> Active on Desktop
+            </span>
+          ) : (
+            <button
+              className="btn btn-primary"
+              style={{ padding: '7px 18px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => onApply(wallpaper)}
+            >
+              <Play size={13} fill="currentColor" /> Apply to Desktop
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -34,6 +417,7 @@ export default function HomePage() {
   const [renameModal, setRenameModal] = useState({ isOpen: false, id: null, currentName: '' })
   const [addStreamModal, setAddStreamModal] = useState(false)
   const [winWallpaperSet, setWinWallpaperSet] = useState(false)
+  const [previewWallpaper, setPreviewWallpaper] = useState(null)
 
   const activeWallpaper       = useStore(s => s.activeWallpaper)
   const setActiveWallpaper    = useStore(s => s.setActiveWallpaper)
@@ -200,6 +584,7 @@ export default function HomePage() {
     const customs = (installed || [])
       .filter(item => item && item.type === 'wallpaper')
       .map(item => ({
+        ...item,
         id: item.id,
         name: names[item.id] || item.name,
         engine: item.engine || 'video-player',
@@ -211,12 +596,9 @@ export default function HomePage() {
 
     const all = [...customs, ...builtins]
     const homeIds = homeWallpaperIds || []
-    // Filter to ONLY wallpapers pinned to Home (or all if not yet initialized)
-    if (homeIds.length === 0) return all
-    return all.filter(w => {
-      if (w.isCustom) return true
-      return homeIds.includes(w.id)
-    })
+    // Filter to ONLY wallpapers pinned to Home (or all builtins if not yet initialized)
+    if (homeIds.length === 0) return builtins
+    return all.filter(w => homeIds.includes(w.id))
   }, [installed, homeWallpaperIds, customNames])
 
   const filteredWallpapers = useMemo(() => {
@@ -660,17 +1042,25 @@ export default function HomePage() {
           </button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))', gap: 14, marginBottom: 36 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20, marginBottom: 36 }}>
           {filteredWallpapers.map(wallpaper => {
             const isSelected    = activeWallpaper?.id === wallpaper.id
             const activeScreens = getWallpaperActiveScreens(wallpaper)
             const isLive        = activeScreens.length > 0
-            const engineIdToLoad = wallpaper.engine || wallpaper.id
+            const typeInfo      = getWallpaperTypeInfo(wallpaper)
+            const thumbUrl      = getWallpaperStaticThumbnail(wallpaper)
+            const isVideo       = typeInfo.type === 'video'
+            const videoPath     = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath
+            const videoSrc      = videoPath ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath)) : ''
 
             return (
               <div
                 key={wallpaper.id}
-                className={`card wp-card ${isSelected ? 'card-active' : ''}`}
+                className="mp-card"
+                style={{
+                  border: isSelected ? '1px solid var(--color-brand)' : undefined,
+                  boxShadow: isSelected ? '0 0 0 1px var(--color-brand), 0 8px 24px rgba(0,0,0,0.4)' : undefined,
+                }}
                 onClick={() => selectWallpaper(wallpaper)}
                 onMouseEnter={() => setHoveredId(wallpaper.id)}
                 onMouseLeave={() => setHoveredId(null)}
@@ -679,80 +1069,201 @@ export default function HomePage() {
                   handleApply(wallpaper)
                 }}
               >
-                {/* Preview area */}
-                <div style={{ height: 110, background: '#000', position: 'relative' }}>
-                  <WallpaperThumbnail wallpaper={wallpaper} isHovered={hoveredId === wallpaper.id} />
-
-                  {/* Badges */}
-                  {isLive && (
-                    <div style={{
-                      position: 'absolute', top: 6, right: 6,
-                      background: 'rgba(16, 185, 129, 0.9)', backdropFilter: 'blur(4px)',
-                      borderRadius: 999, padding: '2px 8px', fontSize: 9, fontWeight: 700, color: '#fff',
-                      display: 'flex', alignItems: 'center', gap: 4, zIndex: 2,
-                    }}>
-                      <div className="status-dot-live" />
-                      {activeScreens[0] === 'All Screens' ? 'LIVE' : activeScreens.join(', ')}
+                {/* ── 1. Thumbnail Container (Real Video Frame / Static Image, Zero Leak) ── */}
+                <div
+                  className="mp-thumb-container"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPreviewWallpaper(wallpaper)
+                  }}
+                  title={`Click to preview ${wallpaper.name}`}
+                >
+                  {thumbUrl ? (
+                    <img
+                      src={thumbUrl}
+                      alt={wallpaper.name}
+                      className="mp-thumb-img"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.style.display = 'none'
+                      }}
+                    />
+                  ) : isVideo && videoSrc ? (
+                    <VideoThumbnailCard videoSrc={videoSrc} name={wallpaper.name} isHovered={hoveredId === wallpaper.id} />
+                  ) : (
+                    <div
+                      className="flex items-center justify-center w-full h-full"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(var(--rgb-card), 0.9), rgba(var(--rgb-base), 0.98))',
+                        color: typeInfo.color,
+                      }}
+                    >
+                      <typeInfo.icon size={36} style={{ opacity: 0.6 }} />
                     </div>
                   )}
 
-                  {/* Quick Unpin button on card top left */}
-                  <button
-                    className="btn-icon"
-                    style={{
-                      position: 'absolute', top: 6, left: 6, zIndex: 3,
-                      background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.85)',
-                      padding: 4, borderRadius: 6, backdropFilter: 'blur(4px)',
-                    }}
-                    title="Remove from Home screen"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      unpinFromHome(wallpaper.id)
-                    }}
-                  >
-                    <PinOff size={11} />
-                  </button>
-
-                  {/* Hover Overlay with Wallpaper Engine quick action */}
-                  <div className="wp-hover-overlay">
-                    <button
-                      className="btn btn-primary"
-                      style={{ padding: '6px 14px', fontSize: 12 }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        selectWallpaper(wallpaper)
-                        handleApply(wallpaper)
+                  {/* Top-Left: Media Type Badge */}
+                  <div className="mp-badge-top-left">
+                    <div
+                      className="mp-pill-badge"
+                      style={{
+                        background: 'rgba(10, 10, 14, 0.75)',
+                        color: typeInfo.color,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        fontSize: 10,
                       }}
                     >
-                      <Play size={12} fill="#fff" />
-                      {isLive ? 'Re-apply' : 'Apply'}
+                      <typeInfo.icon size={11} />
+                      <span>{typeInfo.label}</span>
+                    </div>
+                  </div>
+
+                  {/* Top-Right: Live Status Badge & Unpin Button */}
+                  <div className="mp-badge-top-right flex items-center gap-1">
+                    {isLive && (
+                      <div
+                        className="mp-pill-badge"
+                        style={{
+                          background: 'rgba(16, 185, 129, 0.92)',
+                          color: '#fff',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          fontSize: 10,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <div className="status-dot-live" />
+                        <span>{activeScreens[0] === 'All Screens' ? 'LIVE' : activeScreens.join(', ')}</span>
+                      </div>
+                    )}
+
+                    <button
+                      className="btn-icon"
+                      style={{
+                        background: 'rgba(0,0,0,0.65)',
+                        color: 'rgba(255,255,255,0.85)',
+                        padding: 5,
+                        borderRadius: 6,
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                      }}
+                      title="Remove from Home favorites"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        unpinFromHome(wallpaper.id)
+                      }}
+                    >
+                      <PinOff size={12} />
                     </button>
-                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Double-click to apply</span>
+                  </div>
+
+                  {/* Hover Overlay: Center Quick Preview Pill */}
+                  <div className="mp-thumb-overlay">
+                    <div className="mp-preview-pill">
+                      <Eye size={13} />
+                      <span>Quick Preview</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Card Title and Tags */}
-                <div style={{ padding: '10px 12px' }}>
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="font-medium text-sm truncate" title={wallpaper.name}>
+                {/* ── 2. Card Content & Hierarchy ── */}
+                <div style={{ padding: '16px 16px 14px 16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  {/* Title & Subtitle */}
+                  <div style={{ marginBottom: 10 }}>
+                    <h3
+                      className="font-semibold"
+                      style={{
+                        fontSize: 14,
+                        lineHeight: '1.3',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        cursor: 'pointer',
+                        color: isSelected ? 'var(--color-brand)' : 'var(--text-main)',
+                        transition: 'color 0.15s ease',
+                      }}
+                      onClick={() => selectWallpaper(wallpaper)}
+                      title={wallpaper.name}
+                    >
                       {wallpaper.name}
+                    </h3>
+                    <div className="text-xs text-muted" style={{ marginTop: 3 }}>
+                      {wallpaper.communityMeta?.author
+                        ? `by ${wallpaper.communityMeta.author}`
+                        : wallpaper.isCustom
+                        ? `Custom ${typeInfo.label}`
+                        : `Built-in Canvas 2D Engine`}
                     </div>
-                    <div className="flex items-center">
+                  </div>
+
+                  {/* Tags & Action Icons Row */}
+                  <div
+                    className="flex items-center justify-between"
+                    style={{
+                      paddingTop: 10,
+                      paddingBottom: 12,
+                      borderTop: '1px solid var(--border-main)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div className="flex items-center gap-1 text-xs text-subtle truncate" style={{ maxWidth: '55%' }}>
+                      {wallpaper.tags && wallpaper.tags.length > 0 ? (
+                        wallpaper.tags.slice(0, 2).map(tag => (
+                          <span
+                            key={tag}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              background: 'rgba(255,255,255,0.05)',
+                              border: '1px solid var(--border-main)',
+                              fontSize: 10,
+                            }}
+                          >
+                            #{tag}
+                          </span>
+                        ))
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>60 FPS Native</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {/* Dedicated Preview Button */}
+                      <button
+                        className="btn btn-ghost"
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: 11,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          color: 'var(--text-muted)',
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setPreviewWallpaper(wallpaper)
+                        }}
+                        title="Open live preview window"
+                      >
+                        <Eye size={12} />
+                        <span>Preview</span>
+                      </button>
+
                       <button
                         className="btn-icon"
-                        style={{ padding: 3 }}
+                        style={{ padding: '4px 6px', color: 'var(--text-muted)' }}
                         title="Rename Wallpaper"
                         onClick={(e) => {
                           e.stopPropagation()
                           setRenameModal({ isOpen: true, id: wallpaper.id, currentName: wallpaper.name })
                         }}
                       >
-                        <Pencil size={11} />
+                        <Pencil size={12} />
                       </button>
+
                       {wallpaper.isCustom && (
                         <button
                           className="btn-icon"
-                          style={{ padding: 3 }}
+                          style={{ padding: '4px 6px', color: 'var(--color-rose)' }}
                           title="Delete custom wallpaper"
                           onClick={(e) => {
                             e.stopPropagation()
@@ -760,13 +1271,39 @@ export default function HomePage() {
                             uninstallItem(wallpaper.id)
                           }}
                         >
-                          <Trash2 size={11} />
+                          <Trash2 size={12} />
                         </button>
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-muted" style={{ marginTop: 2 }}>
-                    {wallpaper.tags?.slice(0, 2).join(', ') || 'custom'}
+
+                  {/* Primary Action Button (Full Width, 36px Height, ONLY ONE APPLY BUTTON) */}
+                  <div style={{ marginTop: 'auto' }}>
+                    {isLive ? (
+                      <div
+                        className="btn btn-success mp-btn-action w-full"
+                        style={{
+                          cursor: 'default',
+                          background: 'color-mix(in srgb, var(--color-emerald) 15%, transparent)',
+                          borderColor: 'var(--color-emerald)',
+                          color: 'var(--color-emerald)',
+                        }}
+                      >
+                        <Check size={14} /> Active on Desktop
+                      </div>
+                    ) : (
+                      <button
+                        className={`btn ${isSelected ? 'btn-primary' : 'btn-secondary'} mp-btn-action w-full`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          selectWallpaper(wallpaper)
+                          handleApply(wallpaper)
+                        }}
+                        title="Apply to Windows desktop"
+                      >
+                        <Play size={13} fill="currentColor" /> Apply to Desktop
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -867,6 +1404,19 @@ export default function HomePage() {
         onClose={() => setAddStreamModal(false)}
         onConfirm={handleConfirmAddStream}
       />
+
+      {previewWallpaper && (
+        <HomePreviewModal
+          wallpaper={previewWallpaper}
+          onClose={() => setPreviewWallpaper(null)}
+          onApply={(wp) => {
+            selectWallpaper(wp)
+            handleApply(wp)
+            setPreviewWallpaper(null)
+          }}
+          isLive={getWallpaperActiveScreens(previewWallpaper).length > 0}
+        />
+      )}
     </div>
   )
 }

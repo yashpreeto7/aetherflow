@@ -2811,6 +2811,12 @@ fn main() {
             get_detailed_memory_usage,
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            {
+                mpv::kill_all_mpv_processes();
+                let _ = mpv::ensure_mpv_job();
+            }
+
             let is_minimized = is_minimized_boot();
             let start_log = format!("AuraOS: Creating main window (minimized/autostart={})...", is_minimized);
             log_msg(&start_log);

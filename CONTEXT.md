@@ -3,7 +3,10 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 21:20 IST — Resolved login completion issue: fixed TCP stream body fragmentation via full-request Content-Length reader, added dual GET (`/token?url=`) and POST (`/token`) channels, added `ACTIVE_OAUTH_PORT` reuse, added `processOAuthCallback` supporting both implicit tokens & PKCE codes, added direct link/token manual paste & clipboard fallback to AuthModal, added Win32 `SW_RESTORE` foreground focus on auth success, and built & deployed release binary.
+2026-09-10 23:35 IST — Resolved Home page card UX improvements:
+1. Removed duplicate "Apply to Desktop" option: Thumbnail hover now triggers "[Eye] Quick Preview", leaving the full-width bottom button as the sole primary action button.
+2. Added dedicated Preview options: Direct click on thumbnail, hover Quick Preview pill, and action row "[Eye] Preview" button open HomePreviewModal with live interactive preview, fullscreen/mute controls, and zero-leak unmount cleanup.
+3. Fixed custom video thumbnails: Added VideoThumbnailCard with hardware-accelerated poster frame extraction at 0.5s (strict mode safe), added HTTP 206 Partial Content range streaming in Vite middleware, and preserved `...item` (preview/mediaType) in Home wallpapers list mapping. Rebuilt and deployed AetherFlow.exe (v1.0.4).
 
 ---
 
@@ -88,11 +91,12 @@ AGENTS.md                           Full agent instructions
 GEMINI.md                           Gemini-specific session start rules
 REMAINING_TASKS.md                  Step-by-step remaining task guide
 HANDOFF.md                          Session handoff with full status
+supabase/migration.sql              Supabase SQL migration (user_profiles, submissions, installs, likes, RPC functions)
 ```
 
 ### ❌ Not Done
 ```
-Supabase DB tables                   marketplace SQL (optional)
+None — All core features, engines, native system integrations, and marketplace backend complete!
 ```
 
 ### 🚀 Direct Launchers Available
@@ -176,6 +180,9 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord auth: created branch `fix-login`, implemented `start_oauth_listener` with branded callback page in `main.rs`, fixed `open_url` command splitting URLs at ampersands via `rundll32`, removed Discord from `AuthModal`, updated `supabase.js` and `App.jsx`, and compiled & deployed fresh `AetherFlow.exe` |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Fixed sign-in modal stuck state with fallback controls (Open Browser, Copy Link, Cancel in AuthModal) and implemented recursive descendant process termination (`kill_all_descendant_processes`), MPV termination, and clean tray icon drop on tray quit |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login completion issue: fixed TCP stream body fragmentation via full-request Content-Length reader, added dual GET (`/token?url=`) and POST (`/token`) channels, added `ACTIVE_OAUTH_PORT` reuse, added `processOAuthCallback` supporting both implicit tokens & PKCE codes, added direct link/token manual paste & clipboard fallback to AuthModal, added Win32 `SW_RESTORE` foreground focus on auth success, and built & deployed release binary |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Deployed Community Marketplace backend: direct Supabase RPC integration (track_install, toggle_like, get_user_likes, marketplace_stats) and migration executed; expanded community catalog to 20 wallpapers with raw GitHub CDN priority; reset seed counts to 0 with Staff Pick badges; resolved like counter optimistic and server sync (+1); added My Submissions tab |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved orphaned MPV video process on taskbar / Task Manager "End task": implemented dedicated Windows Job Object in mpv.rs with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, bound spawned children, verified instant kernel termination on TerminateProcess, and deployed updated AetherFlow.exe |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Added Marketplace "+ Add to Library" option, Zero-Memory-Leak Live Preview Modal (createPortal + about:blank iframe teardown + GPU decoder release), and resolved live download counter sync with Supabase installs |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

@@ -3,9 +3,83 @@ use std::process::{Child, Command, Stdio};
 use std::io::Write;
 
 #[cfg(windows)]
-use windows_sys::Win32::Foundation::HWND;
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND};
 #[cfg(windows)]
 use windows_sys::Win32::System::Pipes::WaitNamedPipeW;
+#[cfg(windows)]
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
+    JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+};
+
+#[cfg(windows)]
+static MPV_JOB_HANDLE: std::sync::Mutex<Option<usize>> = std::sync::Mutex::new(None);
+
+#[cfg(windows)]
+pub fn ensure_mpv_job() -> Option<HANDLE> {
+    let mut guard = MPV_JOB_HANDLE.lock().ok()?;
+    if let Some(val) = *guard {
+        return Some(val as HANDLE);
+    }
+
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            log_mpv_msg(&format!("[MPV JOB ERROR] CreateJobObjectW failed: {}", std::io::Error::last_os_error()));
+            return None;
+        }
+
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+        let res = SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const std::ffi::c_void,
+            std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        );
+
+        if res == 0 {
+            log_mpv_msg(&format!("[MPV JOB ERROR] SetInformationJobObject failed: {}", std::io::Error::last_os_error()));
+            CloseHandle(job);
+            return None;
+        }
+
+        log_mpv_msg("[MPV JOB] Successfully initialized MPV Job Object with KILL_ON_JOB_CLOSE");
+        println!("[MPV JOB] Successfully initialized MPV Job Object with KILL_ON_JOB_CLOSE");
+        *guard = Some(job as usize);
+        Some(job)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn ensure_mpv_job() {}
+
+#[cfg(windows)]
+pub fn assign_child_to_mpv_job(child: &Child) {
+    if let Some(job) = ensure_mpv_job() {
+        let child_handle = child.as_raw_handle() as HANDLE;
+        unsafe {
+            let res = AssignProcessToJobObject(job, child_handle);
+            if res != 0 {
+                let msg = format!("[MPV JOB] Successfully assigned MPV PID {} to Job Object", child.id());
+                log_mpv_msg(&msg);
+                println!("{}", msg);
+            } else {
+                let err = std::io::Error::last_os_error();
+                let msg = format!("[MPV JOB WARN] AssignProcessToJobObject failed for PID {}: {}", child.id(), err);
+                log_mpv_msg(&msg);
+                eprintln!("{}", msg);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn assign_child_to_mpv_job(_child: &Child) {}
 
 pub struct MpvProcess {
     pub child: Child,
@@ -359,6 +433,9 @@ pub fn spawn_mpv_wallpaper(
 
     let child = cmd.spawn().map_err(|e| format!("Failed to spawn MPV process {:?}: {}", mpv_exe, e))?;
     let mpv_pid = child.id();
+
+    #[cfg(windows)]
+    assign_child_to_mpv_job(&child);
 
     #[cfg(windows)]
     let mpv_hwnd = match find_mpv_hwnd(mpv_pid) {

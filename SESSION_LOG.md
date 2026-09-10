@@ -1003,3 +1003,125 @@
   - Deployed updated `AetherFlow.exe` to workspace root and verified live running process (PID 18132).
 - **Build status:** ✅ `npm run build` (525ms), `cargo check` (23.34s), `cargo build --release` (2m 04s) passed with 0 errors.
 ---
+
+## Session: 2026-09-10 22:15 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Community Marketplace Backend Migration & Direct Supabase RPC Integration**:
+    - Replaced Cloudflare Worker dependency with direct Supabase database calls and RPC functions.
+    - Generated `supabase/migration.sql` creating tables (`user_profiles`, `submissions`, `installs`, `likes`), row-level security (RLS) policies, and 4 RPC functions (`track_install`, `toggle_like`, `get_user_likes`, `marketplace_stats`).
+    - Successfully executed migration in Supabase SQL editor.
+  - **Catalog Expansion & Curation**:
+    - Expanded community catalog (`yashpreeto7/aetherflow-community`) to 20 curated wallpapers (11 YouTube + 9 Image).
+    - Swapped catalog CDN URLs in `src/lib/marketplace.js` so `raw.githubusercontent.com` is primary, bypassing 24h jsDelivr caching for newly pushed entries.
+    - Reset mock seed numbers to 0 across the catalog for genuine organic numbers.
+    - Added `featured: true` flags and introduced a golden "★ STAFF PICK" badge overlay (`Award` icon) in `Marketplace.jsx` for curated wallpapers.
+  - **Like Counter Increment & Real-Time Sync**:
+    - Implemented optimistic like toggling and real-time counter updates with `likeCounts` state map in `src/pages/Marketplace.jsx`.
+    - Resolved issue where clicking heart toggled pink but the count did not increment (+1) by syncing server-returned totals from `toggle_like` and using the card's current like count as base.
+  - **Submissions & Download Tracking**:
+    - Added "My Submissions" tab with pending/approved/rejected review status tracking.
+    - Connected `trackInstall` directly to the 1-click "Install & Apply" flow.
+- **Build status:** ✅ `npm run build` (1.16s) passing clean.
+---
+
+## Session: 2026-09-10 22:25 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved Orphaned MPV Video Processes on Taskbar / Task Manager "End task"**:
+    - **Root Cause**: When the user ended task from the taskbar or Task Manager, Windows called `TerminateProcess(AetherFlow.exe)`. User-mode termination logic (such as `Drop` or tray shutdown) cannot execute during abrupt termination. Additionally, AetherFlow's main job object had `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`, which explicitly instructed Windows to spawn child processes (`AetherFlow-VideoEngine.exe` / `mpv.exe`) outside of the job object. When AetherFlow was killed, MPV remained orphaned and continued rendering video wallpapers to the desktop shell.
+    - **Implementation (`src-tauri/src/mpv.rs`)**:
+      - Created a dedicated Windows Job Object (`MPV_JOB_HANDLE`) configured with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway flags.
+      - Implemented `assign_child_to_mpv_job(&child)`, binding every spawned MPV process handle (`child.as_raw_handle()`) directly to the job object.
+      - Added cold-boot stale process purge (`mpv::kill_all_mpv_processes()`) and job pre-initialization at the top of `.setup` in `src-tauri/src/main.rs`.
+    - **Verification**: Tested abrupt `TerminateProcess` (`Stop-Process -Force`) against live instances with active dual-monitor video wallpapers. Verified that the Windows NT kernel immediately closed the job handle and killed all child MPV processes instantly with zero leftover processes in Task Manager.
+    - Built production frontend (`npm run build` in 481ms) and compiled release binary (`cargo build --release` in 2m 26s). Deployed updated `AetherFlow.exe` (v1.0.4, 7.41MB) to workspace root.
+- **Build status:** ✅ `npm run build` (481ms), `cargo check` (1.49s), `cargo build --release` (2m 26s) clean, release binary updated and verified running.
+---
+
+## Session: 2026-09-10 22:50 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Marketplace "Add to Library" Option**:
+    - Implemented `handleAddToLibrary(wallpaper)` in `src/pages/Marketplace.jsx` to let users download community wallpapers directly to their Library and Home pin collection without forcing immediate desktop wallpaper application.
+    - Updated card UI to display "+ Library" and "▷ Apply" for uninstalled wallpapers, and "✓ In Library" + "▷ Apply" for wallpapers already installed.
+  - **Zero-Memory-Leak Live Preview Modal (`MarketplacePreviewModal`)**:
+    - Added "Preview" pill button overlay with `Eye` icon on every thumbnail and enabled click-to-preview.
+    - Attached modal directly to `document.body` via `createPortal` to guarantee complete immunity from parent CSS transforms, perfect viewport centering, and isolated z-index stacking.
+    - Built dedicated zero-leak subcomponents:
+      - `CleanYouTubePreview`: Dynamically creates `iframe` with full autoplay/mute/loop parameters, and on unmount, explicitly navigates `iframe.src = 'about:blank'` and removes the element from the DOM. This immediately aborts network buffering and tears down Chromium/WebView2 audio/video decoding pipelines.
+      - `CleanVideoPreview`: Explicitly executes `video.pause()`, `video.removeAttribute('src')`, and `video.load()` on unmount to release GPU hardware decoders.
+      - `CleanImagePreview`: Renders image cleanly with proper unmount cleanup.
+    - Added backdrop click-outside, X button, and `Escape` key listeners with automatic event listener cleanup.
+    - Added "+ Add to Library", "▷ Apply to Desktop", and Heart/Like buttons directly inside the preview modal.
+    - Verified in Chrome DevTools: closing modal results in `iframeCount: 0`, `modalCount: 0`, and halts media streams.
+  - **Download Count Real-Time Sync**:
+    - **Root Cause**: `Marketplace.jsx` previously rendered `{(item.downloads || 0).toLocaleString()}` directly from static GitHub catalog data without querying Supabase `installs` or maintaining live state.
+    - **Fix**: Added `fetchMarketplaceCounts()` in `src/lib/marketplace.js` to query Supabase aggregate counts, called it on mount in `Marketplace.jsx` to populate `downloadCounts` state, rendered `Math.max(item.downloads || 0, downloadCounts[item.id] ?? 0)`, and optimistically incremented count on "+ Library" and "Apply" with server total sync.
+    - Verified: all 20 community wallpapers now display their actual install counts (updating from 0 to 1+).
+- **Build status:** ✅ `npm run build` (457ms), DevTools interactive verification passed, release binary building.
+---
+
+## Session: 2026-09-10 23:08 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **UI/UX Pro Max Redesign of Marketplace Cards**:
+    - **Problem**: The Marketplace card layout was severely congested and cramped: cards used `minmax(220px, 1fr)`, squeezing into narrow ~200px columns. Inside each card, the thumbnail had up to 4 competing badges simultaneously, and the card footer crammed the download count (`1`), `[👁 Preview]`, `[✓ In Library]`, and `[▷ Apply]` all horizontally into a single line, causing button truncation and text clipping.
+    - **Design Intelligence Applied (`ui-ux-pro-max` guidelines)**:
+      - **Grid Architecture**: Expanded grid from cramped `minmax(220px, 1fr)` (14px gap) to generous `minmax(280px, 1fr)` (20px gap). In the standard 960px container, this yields 3 balanced, spacious cards (~306px each) with +40% breathing room.
+      - **Cinematic Thumbnail**: Increased thumbnail height to 160px. De-cluttered top badges: kept only top-left `★ STAFF PICK` (only when featured) and top-right frosted glass media type pill (`YouTube` / `Image`).
+      - **Interactive Hover Veil**: Added `.mp-thumb-overlay` with a centered frosted glass `[ 👁 Quick Preview ]` pill and subtle zoom on card hover (`scale(1.05)`). Clicking anywhere on the thumbnail opens the live preview modal.
+      - **Typography & Clamping**: Bold 14px title with brand color hover transition, author with dot styling, and 2-line clamped description with 1.45 unitless line-height.
+      - **Dedicated Stats Row**: Separated social metrics from the primary action bar with a clean divider. Features interactive bouncy Heart like button with counter, download counter with icon, and a dedicated secondary `[ 👁 Preview ]` button.
+      - **Full-Width 2-Button Action Bar**: 36px height touch targets with 8px spacing. Uninstalled cards cleanly display `[ + Library ]` (flex: 1) and `[ ▷ Apply ]` (flex: 1.25). Installed cards display `[ ✓ In Library ]` (emerald ghost pill) and `[ ▷ Apply ]`. Active wallpaper displays full-width `[ ✓ Active on Desktop ]`. Zero text clipping or overflow.
+    - **Verification**: Verified visually via Chrome DevTools screenshots. Zero console errors, clean interactive preview modal, and smooth hover animations.
+- **Build status:** ✅ `npm run build` (659ms) passed, DevTools verified, release binary building.
+---
+
+## Session: 2026-09-10 23:20 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved Badge & Title Spacing in Preview Modal**:
+    - **Root Cause**: The preview modal header used `className="flex items-center gap-2.5"`. Because `.gap-2.5` was undefined in the CSS utility system, the browser defaulted to `gap: 0px`, causing the `[YouTube]` pill to touch and collide directly with the title.
+    - **Fix**: Replaced with explicit `style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}` and added `flexShrink: 0` to the badge. Verified in DevTools: clean, generous 14px separation.
+  - **Redesigned Home Page Cards (Matching Marketplace with Zero RAM & Zero Leaks)**:
+    - **Architecture**: Redesigned Home wallpaper cards to match the Marketplace UI/UX Pro Max layout (`minmax(280px, 1fr)` with 20px gap, 160px cinematic thumbnail height).
+    - **Ultra-Low RAM & Leak Prevention**:
+      - Replaced interactive preview elements with a **lightweight static thumbnail pipeline** (`getWallpaperStaticThumbnail`):
+        - Built-in Canvas 2D engines: static SVGs (`/previews/*.svg`, only ~600 bytes each).
+        - YouTube streams: static JPEG image thumbnails (`https://img.youtube.com/vi/{id}/hqdefault.jpg`, ~40KB cached).
+        - Local pictures: `<img loading="lazy" />` via `safeConvertFileSrc`.
+        - Local videos: static poster image or dark themed gradient with video badge.
+      - **Zero RAM Bloat**: No `<canvas>` animation loops, no WebGL contexts, and no background Direct3D/Chromium video decoders are created in the card list. Baseline WebView2 RAM stays at ~30MB.
+    - **Card Enhancements**: Added media type pills (`CANVAS`, `VIDEO`, `YOUTUBE`, `IMAGE`, `STREAM`), live status indicator (`● LIVE`), hover zoom with centered `[ ▷ Apply to Desktop ]` pill, tag chips, pencil rename, trash delete, and 36px full-width action bar.
+    - **Verification**: Tested in DevTools with screenshots across category filters (All, Custom, Built-in Canvas). Built release binary (`cargo build --release` in 2m 19s) and deployed updated `AetherFlow.exe` (7.41MB, PID `14252`).
+- **Build status:** ✅ `npm run build` (569ms), `cargo build --release` (2m 19s) clean, release executable deployed and running.
+---
+
+## Session: 2026-09-10 23:35 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Clarified & Resolved 3 Core User Inquiries on Home Cards**:
+    1. **"Why 2 Apply to Desktop option"**:
+       - **Cause**: Previously, both the thumbnail hover overlay AND the bottom card action footer displayed redundant "Apply to Desktop" buttons.
+       - **Fix**: Replaced the center thumbnail hover button with `[ 👁 Quick Preview ]` (consistent with Marketplace design patterns). Clicking anywhere on the thumbnail now opens the live preview modal. The bottom 36px full-width button remains the sole `[ ▷ Apply to Desktop ]` primary action.
+    2. **"No preview option"**:
+       - **Cause**: The previous Home page cards lacked a preview mechanism, forcing users to apply wallpapers directly to their Windows desktop to see what they looked like.
+       - **Fix**:
+         - Added `[ 👁 Preview ]` ghost button in the card body metadata row (beside Rename and Delete).
+         - Added `HomePreviewModal` with live interactive canvas/video/image/stream rendering, audio/video controls, and an "Apply to Desktop" shortcut.
+         - Embedded full keyboard `Escape` listener and backdrop click dismissal.
+         - Guaranteed zero memory leaks with complete cleanup of video hardware decoders, event listeners, and canvas loops on unmount.
+    3. **"No thumbnail" on Custom Videos**:
+       - **Cause**: Custom video wallpapers (such as `elaina-tipsy-wandering-witch-moewalls-com.mp4`) previously returned `null` from `getWallpaperStaticThumbnail` and lacked poster frames. Additionally, Vite's dev server middleware did not support HTTP Range requests (`206 Partial Content`), causing video metadata/frame extraction to stall on large video files.
+       - **Fix**:
+         - Built `VideoThumbnailCard`: uses `<video src="${videoSrc}#t=0.5" preload="metadata" muted playsInline />`, only loading container headers to display the static poster frame at 0.5s with zero extra RAM. Plays on hover, pauses on unhover.
+         - Fixed React 19 StrictMode cleanup bug where `v.removeAttribute('src')` stripped `src` on remount.
+         - Implemented HTTP Range (`206 Partial Content`) in Vite middleware `aetherDevPlugin`, allowing instant byte-range streaming for MP4, WebM, MKV, MOV files.
+         - Preserved `...item` (passing `preview`, `mediaType`, and `communityMeta`) in Home page wallpaper list useMemo.
+  - **Verification**:
+    - `npm run build` compiled client bundle in 680ms with zero errors.
+    - Verified in Chrome DevTools: all 39 cards render cleanly with 39 `[ 👁 Preview ]` buttons, exactly 39 `[ ▷ Apply to Desktop ]` buttons, and 23 hardware-accelerated video thumbnails showing real video frames (verified `readyStates: [1, 1, 1...]`, `opacities: ["1", "1", "1..."]`).
+    - Verified `HomePreviewModal` opens smoothly, plays `elaina-tipsy` at `videoReadyState: 4`, and closes cleanly with `modalClosed: true`.
+- **Build status:** ✅ `npm run build` (680ms) passed, `cargo build --release` running in background.
+---

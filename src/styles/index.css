@@ -275,3 +275,141 @@ input:checked ~ .toggle-thumb { transform: translateX(16px); }
   background: color-mix(in srgb, var(--color-brand) 10%, transparent) !important;
 }
 
+/* ── Marketplace Card Redesign (UI/UX Pro Max) ─────────────────────────────── */
+.mp-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.2s ease;
+}
+.mp-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--color-brand) 50%, var(--border-main));
+  box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px color-mix(in srgb, var(--color-brand) 30%, transparent);
+}
+
+.mp-thumb-container {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(var(--rgb-card), 0.8), rgba(var(--rgb-base), 0.95));
+  cursor: pointer;
+}
+
+.mp-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mp-card:hover .mp-thumb-img {
+  transform: scale(1.05);
+}
+
+.mp-thumb-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 100%);
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.mp-card:hover .mp-thumb-overlay {
+  opacity: 1;
+}
+
+.mp-preview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 15, 20, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  transform: translateY(4px);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mp-card:hover .mp-preview-pill {
+  transform: translateY(0);
+}
+
+.mp-badge-top-left {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+}
+
+.mp-badge-top-right {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.mp-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.mp-btn-action {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.mp-like-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-main);
+  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mp-like-btn:hover {
+  background: color-mix(in srgb, var(--color-rose) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-rose) 35%, transparent);
+  color: var(--color-rose);
+}
+.mp-like-btn.liked {
+  color: var(--color-rose);
+  border-color: color-mix(in srgb, var(--color-rose) 40%, transparent);
+  background: color-mix(in srgb, var(--color-rose) 15%, transparent);
+}
+
+

@@ -1,5 +1,5 @@
 # AetherFlow — Session Handoff File
-> **Updated:** 2026-09-10 21:05 IST | **Status:** ✅ COMPLETE — Production Release v1.0.4 verified (fix-login branch updated with fallback controls & clean shutdown)
+> **Updated:** 2026-09-10 23:35 IST | **Status:** ✅ COMPLETE — Resolved duplicate Apply to Desktop button, added dedicated Preview button & HomePreviewModal, enabled hardware-accelerated video poster frame thumbnails via VideoThumbnailCard & HTTP 206 range streaming in dev server. Built & deployed AetherFlow.exe.
 
 ---
 
@@ -67,6 +67,41 @@ We are building **AetherFlow** (formerly AuraOS) — a **high-performance, stand
   - Added global bindings `window.convertFileSrc = safeConvertFileSrc` and `globalThis.convertFileSrc = safeConvertFileSrc` in `src/main.jsx`.
   - Rebuilt production frontend and release binary `AetherFlow.exe` (v1.0.4).
 
+### 5. Community Marketplace Backend & Live Supabase Migration (Completed 2026-09-10)
+- **Supabase Direct Integration**: Replaced Cloudflare Worker dependency with direct Supabase calls and RPC functions. Created `supabase/migration.sql` with tables (`user_profiles`, `submissions`, `installs`, `likes`), RLS security policies, and 4 RPC functions (`track_install`, `toggle_like`, `get_user_likes`, `marketplace_stats`). Executed migration in Supabase SQL editor successfully.
+- **Community Catalog & Curation**: Expanded community catalog (`yashpreeto7/aetherflow-community`) to 20 curated wallpapers (11 YouTube + 9 Image). Swapped catalog CDN URLs in `src/lib/marketplace.js` so `raw.githubusercontent.com` is primary (bypassing 24h jsDelivr caching). Reset mock seed numbers to 0 for authentic organic stats, and added `featured: true` flags with a golden "★ STAFF PICK" badge overlay (`Award` icon) in `Marketplace.jsx`.
+- **Like Counter & Sync Fix**: Added optimistic and server-synchronized like tracking (`likeCounts` state map + `toggleLike` RPC). Resolved issue where heart toggled pink but the count did not increment (+1) by syncing real-time totals from the Supabase RPC response.
+- **Submissions & Download Tracking**: Added "My Submissions" tab with pending/approved/rejected review status tracking, and wired `trackInstall` into the 1-click "Install & Apply" flow.
+
+### 6. Orphaned MPV Process on Taskbar / Task Manager "End Task" (Resolved 2026-09-10)
+- **Root Cause**: When the user right-clicked AetherFlow on the taskbar and chose "End task" (or killed AetherFlow via Task Manager), Windows executed `TerminateProcess(hProcess, 1)`. User-mode termination handlers (`Drop`, `atexit`, tray shutdown hooks) never run during an abrupt termination. Furthermore, AetherFlow's main job object had `JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK`, which explicitly caused child processes spawned by `Command::spawn()` to break out of the parent job. Consequently, `AetherFlow-VideoEngine.exe` / `mpv.exe` processes were orphaned, remained pinned to the desktop layer, and continued rendering video indefinitely.
+- **Solution**:
+  - Implemented a dedicated Windows Job Object (`MPV_JOB_HANDLE`) in `src-tauri/src/mpv.rs` configured strictly with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` without breakaway flags.
+  - Bound every spawned child process directly to `MPV_JOB` using `assign_child_to_mpv_job(&child)`.
+  - Added cold-boot stale process purge (`mpv::kill_all_mpv_processes()`) and job pre-initialization at the start of `.setup`.
+  - Tested and verified: When AetherFlow is forcefully terminated via `TerminateProcess`, the Windows NT kernel immediately closes the job object handle and forcibly terminates all associated MPV video engines with zero lag.
+  - Recompiled and deployed release binary `AetherFlow.exe` (v1.0.4, 7.41MB).
+
+### 7. Marketplace "Add to Library", Zero-Memory-Leak Live Preview, & Download Count Sync (Resolved 2026-09-10)
+- **Add to Library & Card Button Layout**:
+  - Implemented `handleAddToLibrary(wallpaper)` in `src/pages/Marketplace.jsx`. Allows users to download and add community wallpapers directly to their Library without forcing immediate desktop wallpaper application.
+  - Card UI footer now displays an unmistakable action button bar on every card:
+    - **`[👁 Preview]`**: Dedicated preview button right in the card footer next to action buttons, in addition to the thumbnail click.
+    - **`[+ Library]`**: Added for uninstalled wallpapers; transitions to a green **`[✓ In Library]`** badge once added.
+    - **`[▷ Apply]`**: Installs and applies directly to the Windows desktop.
+- **De-cluttering Home Screen**:
+  - **Root Cause**: `Home.jsx` previously had `if (w.isCustom) return true`, which forced ALL custom and marketplace wallpapers onto Home regardless of `homeWallpaperIds`. Furthermore, `useStore.js` `syncCustomWallpapersFromDisk()` was forcibly adding all disk items to `homeWallpaperIds`.
+  - **Solution**: Removed the forced custom inclusion in `Home.jsx`, filtered community wallpapers out of `homeWallpaperIds` in `useStore.js`, and removed `pinToHome` calls from marketplace install/add routines. Marketplace wallpapers now stay cleanly inside the **Library** unless the user explicitly pins them.
+- **Zero-Memory-Leak Live Preview Modal**:
+  - Implemented `MarketplacePreviewModal` rendered via `createPortal(..., document.body)` to escape parent CSS transforms and guarantee perfect viewport centering and isolation.
+  - Added `CleanYouTubePreview`: Dynamically mounts iframe with full autoplay/mute/loop parameters, and upon modal close / unmount, immediately sets `iframe.src = 'about:blank'` and removes the element. This forces Chromium/WebView2 to instantly terminate audio/video decoding pipelines and discard GPU buffers.
+  - Added `CleanVideoPreview`: Explicitly executes `video.pause()`, `video.removeAttribute('src')`, and `video.load()` on unmount.
+  - Added `CleanImagePreview`: Renders image cleanly with proper unmount cleanup.
+  - Verified in DevTools: Closing the modal yields `iframeCount: 0`, `modalCount: 0`, and halts media streams. Supports Escape key, backdrop click, and X button.
+- **Download Count Real-Time Sync**:
+  - Root cause: `Marketplace.jsx` previously hardcoded `{(item.downloads || 0).toLocaleString()}` from GitHub's static `index.json`. It never queried Supabase's `installs` table and never stored or rendered an in-memory `downloadCounts` state.
+  - Solution: Added `fetchMarketplaceCounts()` to `src/lib/marketplace.js`, populated `downloadCounts` on mount in `Marketplace.jsx`, updated cards and modal to render `Math.max(item.downloads || 0, downloadCounts[item.id] ?? 0)`, and optimistically incremented count on "+ Library" and "Apply" with server total sync. All 20 wallpapers now reflect their real install counts.
+
 ---
 
 ## 📁 Complete File Tree
@@ -76,6 +111,8 @@ C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 ├── AetherFlow.exe                  ✅ Standalone native executable (v1.0.4)
 ├── package.json                    ✅ npm scripts and dependencies
 ├── vite.config.js                  ✅ Vite 8 build config (oxc minifier, rolldown manualChunks)
+├── supabase/
+│   └── migration.sql               ✅ Supabase SQL migration (tables, RLS policies, RPC functions)
 ├── index.html                      ✅ Control panel HTML entrypoint
 ├── wallpaper.html                  ✅ Dedicated wallpaper host HTML entrypoint
 ├── src-tauri/
@@ -112,7 +149,7 @@ C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 │   │   └── web-stream.js           ✅ YouTube & live web stream engine
 │   ├── lib/
 │   │   ├── supabase.js             ✅ Offline-safe Supabase client & OAuth handlers
-│   │   ├── marketplace.js          ✅ Wallpaper upload/download & metadata sync
+│   │   ├── marketplace.js          ✅ Supabase direct RPC backend (likes, installs, submissions, stats)
 │   │   ├── updater.js              ✅ GitHub Releases auto-updater module
 │   │   └── wallpaperActions.js     ✅ Desktop wallpaper apply, pause, and IPC bridge
 │   ├── pages/
