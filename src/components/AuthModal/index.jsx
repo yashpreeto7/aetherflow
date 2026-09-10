@@ -1,7 +1,7 @@
 import React from 'react'
-import { X, Zap, ExternalLink, Copy, Check } from 'lucide-react'
-import { useStore } from '../../store/useStore.js'
-import { signInWithProvider, isOnline } from '../../lib/supabase.js'
+import { X, Zap, ExternalLink, Copy, Check, ClipboardPaste } from 'lucide-react'
+import { useStore, syncCustomWallpapersFromDisk } from '../../store/useStore.js'
+import { signInWithProvider, isOnline, processOAuthCallback } from '../../lib/supabase.js'
 import { openExternalUrl } from '../../lib/wallpaperActions.js'
 
 // SVG icons for OAuth providers (inline to avoid extra dependencies)
@@ -33,10 +33,14 @@ export default function AuthModal() {
   const showAuthModal = useStore(s => s.showAuthModal)
   const setShowAuthModal = useStore(s => s.setShowAuthModal)
   const isAuthenticated = useStore(s => s.isAuthenticated)
+  const setAuthUser = useStore(s => s.setAuthUser)
   const [loading, setLoading] = React.useState(null) // provider id or null
   const [authUrl, setAuthUrl] = React.useState(null)
   const [copied, setCopied] = React.useState(false)
   const [error, setError] = React.useState(null)
+  const [manualToken, setManualToken] = React.useState('')
+  const [showManualInput, setShowManualInput] = React.useState(false)
+  const [submittingManual, setSubmittingManual] = React.useState(false)
 
   // Automatically close modal when user becomes authenticated
   React.useEffect(() => {
@@ -45,6 +49,8 @@ export default function AuthModal() {
       setLoading(null)
       setAuthUrl(null)
       setError(null)
+      setManualToken('')
+      setShowManualInput(false)
     }
   }, [isAuthenticated, setShowAuthModal])
 
@@ -55,6 +61,8 @@ export default function AuthModal() {
       setAuthUrl(null)
       setCopied(false)
       setError(null)
+      setManualToken('')
+      setShowManualInput(false)
     }
   }, [showAuthModal])
 
@@ -67,6 +75,8 @@ export default function AuthModal() {
     setAuthUrl(null)
     setCopied(false)
     setError(null)
+    setManualToken('')
+    setShowManualInput(false)
     setShowAuthModal(false)
   }
 
@@ -110,6 +120,44 @@ export default function AuthModal() {
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.warn('Clipboard write failed:', err)
+    }
+  }
+
+  const handleManualSubmit = async (inputToUse) => {
+    const raw = (typeof inputToUse === 'string' ? inputToUse : manualToken).trim()
+    if (!raw) return
+    setSubmittingManual(true)
+    setError(null)
+    try {
+      const res = await processOAuthCallback(raw)
+      if (res.success && res.user) {
+        setAuthUser(res.user, res.session)
+        setShowAuthModal(false)
+        await syncCustomWallpapersFromDisk()
+      } else {
+        setError(res.error || 'Could not authenticate with that link. Please copy the full browser URL.')
+      }
+    } catch (err) {
+      setError(err.message || 'Authentication error')
+    } finally {
+      setSubmittingManual(false)
+    }
+  }
+
+  const handlePasteClipboard = async () => {
+    try {
+      const clipText = await navigator.clipboard.readText()
+      if (clipText && (clipText.includes('access_token') || clipText.includes('code=') || (clipText.startsWith('ey') && clipText.includes('.')))) {
+        setManualToken(clipText)
+        handleManualSubmit(clipText)
+      } else if (clipText) {
+        setManualToken(clipText)
+        setShowManualInput(true)
+      } else {
+        setShowManualInput(true)
+      }
+    } catch (e) {
+      setShowManualInput(true)
     }
   }
 
@@ -300,9 +348,123 @@ export default function AuthModal() {
               </button>
             </div>
 
+            {/* Manual link / token paste inside waiting card */}
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(56, 189, 248, 0.15)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <span className="text-xs text-muted" style={{ fontSize: 11 }}>
+                  Signed in in browser? Paste link or token:
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePasteClipboard}
+                  style={{
+                    background: 'none', border: 'none', padding: 0,
+                    color: '#38bdf8', fontSize: 11, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                  title="Paste link or token from clipboard"
+                >
+                  <ClipboardPaste size={12} />
+                  Paste
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="text"
+                  placeholder="http://localhost:1420/callback#access_token=..."
+                  value={manualToken}
+                  onChange={(e) => setManualToken(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleManualSubmit() }}
+                  style={{
+                    flex: 1, padding: '7px 9px', fontSize: 11,
+                    background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-main)',
+                    borderRadius: 7, color: 'var(--text-main)',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleManualSubmit()}
+                  disabled={!manualToken.trim() || submittingManual}
+                  className="btn btn-primary text-xs"
+                  style={{ padding: '7px 12px', fontSize: 11, flexShrink: 0 }}
+                >
+                  {submittingManual ? '...' : 'Sign In'}
+                </button>
+              </div>
+            </div>
+
             {authUrl && (
               <div className="text-xs text-subtle" style={{ fontSize: 10, marginTop: 10, textAlign: 'center' }}>
                 Tip: If your browser didn't open, click "Copy Link" and paste into any browser.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Manual token input option for already opened browser tabs when not loading */}
+        {!loading && online && (
+          <div style={{ marginTop: 14, textAlign: 'center' }}>
+            {!showManualInput ? (
+              <button
+                type="button"
+                onClick={() => setShowManualInput(true)}
+                style={{
+                  background: 'none', border: 'none', padding: '4px 8px',
+                  color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                Already signed in in browser? Paste link
+              </button>
+            ) : (
+              <div style={{
+                padding: '12px', background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border-main)', borderRadius: 10,
+                textAlign: 'left', animation: 'fadeIn 0.15s ease',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span className="text-xs text-muted" style={{ fontSize: 11 }}>
+                    Paste callback link or token:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handlePasteClipboard}
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      color: 'var(--color-brand)', fontSize: 11, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    <ClipboardPaste size={12} />
+                    Paste
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    placeholder="http://localhost:1420/callback#access_token=..."
+                    value={manualToken}
+                    onChange={(e) => setManualToken(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleManualSubmit() }}
+                    style={{
+                      flex: 1, padding: '7px 9px', fontSize: 11,
+                      background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-main)',
+                      borderRadius: 7, color: 'var(--text-main)',
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleManualSubmit()}
+                    disabled={!manualToken.trim() || submittingManual}
+                    className="btn btn-primary text-xs"
+                    style={{ padding: '7px 12px', fontSize: 11, flexShrink: 0 }}
+                  >
+                    {submittingManual ? '...' : 'Sign In'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

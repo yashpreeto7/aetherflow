@@ -4,7 +4,7 @@ import { Home, Store, Library, Settings, Zap, Sparkles, X as CloseIcon, LogOut, 
 import { checkForUpdate } from './lib/updater.js'
 import { useStore, syncCustomWallpapersFromDisk } from './store/useStore.js'
 import { applyWallpaperToDesktop, safeListen, isTauri } from './lib/wallpaperActions.js'
-import { supabase, onAuthStateChange, signOut } from './lib/supabase.js'
+import { supabase, onAuthStateChange, signOut, processOAuthCallback } from './lib/supabase.js'
 import AuthModal from './components/AuthModal/index.jsx'
 import UserAvatar from './components/UserAvatar/index.jsx'
 import StatusBar from './components/StatusBar/index.jsx'
@@ -74,56 +74,36 @@ export default function App() {
 
   // Listen for native OAuth popup callback from Tauri backend
   React.useEffect(() => {
-    let unlisten
-    safeListen('aura:oauth-callback', async (event) => {
+    let unlistenApp
+    let unlistenWindow
+
+    const handleOAuthCallback = async (event) => {
       const urlStr = event.payload
       if (!urlStr) return
       console.log('[AetherFlow] Intercepted OAuth callback URL:', urlStr)
-      try {
-        const hashIdx = urlStr.indexOf('#')
-        const queryIdx = urlStr.indexOf('?')
-
-        const searchStr = queryIdx !== -1 ? (hashIdx > queryIdx ? urlStr.substring(queryIdx + 1, hashIdx) : urlStr.substring(queryIdx + 1)) : ''
-        const hashStr = hashIdx !== -1 ? urlStr.substring(hashIdx + 1) : ''
-
-        const searchParams = new URLSearchParams(searchStr)
-        const hashParams = new URLSearchParams(hashStr)
-
-        const accessToken = hashParams.get('access_token') || searchParams.get('access_token')
-        const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token')
-        const code = searchParams.get('code') || hashParams.get('code')
-        const errorMsg = searchParams.get('error_description') || hashParams.get('error_description') || searchParams.get('error')
-
-        if (errorMsg) {
-          console.warn('[AetherFlow] OAuth callback returned error:', errorMsg)
-          return
-        }
-
-        if (accessToken && supabase) {
-          const { data } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken || '',
-          })
-          if (data?.session?.user) {
-            setAuthUser(data.session.user, data.session)
-            setShowAuthModal(false)
-            await syncCustomWallpapersFromDisk()
-          }
-        } else if (code && supabase) {
-          const { data } = await supabase.auth.exchangeCodeForSession(code)
-          if (data?.session?.user) {
-            setAuthUser(data.session.user, data.session)
-            setShowAuthModal(false)
-            await syncCustomWallpapersFromDisk()
-          }
-        }
-      } catch (err) {
-        console.error('[AetherFlow] Error handling OAuth callback:', err)
+      const res = await processOAuthCallback(urlStr)
+      if (res.success && res.user) {
+        setAuthUser(res.user, res.session)
+        setShowAuthModal(false)
+        await syncCustomWallpapersFromDisk()
       }
-    }).then(u => { unlisten = u }).catch(() => {})
+    }
+
+    safeListen('aura:oauth-callback', handleOAuthCallback)
+      .then(u => { unlistenApp = u })
+      .catch(() => {})
+
+    if (isTauri()) {
+      import('@tauri-apps/api/webviewWindow').then(({ getCurrentWebviewWindow }) => {
+        getCurrentWebviewWindow().listen('aura:oauth-callback', handleOAuthCallback)
+          .then(u => { unlistenWindow = u })
+          .catch(() => {})
+      }).catch(() => {})
+    }
 
     return () => {
-      if (unlisten) unlisten()
+      if (unlistenApp) unlistenApp()
+      if (unlistenWindow) unlistenWindow()
     }
   }, [setAuthUser, setShowAuthModal])
 

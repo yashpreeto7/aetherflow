@@ -85,6 +85,7 @@ static MPV_PLAYERS: Mutex<Option<HashMap<String, mpv::MpvProcess>>> = Mutex::new
 // ─── Main AuraOS Window Protection & HWND Identity ───────────────────────────
 static MAIN_HWND: Mutex<Option<usize>> = Mutex::new(None);
 static TRAY_HOLDER: Mutex<Option<tauri::tray::TrayIcon>> = Mutex::new(None);
+static ACTIVE_OAUTH_PORT: Mutex<Option<u16>> = Mutex::new(None);
 
 #[cfg(windows)]
 pub fn set_main_hwnd(hwnd: HWND) {
@@ -1942,12 +1943,42 @@ fn open_url(url: String) -> Result<(), String> {
     }
 }
 
+/// Decodes URL percent-encoding without external crates
+fn urlencoding_decode(s: &str) -> String {
+    let mut res = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(val) = u8::from_str_radix(std::str::from_utf8(&bytes[i+1..i+3]).unwrap_or(""), 16) {
+                res.push(val);
+                i += 3;
+                continue;
+            }
+        } else if bytes[i] == b'+' {
+            res.push(b' ');
+            i += 1;
+            continue;
+        }
+        res.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&res).to_string()
+}
+
 /// Helper to restore and focus the main AetherFlow window
 fn focus_main_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+    }
+    #[cfg(windows)]
+    if let Some(main_h) = get_main_hwnd() {
+        unsafe {
+            ShowWindow(main_h, 9); // SW_RESTORE
+            SetForegroundWindow(main_h);
+        }
     }
 }
 
@@ -1957,6 +1988,15 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
     use std::net::TcpListener;
     use std::io::{Read, Write};
     use std::time::{Duration, Instant};
+
+    // If an OAuth listener is already running on a port, reuse that port!
+    if let Ok(guard) = ACTIVE_OAUTH_PORT.lock() {
+        if let Some(existing_port) = *guard {
+            log_msg(&format!("[AetherFlow] Reusing active OAuth loopback listener on port {}", existing_port));
+            println!("[AetherFlow] Reusing active OAuth loopback listener on port {}", existing_port);
+            return Ok(existing_port);
+        }
+    }
 
     // Try binding to port 1420 first; if already in use, bind to port 0 for an ephemeral port
     let listener = TcpListener::bind("127.0.0.1:1420")
@@ -1968,6 +2008,10 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
         })?;
 
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    if let Ok(mut guard) = ACTIVE_OAUTH_PORT.lock() {
+        *guard = Some(port);
+    }
+
     log_msg(&format!("[AetherFlow] Started OAuth loopback listener on port {}", port));
     println!("[AetherFlow] Started OAuth loopback listener on port {}", port);
 
@@ -1976,7 +2020,7 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
     std::thread::spawn(move || {
         let _ = listener.set_nonblocking(false);
         let start_time = Instant::now();
-        let timeout = Duration::from_secs(180);
+        let timeout = Duration::from_secs(600); // 10 minutes timeout
 
         let html_page = r###"<!DOCTYPE html>
 <html lang="en">
@@ -2002,7 +2046,7 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
       border: 1px solid #30363d;
       border-radius: 16px;
       padding: 36px 32px;
-      max-width: 400px;
+      max-width: 440px;
       width: 100%;
       text-align: center;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
@@ -2051,22 +2095,65 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
       const hash = window.location.hash || '';
       const search = window.location.search || '';
 
+      function setStatus(title, desc, isSuccess) {
+        const el = document.getElementById('content');
+        if (!el) return;
+        el.innerHTML = `
+          <div class="success-icon" style="color: ${isSuccess ? '#4ade80' : '#38bdf8'}; font-size: 32px; margin-bottom: 8px;">${isSuccess ? '✓' : 'ℹ'}</div>
+          <h1 style="color: ${isSuccess ? '#4ade80' : '#38bdf8'}; font-size: 20px; margin: 0 0 8px;">${title}</h1>
+          <p style="font-size: 14px; color: #8b949e; line-height: 1.5; margin: 0;">${desc}</p>
+          <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 8px;">
+            <button id="copyBtn" onclick="copyAndFocus()" style="
+              background: #238636; color: white; border: 1px solid rgba(255,255,255,0.1);
+              padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px;
+            ">
+              Copy Sign-in Link
+            </button>
+          </div>
+          <p style="margin-top: 14px; font-size: 12px; color: #6e7681;">
+            If AetherFlow hasn't updated, click Copy and paste into the app.
+          </p>
+        `;
+      }
+
+      window.copyAndFocus = function() {
+        navigator.clipboard.writeText(fullUrl).then(function() {
+          const btn = document.getElementById('copyBtn');
+          if (btn) btn.innerText = 'Copied to Clipboard!';
+        }).catch(function() {
+          prompt('Copy this link and paste it into AetherFlow:', fullUrl);
+        });
+      };
+
+      let completed = false;
+
+      // 1. Send via GET with URL query param (zero packet fragmentation, instant)
+      const getUrl = '/token?url=' + encodeURIComponent(fullUrl) + '&hash=' + encodeURIComponent(hash);
+      fetch(getUrl)
+        .then(function(res) {
+          if (res.ok && !completed) {
+            completed = true;
+            setStatus('Signed In Successfully!', 'Session transferred to AetherFlow. You can now return to the app.', true);
+            setTimeout(function() { window.close(); }, 3000);
+          }
+        })
+        .catch(function() {});
+
+      // 2. Also send via POST
       fetch('/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: fullUrl, hash: hash, search: search })
-      }).then(function() {
-        document.getElementById('content').innerHTML = `
-          <div class="success-icon">✓</div>
-          <h1 style="color: #4ade80;">Signed In Successfully!</h1>
-          <p style="margin-top: 8px;">You can now close this tab and return to AetherFlow.</p>
-        `;
-        setTimeout(function() { window.close(); }, 1200);
+      }).then(function(res) {
+        if (res.ok && !completed) {
+          completed = true;
+          setStatus('Signed In Successfully!', 'Session transferred to AetherFlow. You can now return to the app.', true);
+          setTimeout(function() { window.close(); }, 3000);
+        }
       }).catch(function(err) {
-        document.getElementById('content').innerHTML = `
-          <h1 style="color: #f87171;">Connection Notice</h1>
-          <p>Please return to AetherFlow to continue. (${err})</p>
-        `;
+        if (!completed) {
+          setStatus('Return to AetherFlow', 'Please copy the link below and paste it into AetherFlow to complete sign-in.', false);
+        }
       });
     })();
   </script>
@@ -2075,66 +2162,163 @@ async fn start_oauth_listener(app: AppHandle) -> Result<u16, String> {
 
         while start_time.elapsed() < timeout {
             if let Ok((mut stream, _)) = listener.accept() {
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-                let mut buf = [0u8; 8192];
-                if let Ok(n) = stream.read(&mut buf) {
-                    if n > 0 {
-                        let req = String::from_utf8_lossy(&buf[..n]);
-                        let first_line = req.lines().next().unwrap_or("");
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(4)));
+                let mut raw_req = Vec::new();
+                let mut chunk = [0u8; 4096];
+                let mut content_length: Option<usize> = None;
+                let mut header_end: Option<usize> = None;
 
-                        if first_line.starts_with("GET ") {
-                            let path = first_line.split_whitespace().nth(1).unwrap_or("/");
-                            if path.contains("code=") || path.contains("error=") {
-                                let full_cb = format!("http://localhost:{}{}", port, path);
-                                log_msg(&format!("[AetherFlow] OAuth callback received via GET: {}", full_cb));
-                                println!("[AetherFlow] OAuth callback received via GET: {}", full_cb);
-                                let _ = app_clone.emit("aura:oauth-callback", full_cb);
-                                focus_main_window(&app_clone);
-                            }
-
-                            let resp = format!(
-                                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                                html_page.len(),
-                                html_page
-                            );
-                            let _ = stream.write_all(resp.as_bytes());
-                            let _ = stream.flush();
-                        } else if first_line.starts_with("POST /token") {
-                            if let Some(body_start) = req.find("\r\n\r\n") {
-                                let body = &req[body_start + 4..];
-                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(body) {
-                                    let url_val = val.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                    let hash_val = val.get("hash").and_then(|v| v.as_str()).unwrap_or("");
-                                    let search_val = val.get("search").and_then(|v| v.as_str()).unwrap_or("");
-
-                                    let final_url = if !url_val.is_empty() {
-                                        url_val.to_string()
-                                    } else {
-                                        format!("http://localhost:{}/callback{}{}", port, search_val, hash_val)
-                                    };
-
-                                    log_msg(&format!("[AetherFlow] OAuth callback received via POST: {}", final_url));
-                                    println!("[AetherFlow] OAuth callback received via POST: {}", final_url);
-                                    let _ = app_clone.emit("aura:oauth-callback", final_url);
-                                    focus_main_window(&app_clone);
+                loop {
+                    match stream.read(&mut chunk) {
+                        Ok(0) => break,
+                        Ok(read_n) => {
+                            raw_req.extend_from_slice(&chunk[..read_n]);
+                            if header_end.is_none() {
+                                if let Some(pos) = raw_req.windows(4).position(|w| w == b"\r\n\r\n") {
+                                    header_end = Some(pos + 4);
+                                    let header_str = String::from_utf8_lossy(&raw_req[..pos]);
+                                    for line in header_str.lines() {
+                                        let lower = line.to_ascii_lowercase();
+                                        if lower.starts_with("content-length:") {
+                                            if let Some(val_str) = line.split(':').nth(1) {
+                                                content_length = val_str.trim().parse::<usize>().ok();
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
-                            let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
-                            let _ = stream.write_all(resp.as_bytes());
-                            let _ = stream.flush();
+                            if let Some(h_end) = header_end {
+                                let cl = content_length.unwrap_or(0);
+                                if raw_req.len() >= h_end + cl {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
 
-                            std::thread::sleep(Duration::from_millis(500));
-                            break;
-                        } else if first_line.starts_with("OPTIONS ") {
-                            let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n";
-                            let _ = stream.write_all(resp.as_bytes());
-                            let _ = stream.flush();
+                if raw_req.is_empty() {
+                    continue;
+                }
+
+                let req_str = String::from_utf8_lossy(&raw_req);
+                let first_line = req_str.lines().next().unwrap_or("");
+                log_msg(&format!("[AetherFlow OAuth] Incoming request: '{}' (total {} bytes)", first_line, raw_req.len()));
+
+                if first_line.starts_with("OPTIONS ") {
+                    let resp = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                    continue;
+                }
+
+                if first_line.starts_with("GET /favicon.ico") {
+                    let resp = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                    continue;
+                }
+
+                let mut extracted_token_url: Option<String> = None;
+
+                if first_line.starts_with("GET ") {
+                    let path = first_line.split_whitespace().nth(1).unwrap_or("/");
+                    
+                    if path.contains("code=") || path.contains("access_token=") || path.contains("url=") || path.contains("token=") || path.contains("hash=") {
+                        if let Some(query_start) = path.find('?') {
+                            let query = &path[query_start + 1..];
+                            for pair in query.split('&') {
+                                if let Some((k, v)) = pair.split_once('=') {
+                                    if k == "url" || k == "data" {
+                                        let decoded = urlencoding_decode(v);
+                                        if !decoded.is_empty() {
+                                            extracted_token_url = Some(decoded);
+                                            break;
+                                        }
+                                    } else if k == "hash" {
+                                        let decoded = urlencoding_decode(v);
+                                        if decoded.contains("access_token=") {
+                                            extracted_token_url = Some(format!("http://localhost:{}/callback{}", port, decoded));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if extracted_token_url.is_none() {
+                            extracted_token_url = Some(format!("http://localhost:{}{}", port, path));
+                        }
+                    }
+
+                    if extracted_token_url.is_none() {
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            html_page.len(),
+                            html_page
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                        let _ = stream.flush();
+                        continue;
+                    }
+                } else if first_line.starts_with("POST /token") {
+                    let h_end = header_end.unwrap_or(0);
+                    let body_str = if h_end < raw_req.len() {
+                        String::from_utf8_lossy(&raw_req[h_end..]).to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    log_msg(&format!("[AetherFlow OAuth] POST /token body: {}", if body_str.len() > 140 { &body_str[..140] } else { &body_str }));
+
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body_str) {
+                        let url_val = val.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                        let hash_val = val.get("hash").and_then(|v| v.as_str()).unwrap_or("");
+                        let search_val = val.get("search").and_then(|v| v.as_str()).unwrap_or("");
+
+                        if !url_val.is_empty() {
+                            extracted_token_url = Some(url_val.to_string());
+                        } else if !hash_val.is_empty() || !search_val.is_empty() {
+                            extracted_token_url = Some(format!("http://localhost:{}/callback{}{}", port, search_val, hash_val));
+                        }
+                    } else {
+                        log_msg(&format!("[AetherFlow OAuth] Failed to parse JSON from body: {}", body_str));
+                        if body_str.contains("access_token=") || body_str.contains("code=") {
+                            extracted_token_url = Some(body_str);
                         }
                     }
                 }
+
+                if let Some(final_url) = extracted_token_url {
+                    log_msg(&format!("[AetherFlow OAuth] SUCCESS: Intercepted OAuth token URL: {}", final_url));
+                    println!("[AetherFlow OAuth] SUCCESS: Intercepted OAuth token URL: {}", final_url);
+
+                    if let Some(main_win) = app_clone.get_webview_window("main") {
+                        let _ = main_win.emit("aura:oauth-callback", &final_url);
+                        let _ = main_win.emit_to("main", "aura:oauth-callback", &final_url);
+                    }
+                    let _ = app_clone.emit("aura:oauth-callback", final_url);
+                    focus_main_window(&app_clone);
+
+                    let resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+
+                    std::thread::sleep(Duration::from_millis(500));
+                    break;
+                } else {
+                    let resp = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nInvalid token request";
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                }
             }
         }
+        if let Ok(mut guard) = ACTIVE_OAUTH_PORT.lock() {
+            *guard = None;
+        }
+        log_msg(&format!("[AetherFlow] OAuth listener on port {} closed", port));
         println!("[AetherFlow] OAuth listener on port {} closed", port);
     });
 
