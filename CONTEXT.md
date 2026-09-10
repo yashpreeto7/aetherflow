@@ -3,7 +3,7 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 20:47 IST — Fixed browser URL launching: replaced suppressed rundll32 with direct Win32 `ShellExecuteW` and unsuppressed PowerShell fallback, added `Win32_UI_Shell` to `Cargo.toml`, rebuilt frontend (564ms) and release binary (2m 02s), and verified live `AetherFlow.exe` process (PID 28248).
+2026-09-10 21:05 IST — Fixed sign-in modal stuck state with fallback controls (Open Browser, Copy Link, Cancel in AuthModal) and implemented recursive descendant process termination (`kill_all_descendant_processes`), MPV termination, and clean tray icon drop on tray quit, rebuilding frontend (575ms) and release binary (2m 04s) and verifying live `AetherFlow.exe` process (PID 4724).
 
 ---
 
@@ -174,6 +174,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved app popping up and closing on startup: removed thread-desktop switching `attach_thread_to_desktop()` which corrupted Tao/WebView2 window creation, eliminated background worker thread around `ensure_wallpaper_windows` in `.setup` by restoring synchronous main UI thread execution, acquired and registered `MAIN_HWND` directly on the main thread, and verified `AetherFlow.exe` launches smoothly, stays open with active heartbeats (`visibility=visible`), keeps system tray icon alive in `TRAY_HOLDER`, and plays background video wallpaper cleanly |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved React ErrorBoundary crash (`convertFileSrc is not defined`): fixed missing import in `WallpaperThumbnail/index.jsx` by hooking `safeConvertFileSrc`, exporting `convertFileSrc = safeConvertFileSrc` in `wallpaperActions.js`, binding `window.convertFileSrc` in `main.jsx`, and rebuilding `AetherFlow.exe` |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved login issue via system browser redirection (RFC 8252 loopback receiver) & removed Discord auth: created branch `fix-login`, implemented `start_oauth_listener` with branded callback page in `main.rs`, fixed `open_url` command splitting URLs at ampersands via `rundll32`, removed Discord from `AuthModal`, updated `supabase.js` and `App.jsx`, and compiled & deployed fresh `AetherFlow.exe` |
+| 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Fixed sign-in modal stuck state with fallback controls (Open Browser, Copy Link, Cancel in AuthModal) and implemented recursive descendant process termination (`kill_all_descendant_processes`), MPV termination, and clean tray icon drop on tray quit |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

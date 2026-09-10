@@ -945,5 +945,30 @@
 - **Build status:** ✅ `npm run build` (564ms), `cargo check` (2.49s), `cargo build --release` (2m 02s) passed with 0 errors.
 ---
 
-
-
+## Session: 2026-09-10 21:05 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Diagnosed and Resolved "Stuck on Sign-in Screen"**:
+    - In `src/components/AuthModal/index.jsx`, when the user initiated OAuth, `loading` disabled provider buttons with no fallback escape route or manual options.
+    - Added full fallback controls to the guidance card:
+      - **"Open Browser"**: Triggers `openExternalUrl` on the authorization URL again in case the user's default browser was minimized or failed on initial launch.
+      - **"Copy Link"**: Copies the complete authorization URL to clipboard with visual "Copied!" checkmark feedback, allowing the user to paste into Chrome, Edge, Brave, Firefox, or any window of choice. Since the loopback server listens locally on `http://localhost:<port>/callback`, completing authentication in ANY browser successfully signs into AetherFlow!
+      - **"Cancel"**: Immediately cancels the waiting/loading state, allowing the user to switch providers or close without getting stuck.
+  - **Diagnosed and Resolved Residual Processes on Tray Quit**:
+    - **Root Cause**:
+      1. The system tray `"quit"` handler previously called `std::process::exit(0)` without destroying webview windows or removing the tray icon, leaving a phantom/ghost tray icon in the Windows taskbar notification area until hovered.
+      2. Tauri WebView2 runtime spawns a process tree: host (`AetherFlow.exe`) -> browser process (`msedgewebview2.exe`) -> child renderers, GPU, and utility processes. Abrupt process termination left grandchildren orphaned in Task Manager/taskbar.
+      3. Any running `AetherFlow-VideoEngine.exe` or `mpv.exe` processes were not killed.
+    - **Fix 1 (`src-tauri/src/mpv.rs`)**: Updated `kill_all_mpv_processes()` to terminate both `AetherFlow-VideoEngine.exe` and `mpv.exe` via `taskkill /F /T`.
+    - **Fix 2 (`src-tauri/src/main.rs`)**: Implemented `kill_all_descendant_processes()`, which takes a snapshot of the Windows process table (`TH32CS_SNAPPROCESS`), builds a full parent-child hierarchy starting from `GetCurrentProcessId()`, and recursively terminates all descendant processes (children, grandchildren, GPU/renderer processes) using `OpenProcess(PROCESS_TERMINATE)` and `TerminateProcess`.
+    - **Fix 3 (`src-tauri/src/main.rs`)**: Updated tray `"quit"` handler to:
+      1. Call `taskbar::restore_taskbar()`.
+      2. Drain and terminate `MPV_PLAYERS` and call `mpv::kill_all_mpv_processes()`.
+      3. Loop through all webview windows and explicitly call `.destroy()`.
+      4. Explicitly take and drop `TRAY_HOLDER` to remove the tray icon from the Windows notification area immediately.
+      5. Call `kill_all_descendant_processes()`.
+      6. Exit cleanly with `std::process::exit(0)`.
+  - Rebuilt production frontend (`npm run build` in 575ms) and release binary (`cargo build --release` in 2m 04s).
+  - Deployed updated `AetherFlow.exe` (7.39MB) to workspace root and verified live process (PID 4724).
+- **Build status:** ✅ `npm run build` (575ms), `cargo check` (1.60s), `cargo build --release` (2m 04s) passed with 0 errors.
+---

@@ -1,5 +1,5 @@
 # AetherFlow — Session Handoff File
-> **Updated:** 2026-09-10 20:15 IST | **Status:** ✅ COMPLETE — Production Release v1.0.4 verified and running stably
+> **Updated:** 2026-09-10 21:05 IST | **Status:** ✅ COMPLETE — Production Release v1.0.4 verified (fix-login branch updated with fallback controls & clean shutdown)
 
 ---
 
