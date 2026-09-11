@@ -32,6 +32,7 @@ export default function LibraryPage() {
   const togglePinToHome      = useStore(s => s.togglePinToHome)
   const customNames          = useStore(s => s.customNames) || {}
   const setWallpaperName     = useStore(s => s.setWallpaperName)
+  const setActiveWallpaper   = useStore(s => s.setActiveWallpaper)
   const thumbnailMode        = useStore(s => s.thumbnailMode) || 'hover'
   const setThumbnailMode     = useStore(s => s.setThumbnailMode)
 
@@ -161,6 +162,7 @@ export default function LibraryPage() {
   async function handleApply(item, targetMon = null) {
     setApplyingId(item.id)
     try {
+      setActiveWallpaper(item)
       const mon = targetMon ?? (screenArrangement === 'per-screen' ? selectedMonitorLabel : null)
       await applyWallpaperToDesktop(item, { targetMonitor: mon })
     } finally {
@@ -412,7 +414,7 @@ export default function LibraryPage() {
               >
                 {/* Thumbnail Preview */}
                 <div style={{ height: 118, position: 'relative', background: '#000' }}>
-                  <WallpaperThumbnail wallpaper={item} isHovered={hoveredId === item.id} />
+                  <WallpaperThumbnail wallpaper={item} isHovered={hoveredId === item.id} mode={thumbnailMode} />
 
                   {/* Active Indicator Badge */}
                   {isLive && (

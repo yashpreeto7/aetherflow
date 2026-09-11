@@ -481,6 +481,15 @@ export default function HomePage() {
     }
   }, [])
 
+  // ── Sync Active Wallpaper with Current Desktop Wallpaper ─────────────────
+  useEffect(() => {
+    if (currentDesktopWallpaper) {
+      if (!activeWallpaper || activeWallpaper.id !== currentDesktopWallpaper.id) {
+        setActiveWallpaper(currentDesktopWallpaper)
+      }
+    }
+  }, [currentDesktopWallpaper])
+
   // ── Import file handler with naming modal ──────────────────────────────────
   const handleOpenImportDialog = async () => {
     try {
@@ -803,6 +812,7 @@ export default function HomePage() {
         <div className="card" style={{ marginBottom: 28, overflow: 'hidden', position: 'relative', height: 180 }}>
           {!isTopPreviewPaused ? (
             <WallpaperPlayer
+              key={activeWallpaper.id || activeWallpaper.name}
               engineId={activeWallpaper.engine || activeWallpaper.id}
               config={activeWallpaper.config}
               preview

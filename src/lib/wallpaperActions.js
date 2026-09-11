@@ -120,6 +120,7 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
     })
 
     // Update Zustand state
+    state.setActiveWallpaper(wallpaper)
     state.setCurrentDesktopWallpaper(wallpaper)
     state.setWallpaperRunning(true)
     if (targetLabel) {

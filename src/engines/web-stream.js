@@ -107,14 +107,13 @@ export function createWebStream(canvas, options = {}) {
     }
   }
 
-  function loadThumbnail(ytId) {
-    if (!ytId) {
+  function loadThumbnail(ytIdOrUrl) {
+    if (!ytIdOrUrl) {
       thumbLoaded = false
       renderThumbnail()
       return
     }
     thumbImg = new Image()
-    thumbImg.crossOrigin = 'anonymous'
     thumbImg.onload = () => {
       thumbLoaded = true
       renderThumbnail()
@@ -123,7 +122,10 @@ export function createWebStream(canvas, options = {}) {
       thumbLoaded = false
       renderThumbnail()
     }
-    thumbImg.src = getYouTubeThumbnail(ytId)
+    const src = (typeof ytIdOrUrl === 'string' && (ytIdOrUrl.startsWith('http') || ytIdOrUrl.startsWith('data:') || ytIdOrUrl.startsWith('/')))
+      ? ytIdOrUrl
+      : getYouTubeThumbnail(ytIdOrUrl)
+    thumbImg.src = src
   }
 
   function mountPlayer() {
@@ -404,8 +406,11 @@ export function createWebStream(canvas, options = {}) {
     window.addEventListener('resize', resize)
 
     const ytId = parseYouTubeId(currentUrl)
+    const customThumb = typeof options.preview === 'string' ? options.preview : (options.thumbnail || options.previewUrl || null)
     if (ytId) {
       loadThumbnail(ytId)
+    } else if (customThumb) {
+      loadThumbnail(customThumb)
     } else {
       renderThumbnail()
     }
@@ -450,7 +455,14 @@ export function createWebStream(canvas, options = {}) {
     if (nextUrl !== undefined && nextUrl !== currentUrl) {
       currentUrl = nextUrl
       const ytId = parseYouTubeId(currentUrl)
-      if (ytId) loadThumbnail(ytId)
+      const customThumb = typeof newOpts.preview === 'string' ? newOpts.preview : (newOpts.thumbnail || newOpts.previewUrl || null)
+      if (ytId) {
+        loadThumbnail(ytId)
+      } else if (customThumb) {
+        loadThumbnail(customThumb)
+      } else {
+        renderThumbnail()
+      }
       if (!options.preview) mountPlayer()
     }
     if (newOpts.speedMultiplier !== undefined || newOpts.speed !== undefined) {

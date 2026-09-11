@@ -92,8 +92,9 @@ export function createImagePlayer(canvas, options = {}) {
   function start() {
     resize()
     window.addEventListener('resize', resize)
-    if (options.imagePath) {
-      loadImage(options.imagePath)
+    const imgPath = options.imagePath || options.url || ''
+    if (imgPath) {
+      loadImage(imgPath)
     }
     animId = requestAnimationFrame(frame)
   }
@@ -132,8 +133,9 @@ export function createImagePlayer(canvas, options = {}) {
       if (newOpts.paused) pause()
       else resume()
     }
-    if (newOpts.imagePath && newOpts.imagePath !== currentPath) {
-      loadImage(newOpts.imagePath)
+    const nextPath = newOpts.imagePath || newOpts.url || ''
+    if (nextPath && nextPath !== currentPath) {
+      loadImage(nextPath)
     } else {
       render()
     }

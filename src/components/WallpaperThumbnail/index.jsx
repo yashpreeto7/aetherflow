@@ -249,6 +249,40 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
   // Debounce hover activation by 80ms to avoid firing decoders on quick cursor sweeps
   const [debouncedHover, setDebouncedHover] = useState(false)
   const [imgLoadError, setImgLoadError] = useState(false)
+  const [isInView, setIsInView] = useState(false)
+  const containerRef = useRef(null)
+
+  // Viewport lazy loader for 'always' mode: loads media only when in viewport, and unloads off-screen cards
+  useEffect(() => {
+    if (currentMode !== 'always') {
+      setIsInView(false)
+      return
+    }
+
+    const el = containerRef.current
+    if (!el) return
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsInView(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInView(entry.isIntersecting)
+      },
+      {
+        root: null,
+        rootMargin: '140px 0px', // Pre-load slightly before scrolling into view, unload when outside
+        threshold: 0.01,
+      }
+    )
+
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+    }
+  }, [currentMode])
 
   useEffect(() => {
     if (!isHovered) {
@@ -295,10 +329,10 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
 
   // Compute media preview based on thumbnailMode:
   // - 'off': Never show preview media (pure zero-RAM vector badges)
-  // - 'hover': Only show preview media while hovered
-  // - 'always': Always show preview media
+  // - 'hover': Only show preview media while hovered (debounced)
+  // - 'always': Show preview media ONLY for cards currently in viewport (lazy-loaded and unloaded when out of view)
   let previewMedia = null
-  const shouldShow = currentMode === 'always' || (currentMode === 'hover' && debouncedHover)
+  const shouldShow = (currentMode === 'always' && isInView) || (currentMode === 'hover' && debouncedHover)
 
   if (shouldShow && currentMode !== 'off' && !imgLoadError) {
     if (staticThumbUrl) {
@@ -341,6 +375,7 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
 
   return (
     <div
+      ref={containerRef}
       style={{
         width: '100%',
         height: '100%',

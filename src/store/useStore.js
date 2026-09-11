@@ -408,6 +408,15 @@ export const useStore = create(
     }),
     {
       name: 'aetherflow-state',
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (!version || version < 2) {
+          if (persistedState) {
+            persistedState.thumbnailMode = 'hover'
+          }
+        }
+        return persistedState
+      },
       // Only persist these keys (NEVER persist complex session objects)
       partialize: (s) => ({
         activeWallpaper: s.activeWallpaper,

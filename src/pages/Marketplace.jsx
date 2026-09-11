@@ -153,23 +153,30 @@ export default function MarketplacePage() {
   const handleAddToLibrary = async (wallpaper) => {
     setAddingLibraryId(wallpaper.id)
     try {
-      const isStream = wallpaper.type === 'youtube' || wallpaper.type === 'stream'
+      const isVideo = wallpaper.type === 'video' || /\.(mp4|webm|mkv|avi|mov)$/i.test(wallpaper.source || '')
+      const isStream = !isVideo && (wallpaper.type === 'youtube' || wallpaper.type === 'stream' || Boolean(parseYouTubeId(wallpaper.source)))
+      const resolvedEngine = isVideo ? 'video-player' : (isStream ? 'web-stream' : 'image-player')
       const item = {
         id: `community-${wallpaper.id}`,
         name: wallpaper.name,
-        engine: isStream ? 'web-stream' : 'image-player',
+        engine: resolvedEngine,
         type: 'wallpaper',
         isCustom: true,
         installedAt: Date.now(),
         preview: wallpaper.preview,
         tags: wallpaper.tags || ['community'],
         config: {
-          ...(isStream
+          ...(isVideo
+            ? {
+                videoPath: wallpaper.source,
+                speedMultiplier: 1,
+              }
+            : isStream
             ? {
                 streamUrl: wallpaper.source,
                 url: wallpaper.source,
                 streamType: wallpaper.type === 'youtube' ? 'youtube' : 'web',
-                muted: true,
+                muted: false,
                 speedMultiplier: 1,
               }
             : {
@@ -210,23 +217,30 @@ export default function MarketplacePage() {
     setApplyingId(wallpaper.id)
     try {
       // Convert community wallpaper to local library format
-      const isStream = wallpaper.type === 'youtube' || wallpaper.type === 'stream'
+      const isVideo = wallpaper.type === 'video' || /\.(mp4|webm|mkv|avi|mov)$/i.test(wallpaper.source || '')
+      const isStream = !isVideo && (wallpaper.type === 'youtube' || wallpaper.type === 'stream' || Boolean(parseYouTubeId(wallpaper.source)))
+      const resolvedEngine = isVideo ? 'video-player' : (isStream ? 'web-stream' : 'image-player')
       const item = {
         id: `community-${wallpaper.id}`,
         name: wallpaper.name,
-        engine: isStream ? 'web-stream' : 'image-player',
+        engine: resolvedEngine,
         type: 'wallpaper',
         isCustom: true,
         installedAt: Date.now(),
         preview: wallpaper.preview,
         tags: wallpaper.tags || ['community'],
         config: {
-          ...(isStream
+          ...(isVideo
+            ? {
+                videoPath: wallpaper.source,
+                speedMultiplier: 1,
+              }
+            : isStream
             ? {
                 streamUrl: wallpaper.source,
                 url: wallpaper.source,
                 streamType: wallpaper.type === 'youtube' ? 'youtube' : 'web',
-                muted: true,
+                muted: false,
                 speedMultiplier: 1,
               }
             : {
@@ -244,6 +258,7 @@ export default function MarketplacePage() {
       }
 
       installItem(item)
+      pinToHome(item.id)
       setActiveWallpaper(item)
       await applyWallpaperToDesktop(item)
 
