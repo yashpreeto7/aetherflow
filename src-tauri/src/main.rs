@@ -23,16 +23,17 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE,
     SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDCHANGE,
     GetForegroundWindow, SetForegroundWindow, IsIconic,
+    IsZoomed, GetWindowThreadProcessId,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
-    MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    MonitorFromWindow, GetMonitorInfoW, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,
     MapWindowPoints, InvalidateRect, UpdateWindow, RedrawWindow,
     RDW_INVALIDATE, RDW_UPDATENOW, RDW_ERASE, RDW_ALLCHILDREN,
     CreateRectRgn, SetWindowRgn,
 };
 #[cfg(windows)]
-use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DwmGetWindowAttribute};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
@@ -59,11 +60,17 @@ use std::collections::HashMap;
 pub struct PerformanceSettings {
     pub pause_on_battery: bool,
     pub pause_on_fullscreen: bool,
+    pub pause_on_maximized: bool,
+    pub multi_monitor_pause_mode: String,
+    pub audio_playback_rule: String,
 }
 
 static PERFORMANCE_SETTINGS: Mutex<PerformanceSettings> = Mutex::new(PerformanceSettings {
     pause_on_battery: true,
     pause_on_fullscreen: true,
+    pause_on_maximized: true,
+    multi_monitor_pause_mode: String::new(),
+    audio_playback_rule: String::new(),
 });
 
 static IS_SYSTEM_PAUSED: Mutex<bool> = Mutex::new(false);
@@ -155,6 +162,12 @@ pub fn is_running_on_battery() -> bool {
     false
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MonitorOcclusionStatus {
+    pub is_fullscreen: bool,
+    pub is_maximized: bool,
+}
+
 #[cfg(windows)]
 pub fn is_foreground_window_fullscreen() -> bool {
     unsafe {
@@ -163,18 +176,11 @@ pub fn is_foreground_window_fullscreen() -> bool {
             return false;
         }
 
-        // Filter out desktop shell window
         let shell_hwnd = GetShellWindow();
-        if fg_hwnd == shell_hwnd {
+        if fg_hwnd == shell_hwnd || is_main_hwnd(fg_hwnd) {
             return false;
         }
 
-        // Filter out our own main control panel window
-        if is_main_hwnd(fg_hwnd) {
-            return false;
-        }
-
-        // Filter out Desktop and Taskbar classes
         let mut class_buf = [0u16; 256];
         let len = GetClassNameW(fg_hwnd, class_buf.as_mut_ptr(), 256);
         if len > 0 {
@@ -188,15 +194,10 @@ pub fn is_foreground_window_fullscreen() -> bool {
             }
         }
 
-        if IsWindowVisible(fg_hwnd) == 0 {
-            return false;
-        }
-        if IsIconic(fg_hwnd) != 0 {
+        if IsWindowVisible(fg_hwnd) == 0 || IsIconic(fg_hwnd) != 0 {
             return false;
         }
 
-        // Standard desktop applications have WS_CAPTION (title bar), even when maximized.
-        // True fullscreen games, media players (F11/exclusive fullscreen) have no WS_CAPTION.
         let style = GetWindowLongW(fg_hwnd, GWL_STYLE) as u32;
         if (style & WS_CAPTION) == WS_CAPTION {
             return false;
@@ -218,7 +219,6 @@ pub fn is_foreground_window_fullscreen() -> bool {
             return false;
         }
 
-        // Window fully covers the active monitor resolution
         wr.left <= mi.rcMonitor.left
             && wr.top <= mi.rcMonitor.top
             && wr.right >= mi.rcMonitor.right
@@ -231,13 +231,177 @@ pub fn is_foreground_window_fullscreen() -> bool {
     false
 }
 
+struct OcclusionEnumState {
+    shell_hwnd: HWND,
+    self_pid: u32,
+    monitor_map: HashMap<String, MonitorOcclusionStatus>,
+    visible_inspected: usize,
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32 {
+    let state = &mut *(lparam as *mut OcclusionEnumState);
+
+    // 1. Quick visibility & minimized check
+    if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+        return 1;
+    }
+
+    // 2. Shell window check
+    if hwnd == state.shell_hwnd {
+        return 1;
+    }
+
+    // 3. Process ID check: ignore ALL windows belonging to AetherFlow
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, &mut pid);
+    if pid == state.self_pid {
+        return 1;
+    }
+
+    // 4. Cloaked check (virtual desktop / background UWP app)
+    let mut cloaked: u32 = 0;
+    let dwm_res = DwmGetWindowAttribute(
+        hwnd,
+        14, // DWMWA_CLOAKED
+        &mut cloaked as *mut _ as _,
+        std::mem::size_of::<u32>() as u32,
+    );
+    if dwm_res == 0 && cloaked != 0 {
+        return 1;
+    }
+
+    // 5. Skip tool windows
+    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+    if (ex_style & WS_EX_TOOLWINDOW) != 0 {
+        return 1;
+    }
+
+    // 6. Skip desktop and taskbar classes
+    let mut class_buf = [0u16; 64];
+    let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 64);
+    if len > 0 {
+        let class_name = String::from_utf16_lossy(&class_buf[..len as usize]);
+        if class_name == "WorkerW"
+            || class_name == "Progman"
+            || class_name == "Shell_TrayWnd"
+            || class_name == "Shell_SecondaryTrayWnd"
+            || class_name == "Windows.UI.Core.CoreWindow"
+        {
+            return 1;
+        }
+    }
+
+    // 7. Ignore tiny windows / widgets (< 160x160)
+    let mut wr: RECT = std::mem::zeroed();
+    if GetWindowRect(hwnd, &mut wr) == 0 {
+        return 1;
+    }
+    let w = wr.right - wr.left;
+    let h = wr.bottom - wr.top;
+    if w < 160 || h < 160 {
+        return 1;
+    }
+
+    state.visible_inspected += 1;
+    if state.visible_inspected > 120 {
+        return 0; // Stop enumeration after 120 candidate visible windows
+    }
+
+    let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+    if !monitor.is_null() {
+        let mut mi: MONITORINFOEXW = std::mem::zeroed();
+        mi.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+        if GetMonitorInfoW(monitor, &mut mi as *mut _ as *mut MONITORINFO) != 0 {
+            let nul_idx = mi.szDevice.iter().position(|&c| c == 0).unwrap_or(32);
+            let dev_name = String::from_utf16_lossy(&mi.szDevice[..nul_idx]);
+            let label = get_monitor_label(&dev_name);
+
+            // Fullscreen check: covers physical monitor screen (including taskbar)
+            // Tolerance of 10px handles multi-monitor coordinates, DPI scaling margins, and invisible borders
+            let covers_monitor = wr.left <= (mi.monitorInfo.rcMonitor.left + 10)
+                && wr.top <= (mi.monitorInfo.rcMonitor.top + 10)
+                && wr.right >= (mi.monitorInfo.rcMonitor.right - 10)
+                && wr.bottom >= (mi.monitorInfo.rcMonitor.bottom - 10);
+
+            // Maximized check: standard Win32 IsZoomed OR covers work area
+            let is_zoomed = IsZoomed(hwnd) != 0;
+            let covers_work = wr.left <= (mi.monitorInfo.rcWork.left + 15)
+                && wr.top <= (mi.monitorInfo.rcWork.top + 15)
+                && wr.right >= (mi.monitorInfo.rcWork.right - 15)
+                && wr.bottom >= (mi.monitorInfo.rcWork.bottom - 15);
+
+            let is_maximized = is_zoomed || covers_work || covers_monitor;
+
+            let entry = state.monitor_map.entry(label).or_default();
+            if covers_monitor {
+                entry.is_fullscreen = true;
+            }
+            if is_maximized {
+                entry.is_maximized = true;
+            }
+        }
+    }
+
+    1
+}
+
+#[cfg(windows)]
+pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionStatus>, bool) {
+    let monitor_map: HashMap<String, MonitorOcclusionStatus> = HashMap::new();
+    let mut is_app_focused = false;
+    let self_pid = std::process::id();
+
+    unsafe {
+        let shell_hwnd = GetShellWindow();
+        let fg_hwnd = GetForegroundWindow();
+
+        if !fg_hwnd.is_null() && fg_hwnd != shell_hwnd {
+            let mut fg_pid: u32 = 0;
+            GetWindowThreadProcessId(fg_hwnd, &mut fg_pid);
+            if fg_pid != self_pid {
+                let mut class_buf = [0u16; 64];
+                let len = GetClassNameW(fg_hwnd, class_buf.as_mut_ptr(), 64);
+                let class_name = if len > 0 {
+                    String::from_utf16_lossy(&class_buf[..len as usize])
+                } else {
+                    String::new()
+                };
+                if class_name != "WorkerW"
+                    && class_name != "Progman"
+                    && class_name != "Shell_TrayWnd"
+                    && class_name != "Shell_SecondaryTrayWnd"
+                {
+                    is_app_focused = true;
+                }
+            }
+        }
+
+        let mut state = OcclusionEnumState {
+            shell_hwnd,
+            self_pid,
+            monitor_map,
+            visible_inspected: 0,
+        };
+
+        EnumWindows(Some(enum_occlusion_proc), &mut state as *mut _ as LPARAM);
+        (state.monitor_map, is_app_focused)
+    }
+}
+
+#[cfg(not(windows))]
+pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionStatus>, bool) {
+    (HashMap::new(), false)
+}
+
 pub fn start_system_state_monitor(app: AppHandle) {
     std::thread::spawn(move || {
         // Wait for startup to settle
         std::thread::sleep(std::time::Duration::from_millis(2500));
-        let mut was_paused = false;
-
+        let mut paused_monitors: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut audio_muted_by_policy = false;
         let mut taskbar_tick = 0u32;
+
         loop {
             std::thread::sleep(std::time::Duration::from_millis(750));
 
@@ -247,52 +411,160 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 taskbar::maintain_taskbar_style();
             }
 
-            let (pause_on_battery, pause_on_fullscreen) = {
+            let (pause_on_battery, pause_on_fullscreen, pause_on_maximized, multi_monitor_pause_mode, audio_playback_rule) = {
                 if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
-                    (guard.pause_on_battery, guard.pause_on_fullscreen)
+                    let mode = if guard.multi_monitor_pause_mode.is_empty() {
+                        "per-display".to_string()
+                    } else {
+                        guard.multi_monitor_pause_mode.clone()
+                    };
+                    let rule = if guard.audio_playback_rule.is_empty() {
+                        "mute-covered".to_string()
+                    } else {
+                        guard.audio_playback_rule.clone()
+                    };
+                    (
+                        guard.pause_on_battery,
+                        guard.pause_on_fullscreen,
+                        guard.pause_on_maximized,
+                        mode,
+                        rule,
+                    )
                 } else {
-                    (true, true)
+                    (true, true, true, "per-display".to_string(), "mute-covered".to_string())
                 }
             };
 
             let on_battery = pause_on_battery && is_running_on_battery();
-            let on_fullscreen = pause_on_fullscreen && is_foreground_window_fullscreen();
+            let (occlusion_map, is_app_focused) = inspect_monitor_occlusion_states();
 
-            let should_pause = on_battery || on_fullscreen;
-
-            if should_pause != was_paused {
-                was_paused = should_pause;
-                if let Ok(mut p_guard) = IS_SYSTEM_PAUSED.lock() {
-                    *p_guard = should_pause;
+            // Collect active wallpaper window labels
+            let windows = app.webview_windows();
+            let mut wallpaper_labels: Vec<String> = Vec::new();
+            for (label, _) in &windows {
+                if label.starts_with("wallpaper_") {
+                    wallpaper_labels.push(label.clone());
                 }
+            }
 
-                let reason = if on_battery && on_fullscreen {
-                    "battery & fullscreen"
-                } else if on_battery {
-                    "battery power"
-                } else if on_fullscreen {
-                    "fullscreen application"
-                } else {
-                    "resumed (AC power & normal window focus)"
-                };
-
-                let log = format!("[SYSTEM MONITOR] State transition -> paused: {} (reason: {})", should_pause, reason);
-                log_msg(&log);
-                println!("{}", log);
-
-                // 1. Pause or resume all MPV players
-                set_mpv_pause(None, should_pause);
-
-                // 2. Emit pause/resume to Webview wallpaper windows
-                let event_name = if should_pause { "aura:pause" } else { "aura:resume" };
-                let windows = app.webview_windows();
-                for (label, win) in windows {
-                    if label.starts_with("wallpaper_") {
-                        let _ = win.emit_to(label.as_str(), event_name, serde_json::json!({ "target": "*" }));
+            // Fallback: if no webview wallpaper windows exist yet, check MPV players
+            if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+                if let Some(ref map) = *mpv_guard {
+                    for label in map.keys() {
+                        if !wallpaper_labels.contains(label) {
+                            wallpaper_labels.push(label.clone());
+                        }
                     }
                 }
-                let _ = app.emit(event_name, serde_json::json!({ "target": "*" }));
             }
+
+            // Fallback: check available system monitors
+            if wallpaper_labels.is_empty() {
+                if let Ok(monitors) = app.available_monitors() {
+                    for m in monitors {
+                        if let Some(name) = m.name() {
+                            wallpaper_labels.push(get_monitor_label(name));
+                        }
+                    }
+                }
+            }
+
+            let mut target_paused_monitors: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut any_monitor_covered = false;
+
+            for label in &wallpaper_labels {
+                let status = occlusion_map.get(label).cloned().unwrap_or_default();
+                let is_fs = pause_on_fullscreen && status.is_fullscreen;
+                let is_max = pause_on_maximized && status.is_maximized;
+                let should_pause = is_fs || is_max;
+
+                let is_covered = status.is_fullscreen || status.is_maximized;
+                if is_covered {
+                    any_monitor_covered = true;
+                }
+                if on_battery || should_pause {
+                    target_paused_monitors.insert(label.clone());
+                }
+            }
+
+            // Global mode: if any monitor is covered, pause all
+            if multi_monitor_pause_mode == "all-displays" && any_monitor_covered {
+                for label in &wallpaper_labels {
+                    target_paused_monitors.insert(label.clone());
+                }
+            }
+
+            // Audio playback policy evaluation:
+            let all_paused = target_paused_monitors.len() >= wallpaper_labels.len() && !wallpaper_labels.is_empty();
+            let should_mute_audio = if all_paused {
+                // All active wallpapers are paused
+                true
+            } else if audio_playback_rule == "mute-focused" {
+                is_app_focused
+            } else if audio_playback_rule == "mute-covered" {
+                any_monitor_covered
+            } else {
+                // "always": only mute if all are paused
+                false
+            };
+
+            // 1. Process pause state transitions per monitor
+            for label in &wallpaper_labels {
+                let was_p = paused_monitors.contains(label);
+                let should_p = target_paused_monitors.contains(label);
+
+                if was_p != should_p {
+                    set_mpv_pause(Some(label.clone()), should_p);
+                    if wallpaper_labels.len() <= 1 {
+                        set_mpv_pause(None, should_p);
+                    }
+
+                    let event_name = if should_p { "aura:pause" } else { "aura:resume" };
+                    if let Some(win) = app.get_webview_window(label.as_str()) {
+                        let _ = win.emit_to(label.as_str(), event_name, serde_json::json!({ "target": label }));
+                    }
+                    let _ = app.emit(event_name, serde_json::json!({ "target": label }));
+                    if wallpaper_labels.len() <= 1 {
+                        let _ = app.emit(event_name, serde_json::json!({ "target": "*" }));
+                    }
+
+                    let state_str = if should_p { "PAUSED" } else { "RESUMED" };
+                    let msg = format!("[SYSTEM MONITOR] Display '{}' state -> {}", label, state_str);
+                    log_msg(&msg);
+                    println!("{}", msg);
+                }
+            }
+
+            // 2. Process audio mute/unmute policy transitions
+            if should_mute_audio != audio_muted_by_policy {
+                audio_muted_by_policy = should_mute_audio;
+                set_mpv_mute(app.clone(), None, should_mute_audio);
+                let mute_event = if should_mute_audio { "aura:mute" } else { "aura:unmute" };
+                let _ = app.emit(mute_event, serde_json::json!({ "target": "*" }));
+                let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {})", should_mute_audio, audio_playback_rule);
+                log_msg(&msg);
+                println!("{}", msg);
+            }
+
+            if taskbar_tick % 8 == 0 {
+                let diag = format!(
+                    "[SYSTEM MONITOR DIAG] displays={:?} paused={:?} any_cov={} focused={} rule={} muted={}",
+                    wallpaper_labels,
+                    target_paused_monitors,
+                    any_monitor_covered,
+                    is_app_focused,
+                    audio_playback_rule,
+                    audio_muted_by_policy
+                );
+                log_msg(&diag);
+            }
+
+            // 3. Update global tracking
+            let is_any_paused = !target_paused_monitors.is_empty();
+            if let Ok(mut p_guard) = IS_SYSTEM_PAUSED.lock() {
+                *p_guard = is_any_paused;
+            }
+            paused_monitors = target_paused_monitors;
         }
     });
 }
@@ -1762,10 +2034,25 @@ fn get_system_info() -> serde_json::Value {
 }
 
 #[tauri::command]
-fn sync_performance_settings(pause_on_battery: bool, pause_on_fullscreen: bool) {
+fn sync_performance_settings(
+    pause_on_battery: bool,
+    pause_on_fullscreen: bool,
+    pause_on_maximized: Option<bool>,
+    multi_monitor_pause_mode: Option<String>,
+    audio_playback_rule: Option<String>,
+) {
     if let Ok(mut guard) = PERFORMANCE_SETTINGS.lock() {
         guard.pause_on_battery = pause_on_battery;
         guard.pause_on_fullscreen = pause_on_fullscreen;
+        if let Some(pm) = pause_on_maximized {
+            guard.pause_on_maximized = pm;
+        }
+        if let Some(mm) = multi_monitor_pause_mode {
+            guard.multi_monitor_pause_mode = mm;
+        }
+        if let Some(ar) = audio_playback_rule {
+            guard.audio_playback_rule = ar;
+        }
     }
 }
 

@@ -267,6 +267,12 @@ export default function SettingsPage() {
   const togglePauseOnBattery = useStore(s => s.togglePauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
   const togglePauseOnFullscreen = useStore(s => s.togglePauseOnFullscreen)
+  const pauseOnMaximized = useStore(s => s.pauseOnMaximized)
+  const togglePauseOnMaximized = useStore(s => s.togglePauseOnMaximized)
+  const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
+  const setMultiMonitorPauseMode = useStore(s => s.setMultiMonitorPauseMode)
+  const audioPlaybackRule = useStore(s => s.audioPlaybackRule) || 'mute-covered'
+  const setAudioPlaybackRule = useStore(s => s.setAudioPlaybackRule)
   const screenArrangement = useStore(s => s.screenArrangement)
   const setScreenArrangement = useStore(s => s.setScreenArrangement)
 
@@ -614,26 +620,49 @@ export default function SettingsPage() {
     }).catch(() => {})
   }
 
+  const syncAllPerformance = (overrides = {}) => {
+    const pBattery = overrides.pauseOnBattery !== undefined ? overrides.pauseOnBattery : pauseOnBattery
+    const pFullscreen = overrides.pauseOnFullscreen !== undefined ? overrides.pauseOnFullscreen : pauseOnFullscreen
+    const pMaximized = overrides.pauseOnMaximized !== undefined ? overrides.pauseOnMaximized : pauseOnMaximized
+    const mMode = overrides.multiMonitorPauseMode !== undefined ? overrides.multiMonitorPauseMode : multiMonitorPauseMode
+    const aRule = overrides.audioPlaybackRule !== undefined ? overrides.audioPlaybackRule : audioPlaybackRule
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('sync_performance_settings', {
+        pauseOnBattery: pBattery,
+        pauseOnFullscreen: pFullscreen,
+        pauseOnMaximized: pMaximized,
+        multiMonitorPauseMode: mMode,
+        audioPlaybackRule: aRule,
+      }).catch(() => {})
+    }).catch(() => {})
+  }
+
   const handleTogglePauseOnBattery = () => {
     const nextVal = !pauseOnBattery
     togglePauseOnBattery()
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('sync_performance_settings', {
-        pauseOnBattery: nextVal,
-        pauseOnFullscreen: pauseOnFullscreen,
-      }).catch(() => {})
-    }).catch(() => {})
+    syncAllPerformance({ pauseOnBattery: nextVal })
   }
 
   const handleTogglePauseOnFullscreen = () => {
     const nextVal = !pauseOnFullscreen
     togglePauseOnFullscreen()
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('sync_performance_settings', {
-        pauseOnBattery: pauseOnBattery,
-        pauseOnFullscreen: nextVal,
-      }).catch(() => {})
-    }).catch(() => {})
+    syncAllPerformance({ pauseOnFullscreen: nextVal })
+  }
+
+  const handleTogglePauseOnMaximized = () => {
+    const nextVal = !pauseOnMaximized
+    togglePauseOnMaximized()
+    syncAllPerformance({ pauseOnMaximized: nextVal })
+  }
+
+  const handleMultiMonitorPauseModeChange = (mode) => {
+    setMultiMonitorPauseMode(mode)
+    syncAllPerformance({ multiMonitorPauseMode: mode })
+  }
+
+  const handleAudioPlaybackRuleChange = (rule) => {
+    setAudioPlaybackRule(rule)
+    syncAllPerformance({ audioPlaybackRule: rule })
   }
 
   const handleVolumeChange = (v) => {
@@ -764,6 +793,76 @@ export default function SettingsPage() {
                 <div className="toggle-thumb" />
               </label>
             </SettingRow>
+
+            <SettingRow
+              label="Pause on Maximized Windows"
+              desc="Suspend wallpaper rendering when standard desktop applications (Brave, Chrome, VS Code) are maximized to save power"
+            >
+              <label className="toggle">
+                <input type="checkbox" checked={pauseOnMaximized} onChange={handleTogglePauseOnMaximized} />
+                <div className="toggle-track" />
+                <div className="toggle-thumb" />
+              </label>
+            </SettingRow>
+
+            <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border-main)' }}>
+              <div className="text-sm font-semibold" style={{ marginBottom: 4 }}>Multi-Monitor Playback Behavior</div>
+              <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
+                {multiMonitorPauseMode === 'per-display' 
+                  ? 'Isolated (Per-Display): Only the monitor covered by a fullscreen or maximized window pauses. Other monitors continue animating.' 
+                  : 'Global (All Displays): Pauses all monitors whenever any single monitor is covered by a fullscreen or maximized window.'}
+              </div>
+              <div className="segmented-control">
+                <button
+                  type="button"
+                  className={`segmented-item ${multiMonitorPauseMode === 'per-display' ? 'active-brand' : ''}`}
+                  onClick={() => handleMultiMonitorPauseModeChange('per-display')}
+                >
+                  Isolated (Per-Display)
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-item ${multiMonitorPauseMode === 'all-displays' ? 'active-brand' : ''}`}
+                  onClick={() => handleMultiMonitorPauseModeChange('all-displays')}
+                >
+                  Global (All Displays)
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 18px', borderTop: '1px solid var(--border-main)' }}>
+              <div className="text-sm font-semibold" style={{ marginBottom: 4 }}>Wallpaper Audio Playback Policy</div>
+              <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
+                {audioPlaybackRule === 'mute-covered'
+                  ? 'Mute When Covered: Automatically mutes wallpaper audio when your active screens are maximized or fullscreen.'
+                  : audioPlaybackRule === 'mute-focused'
+                  ? 'Mute When App Focused: Mutes wallpaper audio whenever any non-desktop application has keyboard/window focus.'
+                  : 'Always Active: Keeps wallpaper audio playing continuously even when browsing or multitasking.'}
+              </div>
+              <div className="segmented-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                <button
+                  type="button"
+                  className={`segmented-item ${audioPlaybackRule === 'mute-covered' ? 'active-brand' : ''}`}
+                  onClick={() => handleAudioPlaybackRuleChange('mute-covered')}
+                >
+                  Mute When Covered
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-item ${audioPlaybackRule === 'mute-focused' ? 'active-brand' : ''}`}
+                  onClick={() => handleAudioPlaybackRuleChange('mute-focused')}
+                >
+                  Mute When Focused
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-item ${audioPlaybackRule === 'always' ? 'active-brand' : ''}`}
+                  onClick={() => handleAudioPlaybackRuleChange('always')}
+                >
+                  Always Active
+                </button>
+              </div>
+            </div>
 
             <div style={{ padding: '14px 18px' }}>
               <div className="text-sm font-semibold" style={{ marginBottom: 4 }}>Multi-Display Screen Arrangement</div>

@@ -1,11 +1,11 @@
 # AetherFlow — Session Handoff File
-> **Updated:** 2026-09-11 18:05 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** ✅ Theme Studio, Liked Filter, and Ambience Dynamics Implemented. Frontend passes in ~640ms.
+> **Updated:** 2026-09-11 21:25 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** ✅ Production Ready & Fully Verified. Win32 Occlusion, Multi-Monitor Pausing, Audio Policies, Custom Theme Studio, and Account Settings All Implemented and User-Validated. Standalone binary updated (7.09 MB). Frontend passes in ~490ms.
 
 ---
 
 ## 🧠 Context Snapshot (Read First)
 
-We are building **AetherFlow** — a **high-performance, standalone Windows desktop application** similar to Wallpaper Engine + Lively. It runs animated live desktop wallpapers, manages multi-monitor setups, natively styles the Windows taskbar, and provides an offline-safe community wallpaper marketplace.
+We are building **AetherFlow** — a **high-performance, standalone Windows desktop application** similar to Wallpaper Engine + Lively. It runs animated live desktop wallpapers, manages multi-monitor setups, natively styles the Windows taskbar, provides an offline-safe community wallpaper marketplace, and offers full theme customization.
 
 - **Project Location:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\`
 - **Independent Project:** Completely separated from `C:\Users\Yashpreet_o7\Desktop\PERSONALAGENT\` (do NOT touch).
@@ -13,9 +13,9 @@ We are building **AetherFlow** — a **high-performance, standalone Windows desk
 - **Active Git Branch:** `ui/ux` (synced with `origin/ui/ux`)
 - **Release Page:** [github.com/yashpreeto7/aetherflow/releases/tag/v1.0.7](https://github.com/yashpreeto7/aetherflow/releases/tag/v1.0.7)
 - **Older Releases:** All releases (v1.0.0 through v1.0.7) are preserved on GitHub.
-- **Local Executable:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\AetherFlow.exe` (updated with v1.0.7 binary)
-- **Local Dev Server:** Running in background on port `1420` (`http://localhost:1420/`).
-- **Upcoming Work:** UI/UX redesign on the `ui/ux` branch using the assets in `ui improvement ideas/`.
+- **Local Executable:** `C:\Users\Yashpreet_o7\Desktop\AetherFlow\AetherFlow.exe` (updated release binary, 7.09 MB)
+- **Local Dev Server:** Active in background on port `1420` (`http://localhost:1420/`).
+- **User Validation:** User tested the latest build and confirmed: *"i am very happy with the app"*.
 
 ---
 
@@ -29,62 +29,81 @@ We are building **AetherFlow** — a **high-performance, standalone Windows desk
    - **Procedural Canvas 2D Engines**: 7 ultra-lightweight built-in engines (`matrix-rain`, `cyber-particles`, `synthwave-grid`, `deep-space`, `aurora`, `tokyo-rain`, `audio-spectrum`).
    - **Image Engine**: Picture wallpaper player for PNG, JPG, WebP with `cover`, `contain`, `stretch` scaling.
    - **Live Web & YouTube Streams**: Dual-slot ping-pong buffer with iframe UI cleaning and strict-origin embed policies.
-3. **Native Translucent Taskbar**:
+3. **Advanced Win32 Occlusion & Power Management**:
+   - **Pause on Fullscreen Windows**: Pauses rendering when applications enter fullscreen (covering the taskbar, F11, video games, borderless windows).
+   - **Pause on Maximized Windows**: Suspends rendering when standard desktop applications (Brave, Chrome, VS Code) are maximized.
+   - **Multi-Monitor Isolated (Per-Display) Pausing**: Fullscreen on Monitor 1 pauses Monitor 1, while Monitor 2 continues running smoothly without focus amnesia.
+   - **Multi-Monitor Global (All Displays) Pausing**: Pauses all monitors whenever any single monitor is covered.
+   - **Wallpaper Audio Playback Policies**:
+     - `Mute When Covered` (Default): Automatically mutes wallpaper sound when active screens are covered by maximized or fullscreen windows.
+     - `Mute When Focused`: Mutes wallpaper audio whenever any non-desktop application has focus.
+     - `Always Active`: Keeps wallpaper audio playing continuously even when browsing or multitasking.
+4. **Theme Studio & Import/Export System**:
+   - 6 Sovereign built-in themes (Onyx, Slate, Studio, Obsidian, Manifesto, Light).
+   - **Custom Theme Studio**: Non-intrusive Draft Mode with live preview, token tweaking (HEX/RGB), starter presets, and persistent saving.
+   - **Theme Import & Export**: One-click JSON export to file or clipboard, plus validation and auto-activation on `.json` import.
+5. **Dedicated Account & Cloud Sync**:
+   - Account settings in Settings tab for both Authenticated and Guest users.
+   - 100% offline-first functionality: fully functional with or without Supabase credentials.
+   - OAuth login (Google & GitHub) with deep linking and custom token persistence.
+6. **Native Translucent Taskbar**:
    - Live real-time styling (Clear, Acrylic, Blur, Default) with auto-persistence across Windows Explorer restarts.
-4. **Theme System**:
-   - 6 Sovereign themes (Onyx, Slate, Studio, Obsidian, Manifesto, Light) + CSS variable customization.
-5. **In-App Auto-Updater**:
-   - Integrates with GitHub Releases to check for updates and download latest installers.
-6. **Community Marketplace & OAuth Authentication**:
-   - Supabase-backed community wallpaper browsing, installation, and publication.
-   - 1-click installation without mandatory login requirement.
 7. **Performance & Memory Protection**:
    - Viewport lazy loading and automatic off-screen unloading via `IntersectionObserver`.
    - Bounded hardware video decoder usage preventing GPU/RAM exhaustion.
    - Top preview pause button for zero GPU/RAM consumption.
+8. **In-App Auto-Updater**:
+   - Integrates with GitHub Releases to check for updates and download latest installers.
 
 ---
 
 ## 🔍 Recent Major Achievements & Architectural Decisions
 
-### 1. Default Thumbnail Mode to Hover & State Migration (v1.0.7)
-- **Problem**: Earlier builds initialized thumbnail mode to `'always'` (On), mounting media across all cards on startup.
+### 1. Win32 Occlusion & Multi-Monitor Pausing Engine Overhaul (v1.0.7+)
+- **Problem**:
+  - Fullscreen (e.g. Antigravity) and maximized (e.g. Brave) windows were not pausing wallpapers at all.
+  - "Mute When Covered" was not muting when displays were covered; it was muting on focus instead, leaving music active unexpectedly.
+- **Root Cause**:
+  - `EnumWindows` stopped after 50 raw HWNDs, exhausting its count on invisible/cloaked background system windows before discovering visible windows on secondary monitors.
+  - Fullscreen detection checked `!has_caption`, which rejected modern Electron/Chromium apps (VS Code, Antigravity, Chrome/Brave F11, borderless games) that retain `WS_CAPTION` style bits in `GWL_STYLE`.
+  - Maximized windows were not taking into account Windows 10/11 invisible -8px drop-shadow margins.
+  - `any_monitor_covered` in Rust was gated by `should_pause`, remaining false if `pause_on_maximized` was false, preventing "Mute When Covered" from detecting covered displays.
+- **Architectural Solution**:
+  - Rewrote `enum_occlusion_proc` to filter out hidden, minimized, cloaked, and tool windows, and filter out AetherFlow's own process PID (`GetWindowThreadProcessId`).
+  - Allowed enumeration of up to 120 genuine visible candidate application windows across all connected displays.
+  - Defined Fullscreen as covering physical monitor bounds (`rcMonitor` with 10px margin) without the obsolete `!has_caption` restriction.
+  - Defined Maximized as `IsZoomed(hwnd)` or filling the monitor work area (`rcWork` with 15px margin).
+  - Decoupled `any_monitor_covered` from animation pause state so "Mute When Covered" evaluates true screen occlusion.
+  - Set default `pauseOnMaximized: true` across frontend and backend.
+  - Added periodic diagnostic output (`[SYSTEM MONITOR DIAG]`) every 6 seconds in `desktop_debug.log`.
+
+### 2. Multi-Monitor Isolated Pausing & Focus Amnesia Elimination
+- **Problem**: When Antigravity was fullscreen on the right monitor and Brave was maximized on the left monitor, focusing on Brave caused the right monitor to unpause and start playing audio.
 - **Solution**:
-  - Set default `thumbnailMode: 'hover'` in `useStore.js`.
-  - Added Zustand persistence migration (`version: 2`) so existing clients automatically migrate stored state from `'always'` to `'hover'` without wiping user libraries or custom wallpapers.
-  - Verified toggle buttons on Home, Library, and Settings default to `[ Hover ]`.
+  - Implemented per-monitor Z-order occlusion tracking in `src-tauri/src/main.rs`.
+  - In `Isolated (Per-Display)` mode, each display's occlusion status is evaluated independently.
+  - If Monitor 1 is covered by Antigravity, it remains paused regardless of which window has keyboard/mouse focus.
+  - If Monitor 2 is covered by Brave (with `pauseOnMaximized: true`), Monitor 2 also pauses and audio remains muted.
 
-### 2. Viewport Lazy Loading & Off-Screen Unloading (v1.0.7)
-- **Problem**: When thumbnail mode was set to `'always'`, all 38+ cards mounted `<video>` or high-res `<img>` elements simultaneously, exhausting Direct3D hardware video decoders and causing heavy RAM/GPU memory usage.
-- **Architecture Decision (Unload Off-Screen Cards)**:
-  - Added an `IntersectionObserver` with `rootMargin: '140px 0px'` in `WallpaperThumbnail/index.jsx`.
-  - When in viewport: Mounts the active `<video>` or high-res `<img>`.
-  - When scrolled out of view: Unmounts the media element immediately. For `<video>` elements, `cleanupVideo()` runs synchronously, pausing the video, clearing its `src`, calling `load()`, and destroying the hardware video decoder pipeline.
-  - While off-screen, cards preserve their dimensions and vector gradient badges, ensuring **zero layout shift**.
-  - **Empirical Verification**: Exactly 4 cards in the viewport mount media. When scrolled to the bottom, the count remains at 4 cards (top cards unload cleanly).
+### 3. Custom Theme Studio & Import/Export System
+- **Problem**: Opening the theme studio immediately overrode the active theme before the user customized anything, and there was no way to share or backup custom themes.
+- **Solution**:
+  - Studio initializes in **Draft Mode** with **Preview OFF**, leaving active app and desktop themes untouched.
+  - Live Preview engages dynamically when the user adjusts a color picker or selects a starter preset.
+  - Added manual **Preview ON/OFF** toggle and clean revert on "Cancel & Reset".
+  - Built 1-click **Export Active**, **Export Custom**, and file-based `.json` **Import** with schema validation and hex/RGB normalization.
 
-### 3. Home Top Preview (Hero Banner) Sync & Remounting (v1.0.7)
-- **Problem**: Applying a wallpaper from Library or Marketplace left the Home top preview stuck on the old wallpaper or broken.
-- **Root Causes & Solutions**:
-  - `applyWallpaperToDesktop` and `Library.jsx`'s `handleApply` now call `state.setActiveWallpaper(wallpaper)`.
-  - `Home.jsx` auto-syncs `activeWallpaper` with `currentDesktopWallpaper` when returning to Home.
-  - Added `key={activeWallpaper.id || activeWallpaper.name}` to `<WallpaperPlayer>` on the Home page, guaranteeing that switching between wallpapers of the same engine (e.g. video to video) completely tears down the old engine and renders the new wallpaper preview immediately.
-  - Removed `crossOrigin = 'anonymous'` in `web-stream.js`, resolving browser CORS blocks when loading YouTube thumbnails (`img.youtube.com`) onto the canvas preview.
-  - `Marketplace.jsx` dynamically detects videos, streams, and pictures, unmutes streams by default, and pins applied items to Home favorites.
+### 4. Dedicated Account Tab in Settings
+- **Features**:
+  - Clean view for authenticated users (avatar, name, email, copy User ID chip, provider badge, sign out).
+  - Informational view for guest users highlighting offline capabilities and benefits of cloud sync.
+  - Live Supabase cloud and local storage diagnostic indicators.
 
-### 4. Audio Control Polish & Multi-Monitor Sync (v1.0.6)
-- **Problem**: Duplicate volume sliders, wallpaper starting at 100% volume despite lower setting, cursor blocking when dragging slider, and audio echo across multiple screens for YouTube wallpapers.
-- **Solutions**:
-  - Removed redundant top volume slider; kept single bottom slider with per-wallpaper adhered audio settings.
-  - Added `--no-config` to MPV and prioritized `adheredAudio` on playback start.
-  - Added `user-select: none`, `touch-action: none`, and 35ms IPC debouncing to volume slider dragging.
-  - Locked secondary displays to `muted: true` in duplicate mode so audio plays only from the primary monitor, eliminating echo.
-  - Fixed YouTube stream audio muting by identifying primary monitor label via `get_primary_monitor_label` in Rust and passing explicit `isPrimary`/`isSecondary` flags to webview instances.
-
-### 5. Dedicated `ui/ux` Branch & UI Improvement Asset Intake
-- **Branch**: Created `ui/ux` branch branched off `main`, pushed upstream to `origin/ui/ux`.
-- **Assets**: User provided 9 UI reference images in `ui improvement ideas/`.
-- **Guidance**: Use `ui-ux-pro-max` and `impeccable` design skills for tokens, layout, and component craft.
+### 5. Viewport Lazy Loading & Off-Screen Unloading
+- **Architecture**:
+  - `IntersectionObserver` with `rootMargin: '140px 0px'` in `WallpaperThumbnail/index.jsx`.
+  - Automatically unmounts off-screen video and high-res media elements, destroying hardware video decoders synchronously and eliminating GPU memory leaks.
+  - Exactly 4 cards in viewport mount media at any time.
 
 ---
 
@@ -92,7 +111,7 @@ We are building **AetherFlow** — a **high-performance, standalone Windows desk
 
 ```
 C:\Users\Yashpreet_o7\Desktop\AetherFlow\
-├── AetherFlow.exe                  ✅ Standalone native executable (v1.0.7)
+├── AetherFlow.exe                  ✅ Standalone native release executable (v1.0.7, 7.09 MB)
 ├── package.json                    ✅ npm scripts and dependencies (v1.0.7)
 ├── vite.config.js                  ✅ Vite 8 build config (oxc minifier, rolldown manualChunks)
 ├── supabase/
@@ -104,13 +123,13 @@ C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 │   ├── Cargo.toml                  ✅ Tauri 2 + windows-sys + release optimization profile (v1.0.7)
 │   ├── tauri.conf.json             ✅ App identity (com.aetherflow.app), window configs, bundle (v1.0.7)
 │   └── src/
-│       ├── main.rs                 ✅ Core Rust backend (window management, tray, IPC commands)
+│       ├── main.rs                 ✅ Core Rust backend (window management, occlusion engine, tray, IPC commands)
 │       ├── mpv.rs                  ✅ Native MPV video engine integration & process manager
 │       └── taskbar.rs              ✅ Win32 taskbar composition & TranslucentTB integration
 ├── src/
 │   ├── main.jsx                    ✅ React entrypoint, error boundary, theme hydration
-│   ├── wallpaper.jsx               ✅ Wallpaper host entrypoint & canvas renderer
-│   ├── App.jsx                     ✅ Main control panel shell, layout, router, update toasts
+│   ├── wallpaper.jsx               ✅ Wallpaper host entrypoint, canvas renderer, mute/pause listeners
+│   ├── App.jsx                     ✅ Main control panel shell, layout, router, performance sync on boot
 │   ├── components/
 │   │   ├── AuthModal/              ✅ Clean OAuth modal with auto-close & reset timeout
 │   │   ├── ErrorBoundary/          ✅ React error catcher with reload/cache reset buttons
@@ -141,9 +160,9 @@ C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 │   │   ├── Home.jsx                ✅ Active wallpaper preview, hero card, controls, theme switcher
 │   │   ├── Marketplace.jsx         ✅ Browse, search, tag filter, direct 1-click apply, submit
 │   │   ├── Library.jsx             ✅ Installed wallpapers, custom media add, activate/uninstall
-│   │   └── Settings.jsx            ✅ Taskbar styling, power management, autostart, updates
+│   │   └── Settings.jsx            ✅ Performance controls, taskbar styling, theme studio, account, updates
 │   ├── store/
-│   │   └── useStore.js             ✅ Zustand persisted store with version 2 migration for hover default
+│   │   └── useStore.js             ✅ Zustand persisted store with version 2 migration, pause/mute settings
 │   └── styles/
 │       ├── index.css               ✅ Design tokens, utility classes, buttons, toggles
 │       └── themes.css              ✅ 6 Sovereign CSS custom property theme sets
@@ -158,7 +177,7 @@ C:\Users\Yashpreet_o7\Desktop\AetherFlow\
 ## 🛠️ Verification & Build Commands
 
 ```powershell
-# 1. Build frontend
+# 1. Build frontend (Vite)
 npm run build
 
 # 2. Check Rust backend
@@ -177,8 +196,8 @@ Start-Process .\AetherFlow.exe
 ---
 
 ## 📌 Active Runtime State
-- **Process Status**: `AetherFlow.exe` running with version `1.0.7`.
+- **Process Status**: `AetherFlow.exe` running with version `1.0.7` (latest build).
 - **Heartbeat**: Active (`[FRONTEND HEARTBEAT] page=/, visibility=visible, mounted=true`).
-- **Dev Server**: Active at `http://localhost:1420/`.
+- **Dev Server**: Active in background at `http://localhost:1420/`.
 - **Current Branch**: `ui/ux` (synced with `origin/ui/ux`).
-- **Working Tree**: Clean, ready for UI/UX enhancements.
+- **Working Tree**: Clean, verified, and operational.

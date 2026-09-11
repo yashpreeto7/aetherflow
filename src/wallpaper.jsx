@@ -209,6 +209,20 @@ function WallpaperCanvas() {
           })
         })
 
+        await addListener('aura:mute', () => {
+          document.querySelectorAll('video, audio').forEach(el => {
+            try { el.muted = true } catch (e) {}
+          })
+          try { engineRef.current?.updateOptions?.({ muted: true }) } catch (e) {}
+        })
+
+        await addListener('aura:unmute', () => {
+          document.querySelectorAll('video, audio').forEach(el => {
+            try { el.muted = false } catch (e) {}
+          })
+          try { engineRef.current?.updateOptions?.({ muted: false }) } catch (e) {}
+        })
+
         await addListener('aura:set-brightness', (payload) => {
           if (payload?.brightness !== undefined) setBrightness(payload.brightness)
         })

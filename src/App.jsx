@@ -32,6 +32,9 @@ export default function App() {
   const audioMuted       = useStore(s => s.audioMuted)
   const pauseOnBattery   = useStore(s => s.pauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
+  const pauseOnMaximized = useStore(s => s.pauseOnMaximized)
+  const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
+  const audioPlaybackRule = useStore(s => s.audioPlaybackRule) || 'mute-covered'
   const authUser         = useStore(s => s.authUser)
   const isAuthenticated  = useStore(s => s.isAuthenticated)
   const glowAmbience     = useStore(s => s.glowAmbience) || 'balanced'
@@ -163,7 +166,7 @@ export default function App() {
     broadcastAudio()
   }, [audioVolume, audioMuted])
 
-  // Sync battery & fullscreen power management settings with native Rust monitor
+  // Sync battery, fullscreen, maximized & multi-monitor power management settings with native Rust monitor
   React.useEffect(() => {
     async function syncPerformance() {
       try {
@@ -171,11 +174,14 @@ export default function App() {
         await invoke('sync_performance_settings', {
           pauseOnBattery: !!pauseOnBattery,
           pauseOnFullscreen: !!pauseOnFullscreen,
+          pauseOnMaximized: !!pauseOnMaximized,
+          multiMonitorPauseMode: multiMonitorPauseMode,
+          audioPlaybackRule: audioPlaybackRule,
         }).catch(() => {})
       } catch (err) {}
     }
     syncPerformance()
-  }, [pauseOnBattery, pauseOnFullscreen])
+  }, [pauseOnBattery, pauseOnFullscreen, pauseOnMaximized, multiMonitorPauseMode, audioPlaybackRule])
 
   // Ensure window is visible and focused on mount unless launched minimized at startup
   React.useEffect(() => {

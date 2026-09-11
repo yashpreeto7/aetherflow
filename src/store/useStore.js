@@ -328,6 +328,9 @@ export const useStore = create(
       runInTray: true,
       pauseOnBattery: true,
       pauseOnFullscreen: true,
+      pauseOnMaximized: true,
+      multiMonitorPauseMode: 'per-display', // 'per-display' | 'all-displays'
+      audioPlaybackRule: 'mute-covered',    // 'mute-covered' | 'mute-focused' | 'always'
       audioReactive: false,
       audioSource: 'mic',             // 'mic' | 'system'
       fps: 60,                        // Target FPS cap
@@ -414,6 +417,9 @@ export const useStore = create(
       toggleRunInTray: () => set((s) => ({ runInTray: !s.runInTray })),
       togglePauseOnBattery: () => set((s) => ({ pauseOnBattery: !s.pauseOnBattery })),
       togglePauseOnFullscreen: () => set((s) => ({ pauseOnFullscreen: !s.pauseOnFullscreen })),
+      togglePauseOnMaximized: () => set((s) => ({ pauseOnMaximized: !s.pauseOnMaximized })),
+      setMultiMonitorPauseMode: (v) => set({ multiMonitorPauseMode: v }),
+      setAudioPlaybackRule: (v) => set({ audioPlaybackRule: v }),
       toggleAudioReactive: () => set((s) => ({ audioReactive: !s.audioReactive })),
       setAudioSource: (v) => set({ audioSource: v }),
 
@@ -480,6 +486,9 @@ export const useStore = create(
         runInTray: s.runInTray,
         pauseOnBattery: s.pauseOnBattery,
         pauseOnFullscreen: s.pauseOnFullscreen,
+        pauseOnMaximized: s.pauseOnMaximized,
+        multiMonitorPauseMode: s.multiMonitorPauseMode,
+        audioPlaybackRule: s.audioPlaybackRule,
         audioReactive: s.audioReactive,
         audioSource: s.audioSource,
         fps: s.fps,

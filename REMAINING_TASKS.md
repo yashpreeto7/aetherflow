@@ -282,5 +282,8 @@ Mark these off as you complete them:
 - [x] TASK 11: In-App GitHub Releases Auto-Updater (Settings check + startup toast notification)
 - [x] TASK 12: Community Marketplace Backend & Live Database Migration (Supabase RPCs, 20-wallpaper catalog, real-time likes & installs, Staff Pick curation, My Submissions)
 - [x] TASK 13: Release v1.0.7 (Hover default thumbnail mode with Zustand migration v2, Viewport Lazy Loading and off-screen unloading via IntersectionObserver, Home top preview hero synchronization, YouTube thumbnail CORS fix)
-- [ ] TASK 14: UI/UX Overhaul & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
+- [x] TASK 14: Custom Theme Studio & Import/Export System (Draft mode non-intrusive preview, JSON export to clipboard/file, theme import with token validation and normalization, starter presets)
+- [x] TASK 15: Dedicated Account Tab in Settings (Authenticated vs Guest states, live Supabase & local storage diagnostics, user profile card)
+- [x] TASK 16: Win32 Occlusion, Multi-Monitor Pausing & Audio Policies Overhaul (pause on maximized windows, per-monitor Z-order occlusion engine, isolated vs global pausing, mute when covered vs mute when focused vs always active, borderless fullscreen F11 detection, verified by user)
+- [ ] TASK 17: UI/UX Redesign & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
 
