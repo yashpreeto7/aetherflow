@@ -737,17 +737,19 @@ export default function HomePage() {
 
   async function handleWallpaperVolumeChange(vol) {
     if (!activeWallpaper) return
-    const nextAudio = { ...currentWallpaperAudio, volume: vol }
+    const nextMuted = vol <= 0
+    const nextAudio = { ...currentWallpaperAudio, volume: vol, muted: nextMuted }
     setWallpaperAudio(activeWallpaper.id, nextAudio)
-    useStore.setState({ audioVolume: vol })
+    useStore.setState({ audioVolume: vol, audioMuted: nextMuted })
 
     // If active wallpaper is running on desktop, debounced update of native audio
     if (isWallpaperRunning) {
       clearTimeout(volumeIpcTimerRef.current)
       volumeIpcTimerRef.current = setTimeout(async () => {
         await tauriInvoke('set_mpv_volume', { monitorLabel: null, volume: vol }).catch(() => {})
+        await tauriInvoke('set_mpv_mute', { monitorLabel: null, muted: nextMuted }).catch(() => {})
         await tauriInvoke('update_wallpaper_config', {
-          config: { volume: vol, muted: nextAudio.muted },
+          config: { volume: vol, muted: nextMuted },
           monitorLabel: null,
         }).catch(() => {})
       }, 35)
@@ -1078,12 +1080,7 @@ export default function HomePage() {
                 style={{ touchAction: 'none' }}
                 onChange={e => {
                   const v = parseInt(e.target.value, 10)
-                  if (currentWallpaperAudio.muted && v > 0) {
-                    setWallpaperAudio(activeWallpaper.id, { volume: v, muted: false })
-                    useStore.setState({ audioVolume: v, audioMuted: false })
-                  } else {
-                    handleWallpaperVolumeChange(v)
-                  }
+                  handleWallpaperVolumeChange(v)
                 }}
               />
             </div>

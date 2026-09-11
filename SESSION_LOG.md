@@ -1196,3 +1196,33 @@
   - `npm run build`: ✅ Passes in 1.00s with zero errors.
   - Playwright visual tests: Verified single volume slider on Home; verified dragging volume slider smoothly updates value without cursor blocked 🚫 icon.
 ---
+
+## Session: 2026-09-11 15:20 (Fix YouTube Audio Fully Muted Across All Screens)
+- **Agent:** Antigravity (Google DeepMind)
+- **Problem**: YouTube stream wallpapers were completely silent on all screens even when unmuted and volume set > 0.
+- **Root Causes**:
+  1. `src/wallpaper.jsx` checked `const isSecondaryScreen = cfg.isSecondary || (myLabel !== 'wallpaper_0' && !cfg.isPrimary)`. On Windows, wallpaper windows are named `wallpaper_DISPLAY1`, `wallpaper_DISPLAY2`, etc., never `'wallpaper_0'`. Therefore, `myLabel !== 'wallpaper_0'` was ALWAYS `true`, evaluating `isSecondaryScreen` to `true` on EVERY screen (including the primary monitor) and unconditionally overwriting `cfg.muted = true` and `cfg.volume = 0`.
+  2. `src-tauri/src/main.rs` in `apply_wallpaper` and `update_wallpaper_config` did not supply explicit `isPrimary` flags and relied on arbitrary HashMap iteration order to assign audio.
+  3. `src/engines/web-stream.js` defaulted `currentMuted` to `(options.muted ?? true)`, muting any stream where muted wasn't explicitly false, and `WallpaperModals.jsx` / `addCustomStreamWallpaper` defaulted newly added streams to `muted = true`.
+- **Changes Made**:
+  1. `src/wallpaper.jsx`: Replaced broken `myLabel !== 'wallpaper_0'` logic with `const isSecondaryScreen = Boolean(cfg.isSecondary)`. Only true secondary displays are silenced.
+  2. `src-tauri/src/main.rs`:
+     - Added `get_primary_monitor_label(&app)` helper utilizing `app.primary_monitor()` with fallback to position `(0, 0)` and first monitor.
+     - In both `apply_wallpaper` and `update_wallpaper_config`: Reliably mark `is_primary` and `is_secondary`, sending explicit `isPrimary`, `isSecondary`, `muted`, and `volume` properties to each window.
+     - Updated `get_monitor_active_wallpaper` to return proper `isPrimary`/`isSecondary` values upon window mount or hotplug.
+     - Updated `set_mpv_mute` to take `app: AppHandle` and unmute only the primary display in duplicated mode.
+  3. `src/engines/web-stream.js`:
+     - Initialized `currentMuted = isSecondary ? true : Boolean(options.muted)` (unmuted by default on primary monitor).
+     - Fixed `onReady`, `triggerLoopTransition` (ping-pong player B loop), and `updateOptions` to reliably call `unMute()` and `setVolume()` whenever unmuted and volume > 0.
+     - Changed sync master condition to `!isSecondary` so timestamp syncing stays synchronized even when muted.
+  4. `src/lib/wallpaperActions.js` & `src/components/Modals/WallpaperModals.jsx`:
+     - Changed `muted = true` default to `muted = false` when adding YouTube / web streams so users hear audio without having to manually uncheck mute.
+  5. `src/pages/Home.jsx` & `src/pages/Settings.jsx`:
+     - When dragging volume slider, automatically unmute if `vol > 0` and immediately send volume + unmuted state via IPC.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 727ms with zero errors.
+  - `cargo check`: ✅ Passes in 23s with zero errors.
+  - `cargo build --release --bin aetherflow`: ✅ Finished in 2m 02s with zero errors.
+  - Fresh `AetherFlow.exe` running on desktop.
+  - Verified in Playwright: YouTube stream wallpapers display volume, unmute/mute toggles correctly, and controls respond cleanly.
+---

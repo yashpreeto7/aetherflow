@@ -68,7 +68,8 @@ export function createWebStream(canvas, options = {}) {
   let thumbLoaded = false
   let currentUrl = options.streamUrl || options.url || ''
   let isSecondary = Boolean(options.isSecondary)
-  let currentMuted = isSecondary ? true : (options.muted ?? true)
+  let currentMuted = isSecondary ? true : Boolean(options.muted)
+  let currentVolume = options.volume !== undefined ? Number(options.volume) : 50
   let currentSpeed = Number(options.speedMultiplier ?? options.speed ?? 1)
   let isRunning = false
   let isPausedByUser = false
@@ -196,14 +197,19 @@ export function createWebStream(canvas, options = {}) {
             },
             events: {
               onReady: (e) => {
-                if (currentMuted) e.target.mute()
-                else e.target.unMute()
-                if (options.volume !== undefined) {
-                  e.target.setVolume(Math.round(options.volume))
-                }
-                if (currentSpeed !== 1 && e.target.setPlaybackRate) {
-                  try { e.target.setPlaybackRate(currentSpeed) } catch {}
-                }
+                try {
+                  if (currentMuted) {
+                    e.target.mute()
+                    e.target.setVolume(0)
+                  } else {
+                    e.target.unMute()
+                    const vol = Math.max(1, Math.round(currentVolume))
+                    e.target.setVolume(vol)
+                  }
+                  if (currentSpeed !== 1 && e.target.setPlaybackRate) {
+                    try { e.target.setPlaybackRate(currentSpeed) } catch {}
+                  }
+                } catch (err) {}
                 onReadyCb?.(e)
               },
               onStateChange: (e) => {
@@ -231,8 +237,14 @@ export function createWebStream(canvas, options = {}) {
             // Next player begins seeking & playing at opacity: 0
             nextWrap.style.opacity = '0'
             try {
-              if (currentMuted) nextPlayer.mute()
-              else nextPlayer.unMute()
+              if (currentMuted) {
+                nextPlayer.mute()
+                nextPlayer.setVolume(0)
+              } else {
+                nextPlayer.unMute()
+                const vol = Math.max(1, Math.round(currentVolume))
+                nextPlayer.setVolume(vol)
+              }
               if (currentSpeed !== 1 && nextPlayer.setPlaybackRate) {
                 nextPlayer.setPlaybackRate(currentSpeed)
               }
@@ -289,7 +301,7 @@ export function createWebStream(canvas, options = {}) {
 
         function startSyncMonitor() {
           if (!syncChannel) return
-          if (!currentMuted) {
+          if (!isSecondary) {
             // Master screen: broadcast audio-synced timestamp to secondary screens
             clearInterval(syncInterval)
             syncInterval = setInterval(() => {
@@ -453,6 +465,9 @@ export function createWebStream(canvas, options = {}) {
     if (newOpts.isSecondary !== undefined) {
       isSecondary = Boolean(newOpts.isSecondary)
     }
+    if (newOpts.volume !== undefined) {
+      currentVolume = Number(newOpts.volume)
+    }
     if (isSecondary) {
       currentMuted = true
       try {
@@ -462,22 +477,28 @@ export function createWebStream(canvas, options = {}) {
         playerB?.setVolume(0)
       } catch {}
     } else {
-      if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
-        currentMuted = newOpts.muted
-        try {
-          if (currentMuted) {
-            playerA?.mute()
-            playerB?.mute()
-          } else {
-            const active = activeSlot === 'A' ? playerA : playerB
-            active?.unMute()
-          }
-        } catch {}
+      if (newOpts.muted !== undefined) {
+        currentMuted = Boolean(newOpts.muted)
       }
-      if (newOpts.volume !== undefined) {
-        const vol = Math.round(newOpts.volume)
-        try { playerA?.setVolume(vol) } catch {}
-        try { playerB?.setVolume(vol) } catch {}
+      try {
+        if (currentMuted) {
+          playerA?.mute()
+          playerB?.mute()
+        } else {
+          playerA?.unMute()
+          playerB?.unMute()
+          const vol = Math.max(1, Math.round(currentVolume))
+          playerA?.setVolume(vol)
+          playerB?.setVolume(vol)
+        }
+      } catch {}
+
+      if (newOpts.volume !== undefined && !currentMuted) {
+        const vol = Math.max(1, Math.round(currentVolume))
+        try {
+          playerA?.setVolume(vol)
+          playerB?.setVolume(vol)
+        } catch {}
       }
     }
     if (newOpts.opacity !== undefined) {

@@ -156,7 +156,7 @@ function WallpaperCanvas() {
 
         await addListener('aura:set-engine', (payload) => {
           const cfg = { ...(payload?.config || {}) }
-          const isSecondaryScreen = cfg.isSecondary || (myLabel !== 'wallpaper_0' && !cfg.isPrimary)
+          const isSecondaryScreen = Boolean(cfg.isSecondary)
           if (isSecondaryScreen) {
             cfg.isSecondary = true
             cfg.muted = true
@@ -167,7 +167,7 @@ function WallpaperCanvas() {
 
         await addListener('aura:update-config', (payload) => {
           const cfg = { ...(payload?.config || payload || {}) }
-          const isSecondaryScreen = cfg.isSecondary || (myLabel !== 'wallpaper_0' && !cfg.isPrimary)
+          const isSecondaryScreen = Boolean(cfg.isSecondary)
           if (isSecondaryScreen) {
             cfg.isSecondary = true
             cfg.muted = true

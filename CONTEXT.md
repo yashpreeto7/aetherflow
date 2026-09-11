@@ -3,10 +3,13 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 14:35 IST — Resolved Always-On Thumbnails & Eradicated Memory Climb (v1.0.6 Release):
-1. Always-On Thumbnails: Fixed asset protocol failure caused by `#t=0.5` URL fragments on Windows Tauri custom asset protocol by replacing with programmatic video frame seek via `onLoadedMetadata`; unified YouTube stream thumbnail extraction (`wallpaper.config.url` & `streamUrl`); restored high-res YouTube, custom images, videos, and canvas SVG thumbnails in "On" mode.
-2. Memory Leaks & Memory Climb Eradication: Fixed un-revoked `URL.createObjectURL(blob)` in `video-player.js`; added explicit hardware video decoder and D3D texture release (`removeAttribute('src')`, `.load()`, and `about:blank` navigation) upon modal close and hover end; added Top Preview `[Pause Preview]` / `[Resume Preview]` toggle to eliminate continuous 60fps background GPU/RAM rendering; upgraded StatusBar Trim to sweep detached media and trigger GC.
-3. Version 1.0.6 Release: Bumped version across `package.json`, `tauri.conf.json`, `Cargo.toml`, and `updater.js`; compiled release binary to `AetherFlow.exe` and tagged `v1.0.6` for automated GitHub Actions release.
+2026-09-11 15:20 IST — Fixed YouTube Wallpaper Audio Fully Muted Across All Screens:
+1. Identified and eliminated erroneous `myLabel !== 'wallpaper_0'` check in `src/wallpaper.jsx` that evaluated to `true` on Windows (`wallpaper_DISPLAY1`) on every display and unconditionally silenced all YouTube/web wallpapers.
+2. Added `get_primary_monitor_label` in `src-tauri/src/main.rs` using `app.primary_monitor()` and origin fallbacks; explicitly injected `isPrimary` and `isSecondary` flags into `win_config` for both `apply_wallpaper` and `update_wallpaper_config`.
+3. Fixed `src/engines/web-stream.js` audio handling: unmuted by default on primary screen (`currentMuted = isSecondary ? true : Boolean(options.muted)`), unmuted during dual-slot ping-pong loops, and synchronized playback times with `!isSecondary`.
+4. Changed default `muted = true` to `muted = false` in `addCustomStreamWallpaper` and `AddWebStreamModal`.
+5. Updated `handleWallpaperVolumeChange` in `Home.jsx` and `Settings.jsx` to automatically unmute when volume > 0 and send live IPC updates.
+6. Recompiled release binary and deployed fresh `AetherFlow.exe` with active status.
 
 ---
 
@@ -185,6 +188,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Added Marketplace "+ Add to Library" option, Zero-Memory-Leak Live Preview Modal (createPortal + about:blank iframe teardown + GPU decoder release), and resolved live download counter sync with Supabase installs |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Resolved Always-On thumbnails (fixed #t=0.5 Tauri asset bug, programmatic seek, unified stream URLs); eradicated memory climb (URL.revokeObjectURL, explicit hardware decoder teardown, Top Preview Pause toggle, active DOM media sweep); bumped to v1.0.6 and deployed fresh AetherFlow.exe |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Audio & Multi-Monitor Fixes: Removed duplicate top volume slider (retained single bottom slider); fixed wallpaper starting at 100% volume (prioritized adheredAudio, passed targetAudio in handleApply, added --no-config to MPV); fixed slider dragging cursor blocked (added user-select: none, touch-action: none, draggable={false}, and 35ms IPC debounce); fixed multi-monitor YouTube audio echo by permanently locking secondary displays to muted so audio plays only from primary display |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Fixed YouTube Audio Fully Muted Across All Screens: eliminated broken myLabel !== 'wallpaper_0' in wallpaper.jsx; added get_primary_monitor_label in main.rs; injected explicit isPrimary/isSecondary into win_config; updated web-stream.js, AddWebStreamModal, and volume slider auto-unmute on vol > 0; recompiled release binary and deployed fresh AetherFlow.exe |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

@@ -717,6 +717,18 @@ fn get_monitor_label(name: &str) -> String {
     format!("wallpaper_{}", name.replace("\\", "").replace(".", "_").replace(" ", "_"))
 }
 
+fn get_primary_monitor_label(app: &AppHandle) -> Option<String> {
+    let monitors = app.available_monitors().unwrap_or_default();
+    app.primary_monitor().ok().flatten().and_then(|m| {
+        m.name().map(|n| get_monitor_label(n))
+    }).or_else(|| {
+        monitors.iter().find(|m| m.position().x == 0 && m.position().y == 0)
+            .and_then(|m| m.name().map(|n| get_monitor_label(n)))
+    }).or_else(|| {
+        monitors.first().and_then(|m| m.name().map(|n| get_monitor_label(n)))
+    })
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct MonSnapshot {
     name: String,
@@ -1095,6 +1107,7 @@ async fn apply_wallpaper(
         let _fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
         let is_duplicated = target == "*";
         let mut audio_assigned = false;
+        let primary_label = get_primary_monitor_label(&app);
 
         for (idx, mon) in monitors.iter().enumerate() {
             if let Some(name) = mon.name() {
@@ -1105,11 +1118,11 @@ async fn apply_wallpaper(
 
                 // In duplicated mode, ONLY the primary screen (or first screen) plays audio.
                 // Secondary screens MUST be muted to prevent echo / out-of-sync audio!
-                let is_primary = mon.position().x == 0 && mon.position().y == 0;
+                let is_primary = primary_label.as_deref() == Some(label.as_str()) || (idx == 0 && primary_label.is_none());
                 let screen_muted = if global_muted {
                     true
                 } else if is_duplicated {
-                    if (is_primary || idx == 0) && !audio_assigned {
+                    if is_primary && !audio_assigned {
                         audio_assigned = true;
                         false
                     } else {
@@ -1213,6 +1226,7 @@ async fn apply_wallpaper(
 
         // 2. Show canvas webview windows and send engine events
         let windows = app.webview_windows();
+        let primary_label = get_primary_monitor_label(&app);
         let mut audio_assigned = false;
         for (label, win) in windows {
             if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -1239,20 +1253,15 @@ async fn apply_wallpaper(
                     pin_hwnd_as_wallpaper(hwnd, mon_bounds);
                 }
 
-                // In duplicated / all screens mode, ONLY the primary screen (or first screen) plays audio.
-                // Secondary screens MUST be muted to prevent echo / out-of-sync audio, exactly like MPV!
-                let is_primary = monitors.iter().find(|m| {
-                    if let Some(name) = m.name() {
-                        get_monitor_label(name) == label && m.position().x == 0 && m.position().y == 0
-                    } else {
-                        false
-                    }
-                }).is_some();
+                // In duplicated / all screens mode, ONLY the primary screen plays audio.
+                // Secondary screens MUST be muted to prevent echo / out-of-sync audio!
+                let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_assigned && primary_label.is_none());
+                let is_secondary = !is_primary && target == "*";
 
                 let screen_muted = if global_muted {
                     true
                 } else if target == "*" {
-                    if (is_primary || label == "wallpaper_0") && !audio_assigned {
+                    if is_primary && !audio_assigned {
                         audio_assigned = true;
                         false
                     } else {
@@ -1265,9 +1274,10 @@ async fn apply_wallpaper(
 
                 let mut win_config = config.clone();
                 if let Some(obj) = win_config.as_object_mut() {
+                    obj.insert("isPrimary".to_string(), serde_json::json!(is_primary));
+                    obj.insert("isSecondary".to_string(), serde_json::json!(is_secondary));
                     obj.insert("muted".to_string(), serde_json::json!(screen_muted));
                     obj.insert("volume".to_string(), serde_json::json!(screen_volume));
-                    obj.insert("isSecondary".to_string(), serde_json::json!(screen_muted));
                 }
 
                 let payload = serde_json::json!({
@@ -1396,20 +1406,22 @@ fn set_mpv_volume(monitor_label: Option<String>, volume: f64) {
 }
 
 #[tauri::command]
-fn set_mpv_mute(monitor_label: Option<String>, muted: bool) {
+fn set_mpv_mute(app: AppHandle, monitor_label: Option<String>, muted: bool) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
+    let primary_label = get_primary_monitor_label(&app);
     if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
         if let Some(ref map) = *mpv_guard {
-            let mut first = true;
+            let mut audio_unmuted = false;
             for (label, proc) in map {
                 if target == "*" {
                     if muted {
                         let _ = proc.set_mute(true);
                     } else {
-                        // In duplicated mode, only unmute the first/primary monitor to avoid audio echo
-                        if first {
+                        // In duplicated mode, only unmute the primary monitor to avoid audio echo
+                        let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_unmuted && primary_label.is_none());
+                        if is_primary && !audio_unmuted {
                             let _ = proc.set_mute(false);
-                            first = false;
+                            audio_unmuted = true;
                         } else {
                             let _ = proc.set_mute(true);
                         }
@@ -1553,14 +1565,26 @@ fn load_custom_wallpapers(app: AppHandle) -> Vec<serde_json::Value> {
 
 /// Query active wallpaper state for a specific monitor window upon mounting
 #[tauri::command]
-fn get_monitor_active_wallpaper(label: String) -> Option<serde_json::Value> {
+fn get_monitor_active_wallpaper(app: AppHandle, label: String) -> Option<serde_json::Value> {
     if let Ok(guard) = ACTIVE_WALLPAPERS.lock() {
         if let Some(ref map) = *guard {
             let entry = map.get(&label).or_else(|| map.get("*"));
             if let Some(state) = entry {
+                let mut win_config = state.config.clone();
+                let primary_label = get_primary_monitor_label(&app);
+                let is_primary = primary_label.as_deref() == Some(label.as_str()) || primary_label.is_none();
+                let is_secondary = !is_primary && map.contains_key("*");
+                if let Some(obj) = win_config.as_object_mut() {
+                    obj.insert("isPrimary".to_string(), serde_json::json!(is_primary));
+                    obj.insert("isSecondary".to_string(), serde_json::json!(is_secondary));
+                    if is_secondary {
+                        obj.insert("muted".to_string(), serde_json::json!(true));
+                        obj.insert("volume".to_string(), serde_json::json!(0.0));
+                    }
+                }
                 return Some(serde_json::json!({
                     "engineId": state.engine_id,
-                    "config": state.config,
+                    "config": win_config,
                     "opacity": state.opacity,
                     "brightness": state.brightness,
                 }));
@@ -1623,33 +1647,41 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
         set_mpv_volume(monitor_label.clone(), vol);
     }
     if let Some(muted) = config.get("muted").and_then(|v| v.as_bool()) {
-        set_mpv_mute(monitor_label.clone(), muted);
+        set_mpv_mute(app.clone(), monitor_label.clone(), muted);
     }
-    let monitors = app.available_monitors().unwrap_or_default();
+
+    if let Ok(mut guard) = ACTIVE_WALLPAPERS.lock() {
+        if let Some(ref mut map) = *guard {
+            if let Some(state) = map.get_mut(&target) {
+                if let (Some(target_obj), Some(upd_obj)) = (state.config.as_object_mut(), config.as_object()) {
+                    for (k, v) in upd_obj {
+                        target_obj.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let primary_label = get_primary_monitor_label(&app);
     let mut audio_assigned = false;
     let windows = app.webview_windows();
     for (label, win) in &windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == *label) {
+            let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_assigned && primary_label.is_none());
+            let is_secondary = !is_primary && target == "*";
+
             let mut win_config = config.clone();
-            if target == "*" {
-                let is_primary = monitors.iter().find(|m| {
-                    if let Some(name) = m.name() {
-                        get_monitor_label(name) == *label && m.position().x == 0 && m.position().y == 0
-                    } else {
-                        false
-                    }
-                }).is_some();
-                if (is_primary || *label == "wallpaper_0") && !audio_assigned {
-                    audio_assigned = true;
+            if let Some(obj) = win_config.as_object_mut() {
+                obj.insert("isPrimary".to_string(), serde_json::json!(is_primary));
+                obj.insert("isSecondary".to_string(), serde_json::json!(is_secondary));
+                if is_secondary {
+                    obj.insert("muted".to_string(), serde_json::json!(true));
+                    obj.insert("volume".to_string(), serde_json::json!(0.0));
                 } else {
-                    // Secondary monitor -> Force mute!
-                    if let Some(obj) = win_config.as_object_mut() {
-                        obj.insert("muted".to_string(), serde_json::json!(true));
-                        obj.insert("volume".to_string(), serde_json::json!(0.0));
-                        obj.insert("isSecondary".to_string(), serde_json::json!(true));
-                    }
+                    audio_assigned = true;
                 }
             }
+
             let payload = serde_json::json!({ "config": win_config, "target": label.clone() });
             let _ = win.emit_to(label.as_str(), "aura:update-config", payload.clone());
             if let Some(fps_val) = config.get("fps").and_then(|v| v.as_f64()) {

@@ -262,7 +262,7 @@ export const addCustomVideoWallpaper = addCustomMediaWallpaper
 /**
  * Adds a live stream or YouTube URL into the user's library
  */
-export function addCustomStreamWallpaper(url, customName = null, muted = true, pinToHome = true) {
+export function addCustomStreamWallpaper(url, customName = null, muted = false, pinToHome = true) {
   if (!url) return null
   const cleanUrl = url.trim()
 

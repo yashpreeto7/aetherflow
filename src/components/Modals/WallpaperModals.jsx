@@ -211,7 +211,7 @@ export function RenameWallpaperModal({ isOpen, currentName, onClose, onConfirm }
 export function AddWebStreamModal({ isOpen, onClose, onConfirm }) {
   const [url, setUrl] = useState('')
   const [name, setName] = useState('')
-  const [muted, setMuted] = useState(true)
+  const [muted, setMuted] = useState(false)
   const [pinToHome, setPinToHome] = useState(true)
   const [ytId, setYtId] = useState(null)
 
@@ -219,7 +219,7 @@ export function AddWebStreamModal({ isOpen, onClose, onConfirm }) {
     if (isOpen) {
       setUrl('')
       setName('')
-      setMuted(true)
+      setMuted(false)
       setPinToHome(true)
       setYtId(null)
     }

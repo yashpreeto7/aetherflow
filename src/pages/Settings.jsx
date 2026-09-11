@@ -154,9 +154,14 @@ export default function SettingsPage() {
 
   const handleVolumeChange = (v) => {
     setAudioVolume(v)
+    const nextMuted = v <= 0
+    if (audioMuted && v > 0) {
+      useStore.setState({ audioMuted: false })
+    }
     import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('set_mpv_volume', { monitorLabel: null, volume: v }).catch(() => {})
-      invoke('update_wallpaper_config', { config: { volume: v }, monitorLabel: null }).catch(() => {})
+      invoke('set_mpv_mute', { monitorLabel: null, muted: nextMuted }).catch(() => {})
+      invoke('update_wallpaper_config', { config: { volume: v, muted: nextMuted }, monitorLabel: null }).catch(() => {})
     }).catch(() => {})
   }
 
