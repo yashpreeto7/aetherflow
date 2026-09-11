@@ -3,13 +3,12 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 15:20 IST — Fixed YouTube Wallpaper Audio Fully Muted Across All Screens:
-1. Identified and eliminated erroneous `myLabel !== 'wallpaper_0'` check in `src/wallpaper.jsx` that evaluated to `true` on Windows (`wallpaper_DISPLAY1`) on every display and unconditionally silenced all YouTube/web wallpapers.
-2. Added `get_primary_monitor_label` in `src-tauri/src/main.rs` using `app.primary_monitor()` and origin fallbacks; explicitly injected `isPrimary` and `isSecondary` flags into `win_config` for both `apply_wallpaper` and `update_wallpaper_config`.
-3. Fixed `src/engines/web-stream.js` audio handling: unmuted by default on primary screen (`currentMuted = isSecondary ? true : Boolean(options.muted)`), unmuted during dual-slot ping-pong loops, and synchronized playback times with `!isSecondary`.
-4. Changed default `muted = true` to `muted = false` in `addCustomStreamWallpaper` and `AddWebStreamModal`.
-5. Updated `handleWallpaperVolumeChange` in `Home.jsx` and `Settings.jsx` to automatically unmute when volume > 0 and send live IPC updates.
-6. Recompiled release binary and deployed fresh `AetherFlow.exe` with active status.
+2026-09-11 16:58 IST — Release v1.0.7 Published:
+1. Made 'Hover' the default thumbnail mode with automatic Zustand state migration from older versions.
+2. Implemented Viewport Lazy Loading and Off-Screen Unloading in `WallpaperThumbnail` via `IntersectionObserver`: strictly limits active hardware decoders and GPU memory to only the ~4 cards visible in viewport.
+3. Fixed Home Top Preview (Hero banner) when applying wallpapers from Library or Marketplace: added `key={activeWallpaper.id || activeWallpaper.name}` to `<WallpaperPlayer>`, synchronized `activeWallpaper` in `applyWallpaperToDesktop` and `handleApply`, and removed `crossOrigin = 'anonymous'` on YouTube thumbnails.
+4. Successfully tagged `v1.0.7`, pushed to GitHub, and published GitHub Release with NSIS installer (`AetherFlow-Setup.exe`), portable bundle, and standalone `AetherFlow.exe`.
+
 
 ---
 
@@ -189,6 +188,7 @@ npm run tauri:dev
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Resolved Always-On thumbnails (fixed #t=0.5 Tauri asset bug, programmatic seek, unified stream URLs); eradicated memory climb (URL.revokeObjectURL, explicit hardware decoder teardown, Top Preview Pause toggle, active DOM media sweep); bumped to v1.0.6 and deployed fresh AetherFlow.exe |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Audio & Multi-Monitor Fixes: Removed duplicate top volume slider (retained single bottom slider); fixed wallpaper starting at 100% volume (prioritized adheredAudio, passed targetAudio in handleApply, added --no-config to MPV); fixed slider dragging cursor blocked (added user-select: none, touch-action: none, draggable={false}, and 35ms IPC debounce); fixed multi-monitor YouTube audio echo by permanently locking secondary displays to muted so audio plays only from primary display |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Fixed YouTube Audio Fully Muted Across All Screens: eliminated broken myLabel !== 'wallpaper_0' in wallpaper.jsx; added get_primary_monitor_label in main.rs; injected explicit isPrimary/isSecondary into win_config; updated web-stream.js, AddWebStreamModal, and volume slider auto-unmute on vol > 0; recompiled release binary and deployed fresh AetherFlow.exe |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Release v1.0.7: Set Hover as default thumbnail mode with Zustand migration; implemented Viewport Lazy Loading and off-screen unloading via IntersectionObserver (bounded hardware decoders & RAM); synchronized Home top preview (Hero banner) on Library/Marketplace apply with React key prop remounting; bumped version to 1.0.7 and published GitHub Release |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 
