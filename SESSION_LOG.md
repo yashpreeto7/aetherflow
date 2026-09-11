@@ -1645,3 +1645,37 @@
      - `cargo build --release`: ✅ Built in 2m 13s.
      - Copied release binary to `.\AetherFlow.exe` (7.09 MB).
 ---
+
+## Session: 2026-09-11 23:55 (Resolved Isolated Mode Regression, NULL Handle Trap & Display Audio Scoping)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Issue:**
+  - "earlier at least isolated was working but now it just doesnt work"
+- **Root Cause Analysis**:
+  1. **NULL Handle Trap in `enum_occlusion_proc`**:
+     In commit `2042478`, an ancestor check was added: `parent == state.shell_hwnd || parent == state.progman`. When `GetParent(hwnd)` is called on standard top-level application windows (Brave, Chrome, VS Code, Explorer), Win32 returns `HWND(0)` (NULL). On Windows 11 systems where `GetShellWindow()` returns `0`, `state.shell_hwnd` is `0`. Consequently, `parent == state.shell_hwnd` evaluated to `0 == 0` (TRUE). This caused the enumeration procedure to skip *every single top-level application window*, completely breaking occlusion detection (`any_cov = false`, `paused = {}`).
+  2. **Destructive State Amnesia via `paused_monitors.clear()`**:
+     In the 750ms system monitor thread, when `MONITOR_SYNC_REQUESTED` fired on mode switch, it called `paused_monitors.clear()`. When a monitor was paused in Global mode and the user switched to Isolated mode, wiping `paused_monitors` reset `was_p = false`. For the newly un-occluded monitor, `should_p = false`. Because `was_p != should_p` evaluated to `false != false`, no resume transition ever fired. The wallpaper remained permanently frozen in an un-resumable paused state.
+  3. **Audio Over-Muting in Isolated Mode**:
+     Under `mute-covered` rule in isolated mode, the logic previously checked if *any* MPV player in `map` was in `target_paused_monitors`. Since secondary displays were present in `map`, covering monitor B (which is silent) immediately marked `audio_mon_paused = true`, muting monitor A's active music/audio even though monitor A remained uncovered.
+  4. **Un-migrated `pauseOnMaximized` in Saved State**:
+     Users with existing persisted localStorage states lacked `pauseOnMaximized`, which evaluated to `undefined` (false in `!!` checks), silently turning off maximize-pause.
+- **Completed**:
+  1. **Fixed NULL Handle Trap (`src-tauri/src/main.rs`)**:
+     - Added strict nullity guards: `(!parent.is_null() && !state.shell_hwnd.is_null() && parent == state.shell_hwnd) || (!parent.is_null() && !state.progman.is_null() && parent == state.progman)`.
+     - Ensured `root != hwnd` before checking ancestor roots.
+  2. **Non-Destructive Atomic Sync Reconciliation**:
+     - Replaced `paused_monitors.clear()` with a `force_sync` pass (`if was_p != should_p || force_sync`).
+     - Ensures every monitor is accurately evaluated and dispatched a resume or pause event during mode transitions without orphaning state.
+  3. **Display-Scoped Audio Muting in Isolated Mode**:
+     - Scoped `mute-covered` in isolated mode strictly to the audio source screen (primary display), preventing secondary monitor occlusion from killing wallpaper audio.
+  4. **Store Migration & Fallback Defaults**:
+     - Bumped `useStore.js` persist version to 3 with migration ensuring `pauseOnMaximized: true`, `multiMonitorPauseMode: 'per-display'`, and `audioPlaybackRule: 'mute-covered'`.
+     - Added `?? true` fallbacks in `Settings.jsx` and `App.jsx`.
+  5. **Enhanced Diagnostics**:
+     - Added detailed telemetry logging (`mode`, `any_cov`, `fs_rule`, `max_rule`, `rule`, `muted`) in `desktop_debug.log`.
+- **Verification & Build**:
+  - `npm run build`: ✅ Built in 688ms.
+  - `cargo check`: ✅ Zero warnings, zero errors.
+  - `cargo build --release`: ✅ Built in 2m 10s.
+  - Updated root standalone executable: `.\AetherFlow.exe` (7.44 MB, 11:58 PM).
+---

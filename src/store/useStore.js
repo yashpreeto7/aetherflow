@@ -463,11 +463,24 @@ export const useStore = create(
     }),
     {
       name: 'aetherflow-state',
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         if (!version || version < 2) {
           if (persistedState) {
             persistedState.thumbnailMode = 'hover'
+          }
+        }
+        if (!version || version < 3) {
+          if (persistedState) {
+            if (persistedState.pauseOnMaximized === undefined) {
+              persistedState.pauseOnMaximized = true
+            }
+            if (!persistedState.multiMonitorPauseMode) {
+              persistedState.multiMonitorPauseMode = 'per-display'
+            }
+            if (!persistedState.audioPlaybackRule) {
+              persistedState.audioPlaybackRule = 'mute-covered'
+            }
           }
         }
         return persistedState

@@ -255,7 +255,10 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
     }
 
     // 2. Shell window & desktop checks
-    if hwnd == state.shell_hwnd || hwnd == state.progman || (!state.workerw.is_null() && hwnd == state.workerw) {
+    if (!state.shell_hwnd.is_null() && hwnd == state.shell_hwnd)
+        || (!state.progman.is_null() && hwnd == state.progman)
+        || (!state.workerw.is_null() && hwnd == state.workerw)
+    {
         return 1;
     }
 
@@ -274,16 +277,31 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
 
     // 5. Parent & ancestor check: ignore any window attached to Progman, WorkerW, or Shell
     let parent = GetParent(hwnd);
-    if parent == state.progman || (!state.workerw.is_null() && parent == state.workerw) || parent == state.shell_hwnd {
-        return 1;
+    if !parent.is_null() {
+        if (!state.progman.is_null() && parent == state.progman)
+            || (!state.workerw.is_null() && parent == state.workerw)
+            || (!state.shell_hwnd.is_null() && parent == state.shell_hwnd)
+        {
+            return 1;
+        }
     }
     let root = GetAncestor(hwnd, GA_ROOTOWNER);
-    if root == state.progman || (!state.workerw.is_null() && root == state.workerw) || root == state.shell_hwnd {
-        return 1;
+    if !root.is_null() && root != hwnd {
+        if (!state.progman.is_null() && root == state.progman)
+            || (!state.workerw.is_null() && root == state.workerw)
+            || (!state.shell_hwnd.is_null() && root == state.shell_hwnd)
+        {
+            return 1;
+        }
     }
     let parent_root = GetAncestor(hwnd, GA_ROOT);
-    if parent_root == state.progman || (!state.workerw.is_null() && parent_root == state.workerw) || parent_root == state.shell_hwnd {
-        return 1;
+    if !parent_root.is_null() && parent_root != hwnd {
+        if (!state.progman.is_null() && parent_root == state.progman)
+            || (!state.workerw.is_null() && parent_root == state.workerw)
+            || (!state.shell_hwnd.is_null() && parent_root == state.shell_hwnd)
+        {
+            return 1;
+        }
     }
 
     // 6. Cloaked check (virtual desktop / background UWP app)
@@ -496,10 +514,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 taskbar::maintain_taskbar_style();
             }
 
-            if MONITOR_SYNC_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
-                paused_monitors.clear();
-                audio_muted_by_policy = false;
-            }
+            let force_sync = MONITOR_SYNC_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst);
 
             let (pause_on_battery, pause_on_fullscreen, pause_on_maximized, multi_monitor_pause_mode, audio_playback_rule) = {
                 if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
@@ -594,16 +609,14 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 if multi_monitor_pause_mode == "all-displays" {
                     any_monitor_covered
                 } else {
-                    let mut audio_mon_paused = false;
-                    if let Ok(guard) = MPV_PLAYERS.lock() {
-                        if let Some(ref map) = *guard {
-                            for (lbl, _proc) in map {
-                                if target_paused_monitors.contains(lbl) {
-                                    audio_mon_paused = true;
-                                }
-                            }
-                        }
-                    }
+                    // In Isolated (per-display) mode, only mute audio if all monitors are paused
+                    // or if the primary monitor (the screen outputting audio) is paused.
+                    let primary_lbl = get_primary_monitor_label(&app)
+                        .or_else(|| wallpaper_labels.first().cloned());
+                    let audio_mon_paused = match primary_lbl {
+                        Some(ref p) => target_paused_monitors.contains(p),
+                        None => any_monitor_covered,
+                    };
                     all_paused || audio_mon_paused
                 }
             } else {
@@ -616,7 +629,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 let was_p = paused_monitors.contains(label);
                 let should_p = target_paused_monitors.contains(label);
 
-                if was_p != should_p {
+                if was_p != should_p || force_sync {
                     set_mpv_pause(Some(label.clone()), should_p);
                     if wallpaper_labels.len() <= 1 {
                         set_mpv_pause(None, should_p);
@@ -632,30 +645,32 @@ pub fn start_system_state_monitor(app: AppHandle) {
                     }
 
                     let state_str = if should_p { "PAUSED" } else { "RESUMED" };
-                    let msg = format!("[SYSTEM MONITOR] Display '{}' state -> {}", label, state_str);
+                    let msg = format!("[SYSTEM MONITOR] Display '{}' state -> {} (force_sync={})", label, state_str, force_sync);
                     log_msg(&msg);
                     println!("{}", msg);
                 }
             }
 
             // 2. Process audio mute/unmute policy transitions
-            if should_mute_audio != audio_muted_by_policy {
+            if should_mute_audio != audio_muted_by_policy || force_sync {
                 audio_muted_by_policy = should_mute_audio;
                 set_mpv_mute(app.clone(), None, should_mute_audio);
                 let mute_event = if should_mute_audio { "aura:mute" } else { "aura:unmute" };
                 let _ = app.emit(mute_event, serde_json::json!({ "target": "*" }));
-                let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {})", should_mute_audio, audio_playback_rule);
+                let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {}, force_sync={})", should_mute_audio, audio_playback_rule, force_sync);
                 log_msg(&msg);
                 println!("{}", msg);
             }
 
-            if taskbar_tick % 8 == 0 {
+            if taskbar_tick % 8 == 0 || force_sync {
                 let diag = format!(
-                    "[SYSTEM MONITOR DIAG] displays={:?} paused={:?} any_cov={} focused={} rule={} muted={}",
+                    "[SYSTEM MONITOR DIAG] displays={:?} paused={:?} mode={} any_cov={} fs_rule={} max_rule={} rule={} muted={}",
                     wallpaper_labels,
                     target_paused_monitors,
+                    multi_monitor_pause_mode,
                     any_monitor_covered,
-                    is_app_focused,
+                    pause_on_fullscreen,
+                    pause_on_maximized,
                     audio_playback_rule,
                     audio_muted_by_policy
                 );

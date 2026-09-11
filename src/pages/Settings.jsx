@@ -267,7 +267,7 @@ export default function SettingsPage() {
   const togglePauseOnBattery = useStore(s => s.togglePauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
   const togglePauseOnFullscreen = useStore(s => s.togglePauseOnFullscreen)
-  const pauseOnMaximized = useStore(s => s.pauseOnMaximized)
+  const pauseOnMaximized = useStore(s => s.pauseOnMaximized) ?? true
   const togglePauseOnMaximized = useStore(s => s.togglePauseOnMaximized)
   const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
   const setMultiMonitorPauseMode = useStore(s => s.setMultiMonitorPauseMode)

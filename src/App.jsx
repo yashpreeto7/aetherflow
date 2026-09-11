@@ -32,7 +32,7 @@ export default function App() {
   const audioMuted       = useStore(s => s.audioMuted)
   const pauseOnBattery   = useStore(s => s.pauseOnBattery)
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
-  const pauseOnMaximized = useStore(s => s.pauseOnMaximized)
+  const pauseOnMaximized = useStore(s => s.pauseOnMaximized) ?? true
   const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
   const audioPlaybackRule = useStore(s => s.audioPlaybackRule) || 'mute-covered'
   const authUser         = useStore(s => s.authUser)
@@ -174,7 +174,7 @@ export default function App() {
         await invoke('sync_performance_settings', {
           pauseOnBattery: !!pauseOnBattery,
           pauseOnFullscreen: !!pauseOnFullscreen,
-          pauseOnMaximized: !!pauseOnMaximized,
+          pauseOnMaximized: pauseOnMaximized !== false,
           multiMonitorPauseMode: multiMonitorPauseMode,
           audioPlaybackRule: audioPlaybackRule,
         }).catch(() => {})
