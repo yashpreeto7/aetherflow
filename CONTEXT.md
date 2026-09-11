@@ -3,9 +3,10 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 13:50 IST — Implemented Card Thumbnail Modes & Adhered Wallpaper Audio:
-1. Card Thumbnail Presentation Modes: Added `thumbnailMode` (`always` / `hover` / `off`) to Zustand store with persistence; integrated quick 3-way toggle on Home and Library toolbars, and dedicated card in Settings. Upgraded WallpaperThumbnail to support zero-RAM vector badges, on-demand hover previews, and continuous poster frames.
-2. Top Preview Wallpaper Audio Controls: Added per-wallpaper adhered audio settings (`wallpaperAudioSettings`), embedded instant Mute toggle and Volume slider in Top Preview Hero banner and Property Controls on Home, eliminating trips to Settings to manage audio. Linked live volume/mute updates to MPV and desktop background windows.
+2026-09-11 14:35 IST — Resolved Always-On Thumbnails & Eradicated Memory Climb (v1.0.6 Release):
+1. Always-On Thumbnails: Fixed asset protocol failure caused by `#t=0.5` URL fragments on Windows Tauri custom asset protocol by replacing with programmatic video frame seek via `onLoadedMetadata`; unified YouTube stream thumbnail extraction (`wallpaper.config.url` & `streamUrl`); restored high-res YouTube, custom images, videos, and canvas SVG thumbnails in "On" mode.
+2. Memory Leaks & Memory Climb Eradication: Fixed un-revoked `URL.createObjectURL(blob)` in `video-player.js`; added explicit hardware video decoder and D3D texture release (`removeAttribute('src')`, `.load()`, and `about:blank` navigation) upon modal close and hover end; added Top Preview `[Pause Preview]` / `[Resume Preview]` toggle to eliminate continuous 60fps background GPU/RAM rendering; upgraded StatusBar Trim to sweep detached media and trigger GC.
+3. Version 1.0.6 Release: Bumped version across `package.json`, `tauri.conf.json`, `Cargo.toml`, and `updater.js`; compiled release binary to `AetherFlow.exe` and tagged `v1.0.6` for automated GitHub Actions release.
 
 ---
 
@@ -183,6 +184,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved orphaned MPV video process on taskbar / Task Manager "End task": implemented dedicated Windows Job Object in mpv.rs with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, bound spawned children, verified instant kernel termination on TerminateProcess, and deployed updated AetherFlow.exe |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Added Marketplace "+ Add to Library" option, Zero-Memory-Leak Live Preview Modal (createPortal + about:blank iframe teardown + GPU decoder release), and resolved live download counter sync with Supabase installs |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Implemented Card Thumbnail Modes (Always On, On Hover, Off) with instant toolbar switch and Settings card; added Top Preview wallpaper audio controls (Mute & Volume) adhered per-wallpaper with live MPV/desktop background sync |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Resolved Always-On thumbnails (fixed #t=0.5 Tauri asset bug, programmatic seek, unified stream URLs); eradicated memory climb (URL.revokeObjectURL, explicit hardware decoder teardown, Top Preview Pause toggle, active DOM media sweep); bumped to v1.0.6 and deployed fresh AetherFlow.exe |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

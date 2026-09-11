@@ -1,28 +1,27 @@
-import React, { useRef, useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect, useCallback } from 'react'
 import { ENGINES } from '../../engines/index.js'
 import {
   Video, Image as ImageIcon, Globe, Terminal, Sparkles,
   Waves, Compass, Flame, CloudRain, Activity, Code
 } from 'lucide-react'
-import { safeConvertFileSrc } from '../../lib/wallpaperActions.js'
+import { safeConvertFileSrc, tauriInvoke } from '../../lib/wallpaperActions.js'
 import { useStore } from '../../store/useStore.js'
 
 /**
  * WallpaperThumbnail — Supports Always On, On Hover, and Off modes.
  *
  * Modes:
- * - 'always' (On): Images, streams, and canvas previews always display; videos show poster frame (#t=0.5) and play on hover.
+ * - 'always' (On): Full visual previews always display (static poster / web thumbnail / image / SVG).
  * - 'hover' (On Hover): Zero-RAM vector badge when idle; streams media on mouse hover.
  * - 'off' (Off): Always renders zero-RAM vector badges with category icons and glow gradients (zero decoders, zero media fetch).
  */
 
-const ENGINE_THEMES = {
+export const ENGINE_THEMES = {
   'matrix-rain': {
     icon: Terminal,
     color: '#00ff41',
     bg: 'linear-gradient(135deg, #031308 0%, #062211 100%)',
     badge: 'MATRIX',
-    badgeBg: 'rgba(0, 255, 65, 0.15)',
     label: 'Matrix Rain'
   },
   'cyber-particles': {
@@ -30,7 +29,6 @@ const ENGINE_THEMES = {
     color: '#00d4ff',
     bg: 'linear-gradient(135deg, #041424 0%, #082640 100%)',
     badge: 'PARTICLES',
-    badgeBg: 'rgba(0, 212, 255, 0.15)',
     label: 'Cyber Particles'
   },
   'synthwave-grid': {
@@ -38,7 +36,6 @@ const ENGINE_THEMES = {
     color: '#ff2d78',
     bg: 'linear-gradient(135deg, #1d051c 0%, #36072f 100%)',
     badge: 'SYNTHWAVE',
-    badgeBg: 'rgba(255, 45, 120, 0.15)',
     label: 'Synthwave Grid'
   },
   'deep-space': {
@@ -46,7 +43,6 @@ const ENGINE_THEMES = {
     color: '#a855f7',
     bg: 'linear-gradient(135deg, #0e0622 0%, #1c0e3a 100%)',
     badge: 'COSMOS',
-    badgeBg: 'rgba(168, 85, 247, 0.15)',
     label: 'Deep Space'
   },
   'tokyo-rain': {
@@ -54,7 +50,6 @@ const ENGINE_THEMES = {
     color: '#ec4899',
     bg: 'linear-gradient(135deg, #180918 0%, #2b0e27 100%)',
     badge: 'TOKYO',
-    badgeBg: 'rgba(236, 72, 153, 0.15)',
     label: 'Tokyo Rain'
   },
   'aurora': {
@@ -62,7 +57,6 @@ const ENGINE_THEMES = {
     color: '#10b981',
     bg: 'linear-gradient(135deg, #031416 0%, #062725 100%)',
     badge: 'AURORA',
-    badgeBg: 'rgba(16, 185, 129, 0.15)',
     label: 'Aurora Borealis'
   },
   'audio-spectrum': {
@@ -70,7 +64,6 @@ const ENGINE_THEMES = {
     color: '#f59e0b',
     bg: 'linear-gradient(135deg, #181003 0%, #301f05 100%)',
     badge: 'SPECTRUM',
-    badgeBg: 'rgba(245, 158, 11, 0.15)',
     label: 'Audio Spectrum'
   },
   'web-stream': {
@@ -78,7 +71,6 @@ const ENGINE_THEMES = {
     color: '#ef4444',
     bg: 'linear-gradient(135deg, #1b0808 0%, #301010 100%)',
     badge: 'STREAM',
-    badgeBg: 'rgba(239, 68, 68, 0.15)',
     label: 'Web Stream'
   },
   'video-player': {
@@ -86,7 +78,6 @@ const ENGINE_THEMES = {
     color: '#3b82f6',
     bg: 'linear-gradient(135deg, #07101f 0%, #0c1e3a 100%)',
     badge: 'VIDEO',
-    badgeBg: 'rgba(59, 130, 246, 0.15)',
     label: 'Video Wallpaper'
   },
   'image-player': {
@@ -94,9 +85,143 @@ const ENGINE_THEMES = {
     color: '#10b981',
     bg: 'linear-gradient(135deg, #061510 0%, #0b261d 100%)',
     badge: 'IMAGE',
-    badgeBg: 'rgba(16, 185, 129, 0.15)',
     label: 'Picture Wallpaper'
   },
+}
+
+/**
+ * Extracts a 11-char YouTube ID from any YouTube URL format.
+ */
+export function extractYouTubeId(url) {
+  if (!url || typeof url !== 'string') return null
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/)
+  return match ? match[1] : null
+}
+
+/**
+ * Resolves the best available static thumbnail URL for any wallpaper.
+ */
+export function resolveWallpaperThumbnail(wallpaper) {
+  if (!wallpaper) return null
+
+  // 1. Explicit preview or thumbnail image URL
+  const explicitPreview = wallpaper.preview || wallpaper.thumbnail
+  if (explicitPreview && typeof explicitPreview === 'string' && explicitPreview.trim()) {
+    const trimmed = explicitPreview.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:') || trimmed.startsWith('/')) {
+      return trimmed
+    }
+    return safeConvertFileSrc(trimmed)
+  }
+
+  // 2. YouTube ID from config
+  const streamUrl = wallpaper.config?.streamUrl || wallpaper.config?.url || ''
+  const ytId = wallpaper.config?.youtubeId || extractYouTubeId(streamUrl)
+  if (ytId) {
+    return `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+  }
+
+  // 3. Picture Wallpaper imagePath
+  const imgPath = wallpaper.config?.imagePath || (wallpaper.engine === 'image-player' ? wallpaper.config?.url : '')
+  if (imgPath && typeof imgPath === 'string' && imgPath.trim()) {
+    const trimmed = imgPath.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
+      return trimmed
+    }
+    return safeConvertFileSrc(trimmed)
+  }
+
+  // 4. Built-in Canvas Engine SVGs
+  const engineId = wallpaper.engine || wallpaper.id
+  const builtinPreviews = {
+    'matrix-rain': '/previews/matrix-rain.svg',
+    'cyber-particles': '/previews/cyber-particles.svg',
+    'synthwave-grid': '/previews/synthwave-grid.svg',
+    'deep-space': '/previews/deep-space.svg',
+    'aurora': '/previews/aurora.svg',
+    'tokyo-rain': '/previews/tokyo-rain.svg',
+    'audio-spectrum': '/previews/audio-spectrum.svg',
+    'fps-meter': '/previews/fps-meter.svg',
+  }
+  if (builtinPreviews[engineId]) {
+    return builtinPreviews[engineId]
+  }
+
+  return null
+}
+
+/**
+ * VideoPosterFrame — Clean, zero-leak video frame renderer for local videos without static previews.
+ */
+function VideoPosterFrame({ videoSrc, isHovered, currentMode }) {
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const videoRef = useRef(null)
+
+  // Hardware decoder teardown callback
+  const cleanupVideo = useCallback(() => {
+    const v = videoRef.current
+    if (v) {
+      try {
+        v.pause()
+        v.removeAttribute('src')
+        v.load()
+      } catch (e) {}
+      videoRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => cleanupVideo()
+  }, [cleanupVideo])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (isHovered) {
+      v.play().catch(() => {})
+    } else {
+      v.pause()
+      try {
+        if (v.currentTime !== 0.5) v.currentTime = 0.5
+      } catch (e) {}
+    }
+  }, [isHovered])
+
+  return (
+    <video
+      ref={(el) => {
+        videoRef.current = el
+      }}
+      src={videoSrc}
+      preload="metadata"
+      muted
+      loop
+      playsInline
+      onLoadedData={() => setHasLoaded(true)}
+      onLoadedMetadata={(e) => {
+        setHasLoaded(true)
+        try {
+          if (e.target.currentTime === 0) e.target.currentTime = 0.5
+        } catch (err) {}
+      }}
+      onSeeked={() => setHasLoaded(true)}
+      onCanPlay={() => setHasLoaded(true)}
+      onError={() => {
+        cleanupVideo()
+      }}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        display: 'block',
+        zIndex: 1,
+        opacity: hasLoaded ? 1 : 0,
+        transition: 'opacity 0.25s ease',
+      }}
+    />
+  )
 }
 
 export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode }) {
@@ -112,93 +237,41 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
                   Boolean(imgPath && !wallpaper.config?.videoPath) ||
                   Boolean(wallpaper.tags && wallpaper.tags.includes('image'))
 
+  const streamUrl = wallpaper.config?.streamUrl || wallpaper.config?.url || ''
+  const ytId = wallpaper.config?.youtubeId || extractYouTubeId(streamUrl)
   const isStream = engineId === 'web-stream' ||
                    wallpaper.mediaType === 'stream' ||
-                   Boolean(wallpaper.config?.streamUrl)
+                   Boolean(streamUrl) ||
+                   Boolean(ytId)
 
   const isVideo = !isImage && !isStream && (wallpaper.isCustom || engineId === 'video-player' || wallpaper.mediaType === 'video')
 
-  // Debounce hover activation by 100ms for video to avoid firing GPU decoders on quick cursor sweeps
+  // Debounce hover activation by 80ms to avoid firing decoders on quick cursor sweeps
   const [debouncedHover, setDebouncedHover] = useState(false)
   const [imgLoadError, setImgLoadError] = useState(false)
-  const videoNodeRef = useRef(null)
 
   useEffect(() => {
     if (!isHovered) {
       setDebouncedHover(false)
-      setImgLoadError(false)
+      // When unhovering in hover mode, schedule a light memory trim after 600ms
+      if (currentMode === 'hover') {
+        const timer = setTimeout(() => {
+          tauriInvoke('trim_memory').catch(() => {})
+        }, 600)
+        return () => clearTimeout(timer)
+      }
       return
     }
-    const timer = setTimeout(() => setDebouncedHover(true), 100)
+    const timer = setTimeout(() => setDebouncedHover(true), 80)
     return () => clearTimeout(timer)
-  }, [isHovered])
-
-  // Explicit hardware decoder teardown callback:
-  const handleVideoRef = (node) => {
-    if (node) {
-      videoNodeRef.current = node
-      if (currentMode === 'always') {
-        if (isHovered) {
-          node.play().catch(() => {})
-        } else {
-          node.pause()
-          try { node.currentTime = 0.5 } catch (e) {}
-        }
-      }
-    } else if (videoNodeRef.current) {
-      try {
-        videoNodeRef.current.pause()
-        videoNodeRef.current.removeAttribute('src')
-        videoNodeRef.current.load()
-      } catch (e) {}
-      videoNodeRef.current = null
-    }
-  }
-
-  // Handle hover play/pause when in 'always' mode
-  useEffect(() => {
-    const v = videoNodeRef.current
-    if (!v || currentMode !== 'always') return
-    if (isHovered) {
-      v.play().catch(() => {})
-    } else {
-      v.pause()
-      try { v.currentTime = 0.5 } catch (e) {}
-    }
   }, [isHovered, currentMode])
-
-  // Component unmount cleanup
-  useEffect(() => {
-    return () => {
-      if (videoNodeRef.current) {
-        try {
-          videoNodeRef.current.pause()
-          videoNodeRef.current.removeAttribute('src')
-          videoNodeRef.current.load()
-        } catch (e) {}
-        videoNodeRef.current = null
-      }
-    }
-  }, [])
 
   // Resolve Theme & Badges
   let theme = null
-  let isYouTube = false
-  let ytThumb = null
+  const isYouTube = Boolean(ytId)
 
   if (isStream) {
     theme = ENGINE_THEMES['web-stream']
-    let ytId = wallpaper.config?.youtubeId
-    if (!ytId && wallpaper.config?.streamUrl) {
-      const match = wallpaper.config.streamUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/)
-      if (match) ytId = match[1]
-    }
-    if (ytId) {
-      isYouTube = true
-      ytThumb = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-    } else if (wallpaper.preview && wallpaper.preview !== '/previews/deep-space.svg') {
-      ytThumb = wallpaper.preview
-    }
   } else if (isImage) {
     theme = ENGINE_THEMES['image-player']
   } else if (isVideo) {
@@ -209,7 +282,6 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
       color: 'var(--color-brand)',
       bg: 'linear-gradient(135deg, #0b0f19 0%, #151d2f 100%)',
       badge: 'CANVAS',
-      badgeBg: 'rgba(59, 130, 246, 0.15)',
       label: wallpaper.name || 'Live Engine'
     }
   }
@@ -218,124 +290,52 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
   const accentColor = isYouTube ? '#ef4444' : theme.color
   const badgeText = isYouTube ? 'YOUTUBE' : theme.badge
 
-  // Compute media sources based on thumbnailMode:
+  // Resolve static thumbnail (works for images, streams, YouTube, canvas SVGs, community wallpapers)
+  const staticThumbUrl = resolveWallpaperThumbnail(wallpaper)
+
+  // Compute media preview based on thumbnailMode:
   // - 'off': Never show preview media (pure zero-RAM vector badges)
   // - 'hover': Only show preview media while hovered
-  // - 'always': Always show preview media (images, streams, canvas SVGs, video poster frame)
+  // - 'always': Always show preview media
   let previewMedia = null
-  const shouldShow = currentMode === 'always' || (currentMode === 'hover' && isHovered)
+  const shouldShow = currentMode === 'always' || (currentMode === 'hover' && debouncedHover)
 
   if (shouldShow && currentMode !== 'off' && !imgLoadError) {
-    try {
-      if (isVideo) {
-        const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath || ''
-        const videoSrc = videoPath
-          ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath))
-          : ''
+    if (staticThumbUrl) {
+      // 1. Static Image or SVG Thumbnail (Zero-RAM decoder footprint)
+      previewMedia = (
+        <img
+          src={staticThumbUrl}
+          alt={wallpaper.name}
+          onError={() => setImgLoadError(true)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+            zIndex: 1,
+            animation: 'fadeIn 0.2s ease forwards',
+          }}
+        />
+      )
+    } else if (isVideo) {
+      // 2. Local Video without static preview (uses VideoPosterFrame with automatic decoder cleanup)
+      const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath || ''
+      const videoSrc = videoPath
+        ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath))
+        : ''
 
-        if (videoSrc) {
-          if (currentMode === 'always' || debouncedHover) {
-            previewMedia = (
-              <video
-                ref={handleVideoRef}
-                src={`${videoSrc}#t=0.5`}
-                autoPlay={isHovered}
-                muted
-                loop
-                playsInline
-                preload={currentMode === 'always' ? 'metadata' : 'auto'}
-                onLoadedMetadata={(e) => {
-                  try {
-                    if (currentMode === 'always' && !isHovered && e.target.currentTime === 0) {
-                      e.target.currentTime = 0.5
-                    }
-                  } catch (err) {}
-                }}
-                onError={() => setImgLoadError(true)}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  zIndex: 1,
-                  animation: 'fadeIn 0.2s ease forwards',
-                }}
-              />
-            )
-          }
-        }
-      } else if (isImage) {
-        const imgSrc = imgPath
-          ? (imgPath.startsWith('http') || imgPath.startsWith('data:') ? imgPath : safeConvertFileSrc(imgPath))
-          : (wallpaper.preview || wallpaper.thumbnail || '')
-
-        if (imgSrc) {
-          previewMedia = (
-            <img
-              src={imgSrc}
-              alt={wallpaper.name}
-              onError={() => setImgLoadError(true)}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                zIndex: 1,
-                animation: 'fadeIn 0.2s ease forwards',
-              }}
-            />
-          )
-        }
-      } else if (isStream) {
-        if (ytThumb) {
-          previewMedia = (
-            <img
-              src={ytThumb}
-              alt={wallpaper.name}
-              onError={() => setImgLoadError(true)}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                zIndex: 1,
-                animation: 'fadeIn 0.2s ease forwards',
-              }}
-            />
-          )
-        }
-      } else {
-        // Built-in canvas engine SVG preview
-        const svgPath = descriptor?.preview || `/previews/${engineId}.svg`
-        if (svgPath) {
-          previewMedia = (
-            <img
-              src={svgPath}
-              alt={wallpaper.name}
-              onError={() => setImgLoadError(true)}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                zIndex: 1,
-                animation: 'fadeIn 0.2s ease forwards',
-              }}
-            />
-          )
-        }
+      if (videoSrc) {
+        previewMedia = (
+          <VideoPosterFrame
+            videoSrc={videoSrc}
+            isHovered={isHovered}
+            currentMode={currentMode}
+          />
+        )
       }
-    } catch (err) {
-      console.warn('[WallpaperThumbnail] Error preparing preview media:', err)
-      previewMedia = null
     }
   }
 
@@ -355,7 +355,7 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
         transform: isHovered ? 'scale(1.02)' : 'scale(1)',
       }}
     >
-      {/* Base Zero-RAM Vector Badge (Always rendered as fallback & idle presentation) */}
+      {/* Base Zero-RAM Vector Badge (Always rendered as backdrop & fallback) */}
       <div
         style={{
           position: 'absolute',
@@ -405,7 +405,7 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode 
         {isYouTube ? 'YouTube Loop' : theme.label}
       </span>
 
-      {/* Dynamic Hover Media Layer (Only mounted while actively hovered) */}
+      {/* Dynamic Preview Media Layer (Static image, YouTube thumb, or clean VideoPosterFrame) */}
       {previewMedia}
 
       {/* Persistent Pill Badge Overlay */}

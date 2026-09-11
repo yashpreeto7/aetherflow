@@ -1142,9 +1142,28 @@
     - Embedded quick Mute toggle button and compact Volume slider right inside the Top Preview (Hero banner) on Home page.
     - Added dedicated 4th column for "Audio Volume" with Mute button and range slider in the Property Controls grid.
     - Adhered volume and mute per wallpaper: switching wallpapers instantly loads each wallpaper's individual audio settings.
-    - Live background sync: updating volume or mute immediately invokes `set_mpv_volume`, `set_mpv_mute`, and `update_wallpaper_config` without restarting playback.
-    - Updated `applyWallpaperToDesktop` in `wallpaperActions.js` and `WallpaperPlayer` to honor adhered audio levels.
+---
+
+## Session: 2026-09-11 14:35 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Resolved Always-On Thumbnail Not Showing**:
+    - Identified that passing `#t=0.5` media fragment URLs (e.g. `http://asset.localhost/...?path=...#t=0.5`) corrupted path resolution on Windows Tauri 2 custom asset protocol, causing file read errors that triggered image/video load error states.
+    - Rewrote `WallpaperThumbnail` with clean `resolveWallpaperThumbnail(wallpaper)`: detects `wallpaper.preview`, YouTube URL variants (`youtu.be`, `watch?v=`), `imagePath`, and built-in canvas SVGs.
+    - Created `VideoPosterFrame` that loads the video element without URL fragments and programmatically seeks to `currentTime = 0.5` upon `onLoadedMetadata`, guaranteeing visible first-frame poster paint across all cards in "On" mode.
+    - Fixed stream thumbnail resolution by inspecting both `wallpaper.config?.url` and `wallpaper.config?.streamUrl`.
+  - **Eradicated Memory Leaks & Fixed Memory Climbing Back Up After Trim**:
+    - Fixed un-revoked `URL.createObjectURL(blob)` in `src/engines/video-player.js`: added `currentBlobUrl` tracking and explicit `URL.revokeObjectURL(currentBlobUrl)` in `loadVideo()` and `stop()`, eliminating 50MB–200MB pinned V8 heap leaks.
+    - Added explicit hardware video decoder and D3D texture release (`video.removeAttribute('src')`, `video.load()`, `iframe.src = 'about:blank'`) upon modal close, card unmount, and hover end to force Chromium GPU process pipeline termination.
+    - Added immediate memory trim (`trim_memory` / `EmptyWorkingSet`) when closing the preview modal.
+    - Discovered root cause of memory climbing back up: the Top Preview Hero banner ran `WallpaperPlayer` continuously at 60fps in the background, repeatedly page-faulting working set pages back in.
+    - Added `[Pause Preview]` / `[Resume Preview]` toggle to the Top Preview Hero banner: pausing halts the animation loop, renders a static poster, and stops all GPU/RAM utilization.
+    - Upgraded StatusBar `Trim` button to sweep detached DOM media elements, trigger `window.gc()` when available, and invoke native `trim_memory` with an OS page-out settling delay.
+  - **Version Bump & Standalone Deployment (v1.0.6)**:
+    - Bumped version to `1.0.6` in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src/lib/updater.js`.
+    - Successfully compiled release binary with `cargo build --release --bin aetherflow` (3m 42s).
+    - Deployed fresh executable to `AetherFlow.exe` in project root.
 - **Verification**:
-  - `npm run build`: ✅ Passes in 434ms with zero errors.
-  - Playwright visual testing: verified toggle states between On, Hover, and Off modes; verified Mute toggle in Hero banner and Property Controls; verified Settings sync.
+  - `npm run build`: ✅ Passes in 486ms with zero errors.
+  - Playwright visual tests: verified all cards in "On" mode display high-res static thumbnails/posters (videos, images, YouTube streams, canvas SVGs); verified Top Preview Pause/Resume toggle; verified modal open/close teardown with zero console errors.
 ---

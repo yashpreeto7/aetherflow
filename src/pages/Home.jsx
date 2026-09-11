@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
-  Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
+  Play, Pause, Zap, MonitorPlay, Square, Monitor, Plus, Search,
   Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe, Eye,
   Volume2, VolumeX
 } from 'lucide-react'
@@ -88,13 +88,10 @@ function getWallpaperStaticThumbnail(wallpaper) {
 }
 
 /**
- * VideoThumbnailCard — Hardware-accelerated, zero-leak video frame renderer.
- * Loads only container metadata and seeks to 1.0s to render the static poster frame.
- * Plays muted preview on hover, pauses when unhovered.
- * Completely cleans up decoders upon unmount.
+ * CleanHomeVideoPreview — Hardware-accelerated, zero-leak video preview.
+ * Completely cleans up decoders and textures upon unmount.
  */
-function VideoThumbnailCard({ videoSrc, name, isHovered }) {
-  const [hasLoaded, setHasLoaded] = useState(false)
+function CleanHomeVideoPreview({ videoSrc }) {
   const videoRef = useRef(null)
 
   useEffect(() => {
@@ -103,59 +100,64 @@ function VideoThumbnailCard({ videoSrc, name, isHovered }) {
       if (v) {
         try {
           v.pause()
+          v.removeAttribute('src')
+          v.load()
         } catch (e) {}
       }
     }
-  }, [])
-
-  useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    if (isHovered) {
-      v.play().catch(() => {})
-    } else {
-      v.pause()
-      try {
-        v.currentTime = 0.5
-      } catch (e) {}
-    }
-  }, [isHovered])
-
-  const markLoaded = () => setHasLoaded(true)
+  }, [videoSrc])
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', background: '#08080c' }}>
-      <video
-        ref={videoRef}
-        src={`${videoSrc}#t=0.5`}
-        preload="metadata"
-        muted
-        loop
-        playsInline
-        onLoadedData={markLoaded}
-        onLoadedMetadata={(e) => {
-          markLoaded()
-          try {
-            if (e.target.currentTime === 0) e.target.currentTime = 0.5
-          } catch(err) {}
-        }}
-        onSeeked={markLoaded}
-        onCanPlay={markLoaded}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          display: 'block',
-          opacity: hasLoaded ? 1 : 0,
-          transition: 'opacity 0.25s ease',
-        }}
-      />
-      {!hasLoaded && (
-        <div className="flex items-center justify-center w-full h-full" style={{ position: 'absolute', inset: 0, color: 'var(--color-brand)' }}>
-          <Video size={36} style={{ opacity: 0.6 }} />
-        </div>
-      )}
-    </div>
+    <video
+      ref={videoRef}
+      src={videoSrc}
+      autoPlay
+      loop
+      muted
+      controls
+      playsInline
+      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+    />
+  )
+}
+
+/**
+ * CleanHomeYouTubePreview — Zero-leak YouTube IFrame preview with about:blank navigation teardown.
+ */
+function CleanHomeYouTubePreview({ ytId, title }) {
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !ytId) return
+
+    const iframe = document.createElement('iframe')
+    iframe.src = `https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=1&loop=1&playlist=${ytId}&playsinline=1&rel=0`
+    iframe.title = title || 'YouTube Preview'
+    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
+    iframe.allowFullscreen = true
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.style.border = 'none'
+    iframe.style.display = 'block'
+
+    container.appendChild(iframe)
+
+    return () => {
+      try {
+        iframe.src = 'about:blank'
+      } catch {}
+      if (container.contains(iframe)) {
+        container.removeChild(iframe)
+      }
+    }
+  }, [ytId, title])
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+    />
   )
 }
 
@@ -168,7 +170,11 @@ function HomePreviewModal({ wallpaper, onClose, onApply, isLive }) {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      // Reclaim any GPU textures & memory immediately upon modal close
+      tauriInvoke('trim_memory').catch(() => {})
+    }
   }, [onClose])
 
   if (!wallpaper) return null
@@ -309,15 +315,7 @@ function HomePreviewModal({ wallpaper, onClose, onApply, isLive }) {
             }}
           >
             {isVideo && videoSrc ? (
-              <video
-                src={videoSrc}
-                autoPlay
-                loop
-                muted
-                controls
-                playsInline
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
+              <CleanHomeVideoPreview videoSrc={videoSrc} />
             ) : isImage && imgSrc ? (
               <img
                 src={imgSrc}
@@ -325,13 +323,7 @@ function HomePreviewModal({ wallpaper, onClose, onApply, isLive }) {
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : isStream && ytId ? (
-              <iframe
-                src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=1&loop=1&playlist=${ytId}&playsinline=1&rel=0`}
-                title={wallpaper.name}
-                style={{ width: '100%', height: '100%', border: 'none' }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              <CleanHomeYouTubePreview ytId={ytId} title={wallpaper.name} />
             ) : (
               <WallpaperPlayer
                 engineId={wallpaper.engine || wallpaper.id}
@@ -453,6 +445,7 @@ export default function HomePage() {
 
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
+  const [isTopPreviewPaused, setIsTopPreviewPaused] = useState(false)
 
   useEffect(() => {
     let unlistenMonitors
@@ -796,11 +789,53 @@ export default function HomePage() {
       {/* Hero Preview Panel for Selected / Active Wallpaper */}
       {activeWallpaper ? (
         <div className="card" style={{ marginBottom: 28, overflow: 'hidden', position: 'relative', height: 180 }}>
-          <WallpaperPlayer
-            engineId={activeWallpaper.engine || activeWallpaper.id}
-            config={activeWallpaper.config}
-            preview
-          />
+          {!isTopPreviewPaused ? (
+            <WallpaperPlayer
+              engineId={activeWallpaper.engine || activeWallpaper.id}
+              config={activeWallpaper.config}
+              preview
+            />
+          ) : (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: '#05070d',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <WallpaperThumbnail
+                wallpaper={activeWallpaper}
+                isHovered={false}
+                mode="always"
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 14,
+                  right: 14,
+                  background: 'rgba(10, 14, 24, 0.85)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid var(--border-main)',
+                  borderRadius: 6,
+                  padding: '3px 9px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.4px',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  zIndex: 4,
+                }}
+              >
+                <Pause size={10} />
+                <span>PREVIEW PAUSED (ZERO GPU/RAM)</span>
+              </div>
+            </div>
+          )}
           <div style={{
             position: 'absolute', inset: 0,
             background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 60%, transparent 100%)',
@@ -839,6 +874,29 @@ export default function HomePage() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* Pause / Resume Live Preview Button */}
+                <button
+                  className="btn btn-ghost"
+                  style={{
+                    height: 36,
+                    padding: '4px 10px',
+                    fontSize: 11.5,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: isTopPreviewPaused ? 'rgba(59, 130, 246, 0.2)' : 'rgba(10, 14, 22, 0.75)',
+                    border: '1px solid var(--border-main)',
+                    color: isTopPreviewPaused ? 'var(--color-brand)' : 'var(--text-muted)',
+                  }}
+                  onClick={() => {
+                    setIsTopPreviewPaused(p => !p)
+                    tauriInvoke('trim_memory').catch(() => {})
+                  }}
+                  title={isTopPreviewPaused ? "Resume live animated preview" : "Pause preview animation to save CPU & GPU memory"}
+                >
+                  {isTopPreviewPaused ? <Play size={13} fill="currentColor" /> : <Pause size={13} />}
+                  <span>{isTopPreviewPaused ? 'Resume Preview' : 'Pause Preview'}</span>
+                </button>
                 {/* Wallpaper Adhered Audio Control */}
                 <div
                   style={{

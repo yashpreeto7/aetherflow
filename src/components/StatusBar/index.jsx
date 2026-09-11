@@ -36,8 +36,27 @@ export default function StatusBar() {
     e.stopPropagation()
     setTrimming(true)
     try {
+      // 1. Purge any detached or dormant media elements in the browser DOM
+      document.querySelectorAll('video').forEach(v => {
+        if (v.paused && !document.body.contains(v)) {
+          try {
+            v.pause()
+            v.removeAttribute('src')
+            v.load()
+          } catch {}
+        }
+      })
+
+      // 2. Trigger V8 garbage collection if available
+      if (typeof window !== 'undefined' && window.gc) {
+        try { window.gc() } catch {}
+      }
+
       const { invoke } = await import('@tauri-apps/api/core')
       await invoke('trim_memory')
+
+      // Let the OS commit page trimming before re-reading memory
+      await new Promise(r => setTimeout(r, 150))
       const data = await invoke('get_detailed_memory_usage')
       if (data) setMemUsage(data)
     } catch {}

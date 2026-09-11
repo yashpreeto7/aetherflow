@@ -8,6 +8,14 @@ import { safeConvertFileSrc, isTauri } from '../lib/wallpaperActions.js'
 export default function createVideoPlayer(canvas, options) {
   let isRunning = false;
   let videoEl = null;
+  let currentBlobUrl = null;
+
+  function revokeBlob() {
+    if (currentBlobUrl) {
+      try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
+      currentBlobUrl = null;
+    }
+  }
 
   const container = canvas.parentNode;
 
@@ -22,6 +30,7 @@ export default function createVideoPlayer(canvas, options) {
           videoEl.load();
         } catch (e) {}
 
+        revokeBlob();
         videoEl.src = safeConvertFileSrc(path);
           
         videoEl.onerror = async (err) => {
@@ -32,9 +41,10 @@ export default function createVideoPlayer(canvas, options) {
             const bytes = await readFile(path);
             const mime = path.toLowerCase().endsWith('.webm') ? 'video/webm' : 'video/mp4';
             const blob = new Blob([bytes], { type: mime });
-            const blobUrl = URL.createObjectURL(blob);
+            revokeBlob();
+            currentBlobUrl = URL.createObjectURL(blob);
             if (videoEl) {
-              videoEl.src = blobUrl;
+              videoEl.src = currentBlobUrl;
               videoEl.load();
               if (isRunning) {
                 videoEl.play().catch(e => console.error("AetherFlow: Auto-play blocked on fallback", e));
@@ -125,6 +135,7 @@ export default function createVideoPlayer(canvas, options) {
     },
     stop() {
       isRunning = false;
+      revokeBlob();
       if (videoEl) {
         try {
           videoEl.pause();
