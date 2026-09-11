@@ -1679,3 +1679,36 @@
   - `cargo build --release`: ✅ Built in 2m 10s.
   - Updated root standalone executable: `.\AetherFlow.exe` (7.44 MB, 11:58 PM).
 ---
+
+## Session: 2026-09-12 00:15 (Decoupled Physical Occlusion for "Mute When Covered" & Multi-Window Event Dispatch)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Issue:**
+  - "commit the current state now only thing that doesnt work is mute wallpaper when covered everything else works"
+- **Root Cause Analysis**:
+  1. **Tangled Occlusion & Animation Pause Logic**:
+     In `start_system_state_monitor`, `any_monitor_covered` was only set when `should_pause` was true. `should_pause` was computed as `(pause_on_fullscreen && status.is_fullscreen) || (pause_on_maximized && status.is_maximized)`.
+     If a user had "Pause on Maximized Windows" disabled (`max_rule=false`), maximized windows set `is_maximized = true` in the Win32 occlusion detector, but `should_pause` remained `false`.
+     Consequently, `any_monitor_covered` was `false`, `target_paused_monitors` was empty, and `should_mute_audio` evaluated to `false`. Audio never muted on maximized windows.
+  2. **Isolated Audio Source Misidentification**:
+     In `per-display` mode, the policy checked only `primary_label`. If audio was played on a single secondary display via MPV or custom configuration, or if `primary_label` did not match, covering the audio-emitting display never satisfied `primary_lbl` coverage.
+  3. **Webview Window Audio Event Delivery**:
+     `aura:mute` and `aura:unmute` were dispatched exclusively via `app.emit`, which could be dropped by Tauri 2 Webview windows that only listen on their localized window handles (`appWindow.listen`).
+- **Completed**:
+  1. **Decoupled Physical Occlusion from Animation Preferences**:
+     - Introduced `physically_covered_monitors: HashSet<String>` tracking true physical window coverage (`status.is_fullscreen || status.is_maximized`), completely independent of whether animation pauses are enabled.
+     - `audio_playback_rule == "mute-covered"` now checks true physical coverage, correctly muting even when visual frame pauses are toggled off.
+  2. **Dynamic Audio Source Resolution**:
+     - Accurately tracks the audio-emitting display from `MPV_PLAYERS` (handling single-player, multi-player, and primary display hierarchies) as well as Webview fallback.
+     - In `per-display` mode, mutes if all displays are covered or if the specific audio-emitting display is covered.
+  3. **Direct Webview Audio Event Dispatch**:
+     - Added `win.emit_to(label, mute_event, ...)` across all active wallpaper windows alongside global `app.emit`.
+  4. **Live Telemetry Diagnostics**:
+     - Added `covered={:?}` and `audio_src={:?}` fields to the periodic `[SYSTEM MONITOR DIAG]` logger in `desktop_debug.log`.
+- **Verification & Build**:
+  - Committed prior state to `ui/ux` branch: `233cedc`.
+  - `npm run build`: ✅ Built in 661ms.
+  - `cargo check`: ✅ Zero warnings, zero errors.
+  - `cargo build --release`: ✅ Built in 2m 27s.
+  - Updated root standalone executable: `.\AetherFlow.exe` (7,443,456 bytes, 12:16 AM).
+  - Verified live runtime diagnostics: confirmed `covered={}` and `audio_src=Some("wallpaper__DISPLAY1")` logging properly on startup.
+---

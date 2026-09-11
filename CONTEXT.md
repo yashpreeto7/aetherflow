@@ -3,12 +3,12 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 23:58 IST — Resolved Isolated Mode Multi-Monitor Pausing, Audio Scoping & NULL-Handle Occlusion Bug:
-1. **NULL-Handle Occlusion Trap Fixed**: In `enum_occlusion_proc`, `parent == state.shell_hwnd || parent == state.progman` evaluated to `0 == 0` (TRUE) whenever `GetShellWindow()` or Progman was NULL (common on Windows 11), causing `enum_occlusion_proc` to immediately return 1 and skip EVERY top-level application window on the OS. Added explicit `!parent.is_null()` and `!state.xxx.is_null()` validation to ensure top-level unowned windows are properly evaluated.
-2. **Deterministic State Reconciliation**: Removed destructive `paused_monitors.clear()` on `MONITOR_SYNC_REQUESTED` which wiped `was_p` and caused monitors un-occluded under Isolated mode to stay permanently frozen in the paused state. Replaced with `force_sync` reconciliation: `if was_p != should_p || force_sync` guarantees every monitor and audio channel is explicitly commanded to its true target state.
-3. **Primary-Scoped Isolated Audio Policy**: In `per-display` mode with `mute-covered`, audio only mutes when all monitors are paused or when the primary monitor (the single screen outputting audio) is paused. Secondary monitor pauses no longer inappropriately mute system audio.
-4. **Zustand Migration v3**: Ensured `pauseOnMaximized: true`, `multiMonitorPauseMode: 'per-display'`, and `audioPlaybackRule: 'mute-covered'` defaults are guaranteed during store hydration.
-5. **Verified**: Clean `npm run build` (688ms), `cargo check` (0 errors), `cargo build --release` (2m 10s), and deployed updated `AetherFlow.exe` (7.44 MB) to workspace root.
+2026-09-12 00:20 IST — Decoupled Physical Occlusion for "Mute When Covered" & Multi-Window Event Dispatch:
+1. **Physical Occlusion Decoupled from Animation Pause Flags**: In `start_system_state_monitor`, `physically_covered_monitors` now tracks whether screens are occluded by fullscreen or maximized windows independently of `pause_on_fullscreen` or `pause_on_maximized`. Even if users turn off visual pause on maximized windows, "Mute When Covered" reliably mutes sound.
+2. **Dynamic Audio Source Resolution**: Accurately determines the active audio-emitting display from `MPV_PLAYERS` (supporting single-player, multi-player, and primary display configurations) and Webview fallbacks.
+3. **Multi-Window Webview Audio Event Delivery**: Added `win.emit_to(label, mute_event, ...)` across all active wallpaper windows alongside global `app.emit`.
+4. **Verified**: `npm run build` (661ms), `cargo check` (0 errors), `cargo build --release` (2m 27s), and deployed updated `AetherFlow.exe` (7.44 MB) to workspace root. Live runtime diagnostics confirmed clean state tracking.
+
 
 
 ---
@@ -195,6 +195,7 @@ npm run tauri:dev
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Customizable Window Pause, Per-Monitor Isolation & Audio Policies: Added 'Pause on Maximized Windows' toggle (Win32 IsZoomed & rcWork), 'Multi-Monitor Playback Behavior' segmented control (Isolated Per-Display vs Global All Displays), and 'Wallpaper Audio Playback Policy' (Mute When Covered, Mute When Focused, Always Active). Upgraded 750ms system monitor thread in main.rs with zero-lag (<0.05ms) per-monitor Z-order occlusion traversal (GetTopWindow, GetWindow, DwmGetWindowAttribute(DWMWA_CLOAKED)), targeted aura:pause/aura:resume per monitor label, added aura:mute/aura:unmute in wallpaper.jsx, and compiled & deployed fresh 7.09MB AetherFlow.exe. |
 | 2026-09-11 | Antigravity (Google DeepMind) | Resolved Self-Occlusion Bug in MPV Video Engine & Global/Isolated State Desync: Excluded all MPV PIDs/HWNDs, wallpaper HWNDs, desktop/WorkerW/Progman child hierarchies, and `mpv` class in `enum_occlusion_proc` and `inspect_monitor_occlusion_states`; added `MONITOR_SYNC_REQUESTED` atomic trigger on setting/wallpaper changes for clean state re-evaluation; fixed secondary monitor audio unmuting in `set_mpv_mute`; updated `AetherFlow.exe` (7.09 MB). |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Resolved Isolated Mode Multi-Monitor Pausing, Audio Scoping & NULL-Handle Occlusion: Fixed NULL-handle evaluation trap on parent/shell_hwnd/progman in `enum_occlusion_proc`; replaced destructive state wipe `paused_monitors.clear()` with deterministic `force_sync` reconciliation; scoped isolated audio policy strictly to the active audio source monitor; added store migration v3 with `pauseOnMaximized: true` fallback; compiled release binary and deployed fresh `AetherFlow.exe` (7.44 MB). |
+| 2026-09-12 | Antigravity (Gemini 3.8 Flash) | Decoupled Physical Occlusion for "Mute When Covered" & Multi-Window Event Dispatch: Decoupled physical occlusion from visual pause preferences so audio mutes when covered even if pauseOnMaximized is false; dynamically resolved active audio source monitor for MPV and Webview; dispatched mute/unmute events to all webview wallpaper windows and global scope; deployed fresh `AetherFlow.exe` (7.44 MB). |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

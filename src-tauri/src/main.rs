@@ -575,28 +575,61 @@ pub fn start_system_state_monitor(app: AppHandle) {
             }
 
             let mut target_paused_monitors: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut any_monitor_covered = false;
+            let mut physically_covered_monitors: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut any_monitor_pause_triggered = false;
 
             for label in &wallpaper_labels {
                 let status = occlusion_map.get(label).cloned().unwrap_or_default();
+
+                // Physical occlusion (fullscreen or maximized window on this monitor)
+                if status.is_fullscreen || status.is_maximized {
+                    physically_covered_monitors.insert(label.clone());
+                }
+
                 let is_fs = pause_on_fullscreen && status.is_fullscreen;
                 let is_max = pause_on_maximized && status.is_maximized;
                 let should_pause = is_fs || is_max;
 
                 if should_pause {
-                    any_monitor_covered = true;
+                    any_monitor_pause_triggered = true;
                 }
                 if on_battery || should_pause {
                     target_paused_monitors.insert(label.clone());
                 }
             }
 
-            // Global mode: if any monitor is covered, pause all
-            if multi_monitor_pause_mode == "all-displays" && any_monitor_covered {
+            // Global mode: if any monitor triggers pause, pause all
+            if multi_monitor_pause_mode == "all-displays" && any_monitor_pause_triggered {
                 for label in &wallpaper_labels {
                     target_paused_monitors.insert(label.clone());
                 }
             }
+
+            let any_monitor_physically_covered = !physically_covered_monitors.is_empty();
+
+            // Identify which display is the active audio emitter
+            let primary_label = get_primary_monitor_label(&app);
+            let audio_source_label = {
+                let mut found = None;
+                if let Ok(guard) = MPV_PLAYERS.lock() {
+                    if let Some(ref map) = *guard {
+                        if map.len() == 1 {
+                            found = map.keys().next().cloned();
+                        } else if map.len() > 1 {
+                            if let Some(ref p) = primary_label {
+                                if map.contains_key(p) {
+                                    found = Some(p.clone());
+                                }
+                            }
+                            if found.is_none() {
+                                found = map.keys().next().cloned();
+                            }
+                        }
+                    }
+                }
+                found.or_else(|| primary_label.clone())
+                     .or_else(|| wallpaper_labels.first().cloned())
+            };
 
             // Audio playback policy evaluation:
             let all_paused = target_paused_monitors.len() >= wallpaper_labels.len() && !wallpaper_labels.is_empty();
@@ -607,17 +640,16 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 is_app_focused
             } else if audio_playback_rule == "mute-covered" {
                 if multi_monitor_pause_mode == "all-displays" {
-                    any_monitor_covered
+                    any_monitor_physically_covered
                 } else {
-                    // In Isolated (per-display) mode, only mute audio if all monitors are paused
-                    // or if the primary monitor (the screen outputting audio) is paused.
-                    let primary_lbl = get_primary_monitor_label(&app)
-                        .or_else(|| wallpaper_labels.first().cloned());
-                    let audio_mon_paused = match primary_lbl {
-                        Some(ref p) => target_paused_monitors.contains(p),
-                        None => any_monitor_covered,
+                    // In Isolated (per-display) mode:
+                    // Mute if all displays are covered/paused, or if the active audio source screen is covered/paused
+                    let all_covered = physically_covered_monitors.len() >= wallpaper_labels.len() && !wallpaper_labels.is_empty();
+                    let audio_source_covered = match audio_source_label {
+                        Some(ref src) => physically_covered_monitors.contains(src) || target_paused_monitors.contains(src),
+                        None => any_monitor_physically_covered,
                     };
-                    all_paused || audio_mon_paused
+                    all_covered || audio_source_covered
                 }
             } else {
                 // "always": only mute if all are paused
@@ -656,6 +688,11 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 audio_muted_by_policy = should_mute_audio;
                 set_mpv_mute(app.clone(), None, should_mute_audio);
                 let mute_event = if should_mute_audio { "aura:mute" } else { "aura:unmute" };
+                for (label, win) in &windows {
+                    if label.starts_with("wallpaper_") {
+                        let _ = win.emit_to(label.as_str(), mute_event, serde_json::json!({ "target": "*" }));
+                    }
+                }
                 let _ = app.emit(mute_event, serde_json::json!({ "target": "*" }));
                 let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {}, force_sync={})", should_mute_audio, audio_playback_rule, force_sync);
                 log_msg(&msg);
@@ -664,11 +701,12 @@ pub fn start_system_state_monitor(app: AppHandle) {
 
             if taskbar_tick % 8 == 0 || force_sync {
                 let diag = format!(
-                    "[SYSTEM MONITOR DIAG] displays={:?} paused={:?} mode={} any_cov={} fs_rule={} max_rule={} rule={} muted={}",
+                    "[SYSTEM MONITOR DIAG] displays={:?} paused={:?} covered={:?} audio_src={:?} mode={} fs_rule={} max_rule={} rule={} muted={}",
                     wallpaper_labels,
                     target_paused_monitors,
+                    physically_covered_monitors,
+                    audio_source_label,
                     multi_monitor_pause_mode,
-                    any_monitor_covered,
                     pause_on_fullscreen,
                     pause_on_maximized,
                     audio_playback_rule,

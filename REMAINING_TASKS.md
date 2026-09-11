@@ -287,5 +287,7 @@ Mark these off as you complete them:
 - [x] TASK 16: Win32 Occlusion, Multi-Monitor Pausing & Audio Policies Overhaul (pause on maximized windows, per-monitor Z-order occlusion engine, isolated vs global pausing, mute when covered vs mute when focused vs always active, borderless fullscreen F11 detection, verified by user)
 - [x] TASK 16.1: MPV Video Engine Self-Occlusion & Global/Isolated State Desync Fix (excluded MPV child PIDs/HWNDs and desktop window hierarchy from occlusion engine, added MONITOR_SYNC_REQUESTED atomic flush on setting/mode switch, resolved secondary display unmuting in set_mpv_mute)
 - [x] TASK 16.2: Multi-Monitor Isolated Pausing & NULL-Handle Occlusion Bugfix (fixed `0 == 0` NULL-handle trap on `parent == shell_hwnd/progman` in `enum_occlusion_proc`, replaced state-wiping `paused_monitors.clear()` with deterministic `force_sync` reconciliation, scoped isolated audio muting strictly to the active audio source monitor, added store migration v3 with `pauseOnMaximized: true` fallback)
+- [x] TASK 16.3: "Mute When Covered" Occlusion Decoupling & Audio Source Routing (decoupled physical display occlusion from animation pause preferences so mute-covered functions even if pauseOnMaximized is false, added dynamic audio source display tracking for MPV and Webview, broadcast mute events to both MPV processes and all WebView windows)
 - [ ] TASK 17: UI/UX Redesign & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
+
 
