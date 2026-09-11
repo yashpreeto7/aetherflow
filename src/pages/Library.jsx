@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
   Trash2, Play, Image, Plus, Video, Monitor, Square, Check,
-  Zap, Pin, PinOff, Pencil, Search, X, Globe
+  Zap, Pin, PinOff, Pencil, Search, X, Globe, Heart
 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
-import { BUILTIN_THEMES, WALLPAPER_LIST } from '../engines/index.js'
+import { WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
 import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
 import { AddWallpaperModal, RenameWallpaperModal, AddWebStreamModal } from '../components/Modals/WallpaperModals.jsx'
@@ -23,8 +23,8 @@ export default function LibraryPage() {
   const activeWallpaper      = useStore(s => s.activeWallpaper)
   const currentDesktopWallpaper = useStore(s => s.currentDesktopWallpaper)
   const isWallpaperRunning   = useStore(s => s.isWallpaperRunning)
-  const activeTheme          = useStore(s => s.activeTheme)
-  const setActiveTheme       = useStore(s => s.setActiveTheme)
+  const likedWallpaperIds    = useStore(s => s.likedWallpaperIds) || []
+  const toggleLikeWallpaper  = useStore(s => s.toggleLikeWallpaper)
   const uninstallItem        = useStore(s => s.uninstallItem)
   const screenArrangement    = useStore(s => s.screenArrangement)
   const monitorWallpapers    = useStore(s => s.monitorWallpapers)
@@ -218,8 +218,11 @@ export default function LibraryPage() {
 
   const filteredWallpapers = useMemo(() => {
     const pinnedSet = new Set(homeWallpaperIds || [])
+    const likedSet = new Set(likedWallpaperIds || [])
     return allWallpapers.filter(w => {
       const isPinned = pinnedSet.has(w.id)
+      const isLiked = likedSet.has(w.id)
+      if (filterCategory === 'liked' && !isLiked) return false
       if (filterCategory === 'builtin' && w.isCustom) return false
       if (filterCategory === 'custom' && (!w.isCustom || w.config?.streamUrl)) return false
       if (filterCategory === 'stream' && !w.config?.streamUrl) return false
@@ -232,13 +235,7 @@ export default function LibraryPage() {
       }
       return true
     })
-  }, [allWallpapers, filterCategory, searchQuery, homeWallpaperIds])
-
-  const installedThemes = installed.filter(i => i.type === 'theme')
-  const allThemes = [
-    ...BUILTIN_THEMES.map(t => ({ ...t, type: 'theme', builtin: true })),
-    ...installedThemes,
-  ]
+  }, [allWallpapers, filterCategory, searchQuery, homeWallpaperIds, likedWallpaperIds])
 
   return (
     <div className="animate-fadeIn" style={{ maxWidth: 960, margin: '0 auto' }}>
@@ -329,7 +326,8 @@ export default function LibraryPage() {
           <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
             {[
               { id: 'all', label: `All (${allWallpapers.length})` },
-              { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
+              { id: 'liked', label: `Liked (${allWallpapers.filter(w => (likedWallpaperIds || []).includes(w.id)).length})`, icon: Heart },
+              { id: 'pinned', label: `Pinned (${homeWallpaperIds.length})` },
               { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
               { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
               { id: 'stream', label: `Web Streams (${allWallpapers.filter(w => w.config?.streamUrl).length})` },
@@ -337,10 +335,21 @@ export default function LibraryPage() {
               <button
                 key={cat.id}
                 className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
-                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
+                style={{
+                  cursor: 'pointer',
+                  padding: '5px 12px',
+                  fontSize: 11,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  color: filterCategory === cat.id && cat.id === 'liked' ? 'var(--color-rose)' : undefined,
+                  borderColor: filterCategory === cat.id && cat.id === 'liked' ? 'var(--color-rose)' : undefined,
+                  background: filterCategory === cat.id && cat.id === 'liked' ? 'color-mix(in srgb, var(--color-rose) 15%, transparent)' : undefined,
+                }}
                 onClick={() => setFilterCategory(cat.id)}
               >
-                {cat.label}
+                {cat.icon && <cat.icon size={11} fill={filterCategory === cat.id ? 'currentColor' : 'none'} />}
+                <span>{cat.label}</span>
               </button>
             ))}
           </div>
@@ -404,6 +413,8 @@ export default function LibraryPage() {
             const isPinnedToHome = homeWallpaperIds.includes(item.id)
             const engineIdToLoad = item.engine || item.id
 
+            const isLiked = (likedWallpaperIds || []).includes(item.id)
+
             return (
               <div
                 key={item.id}
@@ -437,20 +448,37 @@ export default function LibraryPage() {
                     </div>
                   )}
 
-                  {/* Pin to Home status indicator on thumbnail */}
-                  <button
-                    className="btn-icon"
-                    style={{
-                      position: 'absolute', top: 6, left: 6, zIndex: 3,
-                      background: isPinnedToHome ? 'rgba(59, 130, 246, 0.85)' : 'rgba(0,0,0,0.6)',
-                      color: '#fff', padding: 4, borderRadius: 6,
-                      backdropFilter: 'blur(4px)',
-                    }}
-                    title={isPinnedToHome ? 'Pinned to Home (Click to remove)' : 'Pin to Home'}
-                    onClick={(e) => { e.stopPropagation(); togglePinToHome(item.id) }}
-                  >
-                    <Pin size={12} fill={isPinnedToHome ? '#fff' : 'none'} />
-                  </button>
+                  {/* Top-Left: Pin & Heart Badges */}
+                  <div style={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 4, zIndex: 3 }}>
+                    <button
+                      className="btn-icon"
+                      style={{
+                        background: isPinnedToHome ? 'var(--color-brand)' : 'rgba(0,0,0,0.6)',
+                        color: '#fff', padding: 4, borderRadius: 6,
+                        backdropFilter: 'blur(4px)',
+                      }}
+                      title={isPinnedToHome ? 'Pinned to Home (Click to remove)' : 'Pin to Home'}
+                      onClick={(e) => { e.stopPropagation(); togglePinToHome(item.id) }}
+                    >
+                      <Pin size={12} fill={isPinnedToHome ? '#fff' : 'none'} />
+                    </button>
+
+                    <button
+                      className="btn-icon"
+                      style={{
+                        background: isLiked ? 'color-mix(in srgb, var(--color-rose) 30%, rgba(0,0,0,0.7))' : 'rgba(0,0,0,0.6)',
+                        color: isLiked ? 'var(--color-rose)' : '#fff',
+                        padding: 4, borderRadius: 6,
+                        backdropFilter: 'blur(4px)',
+                        border: isLiked ? '1px solid var(--color-rose)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title={isLiked ? 'Unlike wallpaper' : 'Like wallpaper'}
+                      onClick={(e) => { e.stopPropagation(); toggleLikeWallpaper(item.id) }}
+                    >
+                      <Heart size={12} fill={isLiked ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
 
                   {/* Hover Overlay with Quick Actions */}
                   <div className="wp-hover-overlay">
@@ -523,7 +551,21 @@ export default function LibraryPage() {
                     </button>
 
                     <button
-                      className={`btn ${isPinnedToHome ? 'btn-ghost' : 'btn-ghost'}`}
+                      className="btn btn-ghost"
+                      style={{
+                        padding: '5px 8px', fontSize: 11,
+                        color: isLiked ? 'var(--color-rose)' : 'var(--text-muted)',
+                        borderColor: isLiked ? 'var(--color-rose)' : 'var(--border-main)',
+                        background: isLiked ? 'color-mix(in srgb, var(--color-rose) 12%, transparent)' : 'transparent',
+                      }}
+                      title={isLiked ? 'Unlike wallpaper' : 'Like wallpaper'}
+                      onClick={() => toggleLikeWallpaper(item.id)}
+                    >
+                      <Heart size={11} fill={isLiked ? 'currentColor' : 'none'} />
+                    </button>
+
+                    <button
+                      className="btn btn-ghost"
                       style={{
                         padding: '5px 8px', fontSize: 11,
                         color: isPinnedToHome ? 'var(--color-brand)' : 'var(--text-muted)',
@@ -542,40 +584,6 @@ export default function LibraryPage() {
           })}
         </div>
       )}
-
-      {/* Themes Section */}
-      <h2 className="font-semibold text-sm text-muted" style={{ marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-        Themes ({allThemes.length})
-      </h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, paddingBottom: 24 }}>
-        {allThemes.map(theme => {
-          const isActive = activeTheme === theme.id
-          return (
-            <div
-              key={theme.id}
-              className={`card card-interactive ${isActive ? 'card-active' : ''}`}
-              style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}
-              onClick={() => setActiveTheme(theme.id)}
-            >
-              <div style={{
-                width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                background: theme.bg,
-                border: `2px solid ${theme.accent}`,
-                boxShadow: isActive ? `0 0 10px ${theme.accent}66` : 'none',
-              }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="text-sm font-medium truncate">{theme.name}</div>
-                <div className="text-xs text-muted">{theme.builtin ? 'Built-in' : 'Installed'} · {theme.category}</div>
-              </div>
-              {!theme.builtin && (
-                <button className="btn-icon" onClick={e => { e.stopPropagation(); uninstallItem(theme.id) }}>
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
 
       {/* Modals */}
       <AddWallpaperModal

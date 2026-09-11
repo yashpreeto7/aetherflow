@@ -179,18 +179,20 @@ html, body, #root {
 .toggle {
   position: relative;
   display: inline-block;
-  width: 36px;
-  height: 20px;
+  width: 40px;
+  height: 22px;
   flex-shrink: 0;
+  cursor: pointer;
 }
 .toggle input { display: none; }
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: var(--border-main);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-main);
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.22s var(--ease-smooth);
 }
 .toggle-thumb {
   position: absolute;
@@ -198,12 +200,191 @@ html, body, #root {
   left: 3px;
   width: 14px;
   height: 14px;
-  background: #fff;
+  background: var(--text-muted);
   border-radius: 50%;
-  transition: transform 0.2s var(--ease-smooth);
+  transition: transform 0.22s var(--ease-smooth), background-color 0.2s ease, box-shadow 0.2s ease;
 }
-input:checked ~ .toggle-track { background: var(--color-brand); }
-input:checked ~ .toggle-thumb { transform: translateX(16px); }
+input:checked ~ .toggle-track {
+  background: color-mix(in srgb, var(--color-brand) 30%, transparent);
+  border-color: var(--color-brand);
+}
+input:checked ~ .toggle-thumb {
+  transform: translateX(18px);
+  background: var(--color-brand);
+  box-shadow: 0 0 10px var(--color-brand);
+}
+
+/* ── Segmented Control (Pill Tabs) ─────────────────────────────────────────── */
+.segmented-control {
+  display: inline-flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--border-main) 35%, var(--bg-card));
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  position: relative;
+  gap: 2px;
+}
+.segmented-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s var(--ease-smooth);
+  user-select: none;
+  white-space: nowrap;
+}
+.segmented-item:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
+}
+.segmented-item.active {
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-weight: 600;
+  box-shadow: var(--shadow-card), var(--surface-bevel);
+  border-color: var(--border-subtle);
+}
+.segmented-item.active-brand {
+  background: var(--color-brand);
+  color: #fff;
+  border-color: var(--color-brand);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-brand) 50%, transparent);
+}
+
+/* ── Setting Cards & Rows (Surrealist / Lunaris Inspired) ───────────────────── */
+.setting-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-main);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card), var(--surface-bevel);
+  backdrop-filter: blur(var(--card-blur));
+  -webkit-backdrop-filter: blur(var(--card-blur));
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.setting-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-glass);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.15s ease;
+}
+.setting-row:last-child {
+  border-bottom: none;
+}
+.setting-row:hover {
+  background: color-mix(in srgb, var(--text-main) 3%, transparent);
+}
+
+/* ── Option Cards (Visual Selectors: Themes, Modes, Density) ──────────────── */
+.option-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(var(--rgb-card), 0.6);
+  border: 1px solid var(--border-main);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-smooth);
+  position: relative;
+  text-align: left;
+  user-select: none;
+}
+.option-card:hover {
+  border-color: var(--border-card-hover);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+.option-card.selected {
+  border-color: var(--color-brand) !important;
+  background: color-mix(in srgb, var(--color-brand) 8%, var(--bg-card)) !important;
+  box-shadow: 0 0 0 1px var(--color-brand), 0 8px 24px -4px color-mix(in srgb, var(--color-brand) 30%, transparent) !important;
+}
+
+/* ── Settings Category Tabs ────────────────────────────────────────────────── */
+.settings-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  background: color-mix(in srgb, var(--border-main) 30%, var(--bg-base));
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.settings-nav-bar::-webkit-scrollbar { display: none; }
+.settings-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s var(--ease-smooth);
+  white-space: nowrap;
+}
+.settings-nav-btn:hover {
+  color: var(--text-main);
+  background: color-mix(in srgb, var(--text-main) 6%, transparent);
+}
+.settings-nav-btn.active {
+  color: #fff;
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+  font-weight: 600;
+  box-shadow: 0 4px 16px -2px color-mix(in srgb, var(--color-brand) 50%, transparent);
+}
+
+/* ── Telemetry Badges & Chips ──────────────────────────────────────────────── */
+.telemetry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--border-main) 35%, var(--bg-card));
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-main);
+}
+.telemetry-chip-pulse {
+  position: relative;
+}
+.telemetry-chip-pulse::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
 
 /* ── Glassmorphism overlay ─────────────────────────────────────────────────── */
 .glass {
@@ -232,6 +413,14 @@ input:checked ~ .toggle-thumb { transform: translateX(16px); }
 .animate-fadeIn { animation: fadeIn 0.3s var(--ease-smooth) both; }
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 .animate-spin { animation: spin 1s linear infinite; }
+
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
 
 /* ── Layout helpers ────────────────────────────────────────────────────────── */
 .flex { display: flex; }

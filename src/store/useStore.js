@@ -206,15 +206,41 @@ export const useStore = create(
         if (customThemes && customThemes[id]) {
           const tokens = customThemes[id];
           Object.entries(tokens).forEach(([key, value]) => {
-            document.documentElement.style.setProperty(key, value);
+            if (key.startsWith('--')) {
+              document.documentElement.style.setProperty(key, value);
+            }
           });
         } else {
           // Clear any custom inline styles if switching to a built-in theme
           document.documentElement.removeAttribute('style');
         }
+
+        // Always ensure glow ambience multiplier is active
+        const val = get().glowAmbience || 'balanced';
+        const mult = val === 'vivid' ? '1.5' : val === 'balanced' ? '1' : val === 'subtle' ? '0.4' : '0';
+        document.documentElement.style.setProperty('--glow-multiplier', mult);
       },
       saveCustomTheme: (id, tokens) =>
         set((s) => ({ themes: { ...s.themes, [id]: tokens } })),
+
+      // ── Visual Ambience & Motion ─────────────────────────────────────────
+      glowAmbience: 'balanced', // 'vivid' | 'balanced' | 'subtle' | 'off'
+      setGlowAmbience: (val) => {
+        set({ glowAmbience: val })
+        if (typeof document !== 'undefined') {
+          const mult = val === 'vivid' ? '1.5' : val === 'balanced' ? '1' : val === 'subtle' ? '0.4' : '0'
+          document.documentElement.style.setProperty('--glow-multiplier', mult)
+        }
+      },
+      reducedMotion: false,
+      toggleReducedMotion: () => set((s) => {
+        const next = !s.reducedMotion
+        if (typeof document !== 'undefined') {
+          if (next) document.documentElement.classList.add('reduced-motion')
+          else document.documentElement.classList.remove('reduced-motion')
+        }
+        return { reducedMotion: next }
+      }),
 
       // ── Library (installed wallpapers & themes) ──────────────────────────
       installed: [],                   // [{ id, type, name, engine, config, installedAt }]
@@ -257,6 +283,29 @@ export const useStore = create(
       unpinFromHome: (id) => set((s) => ({
         homeWallpaperIds: (s.homeWallpaperIds || []).filter(x => x !== id)
       })),
+
+      // ── Liked Wallpapers (Local Favorites) ──────────────────────────────
+      likedWallpaperIds: [],
+      toggleLikeWallpaper: (id) => set((s) => {
+        const list = s.likedWallpaperIds || []
+        const next = list.includes(id) ? list.filter(x => x !== id) : [...list, id]
+        return { likedWallpaperIds: next }
+      }),
+
+      // ── Delete Custom Theme ─────────────────────────────────────────────
+      deleteCustomTheme: (id) => set((s) => {
+        const next = { ...(s.themes || {}) }
+        delete next[id]
+        const activeTheme = s.activeTheme === id ? 'sovereign-onyx' : s.activeTheme
+        if (s.activeTheme === id) {
+          document.documentElement.setAttribute('data-theme', 'sovereign-onyx')
+          document.documentElement.removeAttribute('style')
+          const val = s.glowAmbience || 'balanced'
+          const mult = val === 'vivid' ? '1.5' : val === 'balanced' ? '1' : val === 'subtle' ? '0.4' : '0'
+          document.documentElement.style.setProperty('--glow-multiplier', mult)
+        }
+        return { themes: next, activeTheme }
+      }),
 
       // ── Renaming ──────────────────────────────────────────────────────────
       setWallpaperName: (id, newName) => set((s) => {
@@ -442,8 +491,11 @@ export const useStore = create(
         audioVolume: s.audioVolume,
         audioMuted: s.audioMuted,
         thumbnailMode: s.thumbnailMode,
+        glowAmbience: s.glowAmbience,
+        reducedMotion: s.reducedMotion,
         wallpaperAudioSettings: s.wallpaperAudioSettings,
         homeWallpaperIds: s.homeWallpaperIds,
+        likedWallpaperIds: s.likedWallpaperIds,
         customNames: s.customNames,
         isWallpaperRunning: s.isWallpaperRunning,
         taskbarStyle: s.taskbarStyle,

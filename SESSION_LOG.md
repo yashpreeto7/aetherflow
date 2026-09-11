@@ -1262,3 +1262,66 @@
   - Git commit: `85a6a37` pushed to `origin/main`.
 ---
 
+## Session: 2026-09-11 17:25 (Executive Desktop UI/UX Overhaul)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Requests**:
+  1. Transform AetherFlow UI/UX into a good, executive-grade experience inspired by the 9 provided design references in `ui improvement ideas/` (Surrealist, Lunaris, Untitled UI, CureSync, macOS Sonoma, Themes Gallery, Shift, Task Manager Telemetry, Agent Deck).
+  2. Maintain zero regressions on working logic: do not break Tauri IPC, wallpaper playback engines (Canvas 2D, MPV, WebStream/YouTube), or Zustand store.
+  3. Keep the app ultra-lightweight and RAM friendly (~30MB memory profile).
+  4. Utilize `ui-ux-pro-max`, `impeccable`, `planning-with-files`, and Playwright MCP.
+- **Architectural & Design Solutions**:
+  1. **Design System & Tokens (`themes.css` & `index.css`)**:
+     - Added `--surface-bevel` (subtle inner highlights: `inset 0 1px 0 rgba(255,255,255,0.08)`).
+     - Added `--border-subtle` and `--border-card-hover` with refined alpha borders.
+     - Added theme-specific ambient glows (`--color-glow`) across all 6 Sovereign themes (Onyx, Slate, Studio, Obsidian, Manifesto, Light).
+     - Created reusable components: `.segmented-control`, `.segmented-item`, `.setting-card`, `.setting-row`, `.option-card`, `.settings-nav-bar`, `.telemetry-chip`.
+  2. **Settings Page Overhaul (`src/pages/Settings.jsx`)**:
+     - Converted settings into categorized sub-tabs: `Performance`, `Appearance`, `Thumbnails`, `Taskbar`, `Audio`, `System`.
+     - Built Sovereign Theme Presets visual cards with custom 5-color palette swatches (Ref 6 & 9).
+     - Built visual option cards for Taskbar styles (`Default`, `Clear (100%)`, `Acrylic Blur`, `Soft Blur`), Card Thumbnails (`On Hover`, `Always On`, `Off`), and segmented controls.
+  3. **Home Dashboard HUD (`src/pages/Home.jsx`)**:
+     - Transformed Hero preview card into an executive cockpit HUD with glowing live status chips (`LIVE · ALL SCREENS`), glassmorphic overlays, and smooth pause/stop/apply action buttons.
+     - Added Active Engine Parameters telemetry card with slider controls, mono value indicators, and format/FPS telemetry chips.
+     - Converted category filter tags into segmented pills with live counts.
+     - Upgraded card thumbnail selector into `.segmented-control`.
+  4. **App Shell, Sidebar & Status Bar (`src/App.jsx`, `StatusBar/index.jsx`)**:
+     - Upgraded sidebar with glowing active indicators, bevel highlights, and Sovereign version badge (`v1.0.7 SOVEREIGN`).
+     - Upgraded StatusBar with 38px height, bevel highlight, live desktop pulsing green indicator, and interactive RAM compaction telemetry chip.
+- **Verification**:
+  - `npm run build`: ✅ Passes in ~540ms with zero errors.
+  - Playwright visual testing verified across Home, Settings tabs, Marketplace, and Library.
+  - Maintained ultra-low memory footprint (~30MB RAM) and zero new npm dependencies.
+---
+
+## Session: 2026-09-11 18:05 (Theme Consolidation, Custom Theme Studio & Liked Wallpapers)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Requests**:
+  1. Remove theme option from Home and Library; keep themes strictly in Settings.
+  2. Neutralize hardcoded colors across CSS files to adapt cleanly to all themes (especially light themes like `sovereign-manifesto` and `sovereign-light`).
+  3. Enable users to customize themes in Settings with real-time live preview and persistent Save functionality.
+  4. Add a local Liked Wallpapers filter in Home and Library.
+  5. Replace glassmorphism and material surface settings with reliable, useful settings.
+- **Completed**:
+  1. **Theme Consolidation**: Completely removed theme switcher sections and redundant code from `Home.jsx` and `Library.jsx`.
+  2. **Custom Theme Studio (`Settings.jsx`)**:
+     - Built live preview engine applying CSS variables directly to `document.documentElement` in real time.
+     - Added 5 starter presets: `Cyber Neon`, `Emerald Matrix`, `Solar Flare`, `Crimson Blood`, `Nordic Blue`.
+     - Added 7 customizable color pickers (`Background`, `Cards`, `Sidebar`, `Brand Accent`, `Secondary Accent`, `Primary Text`, `Muted Text`).
+     - Implemented "Save & Apply Custom Theme" with hex-to-RGB conversion, Zustand persistence, and localStorage sync.
+     - Added Saved Custom Themes gallery with multi-color palette chips, active checkmark, and 1-click deletion.
+  3. **Local Liked Wallpapers Filter**:
+     - Added `likedWallpaperIds` and `toggleLikeWallpaper(id)` to `useStore.js` with `partialize` persistence.
+     - Added `Liked` filter tab in both `Home.jsx` and `Library.jsx` with real-time heart counters.
+     - Added interactive heart/favorite buttons to all wallpaper cards (badge row and footer) with active rose fill and state toggle.
+  4. **Visual Ambience & Dynamics (Replaced Glassmorphism Sliders)**:
+     - Replaced ineffective opacity/blur sliders with Accent Glow Ambience segmented control (`Vivid`, `Balanced`, `Subtle`, `Off`) and Reduced Motion / Snappy UI toggle.
+  5. **Dynamic Color Adaptivity**:
+     - Replaced hardcoded hover/toggle background colors with `color-mix(in srgb, var(--text-main) 6%, transparent)`.
+     - Replaced hardcoded red colors with `var(--color-rose)`.
+     - Added `:root` fallback CSS variables in `themes.css` so custom themes never render with white/blank background artifacts.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 648ms with zero errors.
+  - Playwright visual tests verified Home, Library, and Settings features (Liked filters, Heart buttons, Theme Studio live preview, saving custom theme, active selection, deletion).
+---
+
+

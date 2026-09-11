@@ -7,13 +7,46 @@
 :root {
   --card-opacity: 0.92;
   --sidebar-opacity: 0.88;
-  --card-blur: 12px;
+  --card-blur: 16px;
   --glow-intensity: 1;
+  --glow-multiplier: 1;
   --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
 
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Outfit', 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  --rgb-base:         9, 9, 11;
+  --rgb-sidebar:     17, 17, 20;
+  --rgb-card:        26, 26, 32;
+  --rgb-card-hover:  38, 38, 46;
+
+  --bg-base:         rgb(var(--rgb-base));
+  --bg-sidebar:      rgba(var(--rgb-sidebar), var(--sidebar-opacity));
+  --bg-card:         rgba(var(--rgb-card), var(--card-opacity));
+  --bg-card-hover:   rgba(var(--rgb-card-hover), calc(var(--card-opacity) + 0.08));
+
+  --border-main:     #27272a;
+  --border-accent:   #3b82f6;
+  --color-brand:     #3b82f6;
+  --color-brand-hover: #2563eb;
+  --color-glow:      rgba(59, 130, 246, 0.4);
+  --color-accent:    #60a5fa;
+  --color-highlight: #818cf8;
+  --color-cyan:      #67e8f9;
+  --color-emerald:   #34d399;
+  --color-amber:     #fbbf24;
+  --color-rose:      #fb7185;
+  --color-purple:    #a78bfa;
+
+  --text-main:       #fafafa;
+  --text-muted:      #a1a1aa;
+  --text-subtle:     #52525b;
+
+  --surface-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-card-hover: rgba(255, 255, 255, 0.16);
+  --surface-glass: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
 }
 
 /* ── Sovereign Onyx — Pure Titanium Black ─────────────────────────────────── */
@@ -32,6 +65,7 @@
   --border-accent:   #3b82f6;
   --color-brand:     #3b82f6;
   --color-brand-hover: #2563eb;
+  --color-glow:      rgba(59, 130, 246, 0.4);
   --color-accent:    #60a5fa;
   --color-highlight: #818cf8;
   --color-cyan:      #67e8f9;
@@ -66,6 +100,7 @@
   --border-accent:   #6366f1;
   --color-brand:     #6366f1;
   --color-brand-hover: #4f46e5;
+  --color-glow:      rgba(99, 102, 241, 0.4);
   --color-accent:    #38bdf8;
   --color-highlight: #a855f7;
   --color-cyan:      #38bdf8;
@@ -100,6 +135,7 @@
   --border-accent:   #10b981;
   --color-brand:     #10b981;
   --color-brand-hover: #059669;
+  --color-glow:      rgba(16, 185, 129, 0.4);
   --color-accent:    #2dd4bf;
   --color-highlight: #06b6d4;
   --color-cyan:      #22d3ee;
@@ -134,6 +170,7 @@
   --border-accent:   #f59e0b;
   --color-brand:     #f59e0b;
   --color-brand-hover: #d97706;
+  --color-glow:      rgba(245, 158, 11, 0.4);
   --color-accent:    #fbbf24;
   --color-highlight: #f97316;
   --color-cyan:      #38bdf8;
@@ -150,6 +187,10 @@
   --shadow-card:     0 1px 3px rgba(0,0,0,0.8), 0 4px 16px rgba(0,0,0,0.6);
   --shadow-card-hover: 0 0 0 1px #f59e0b, 0 8px 24px rgba(245,158,11,0.3);
   --bevel-highlight: inset 0 1px 0 rgba(245,158,11,0.15);
+  --surface-bevel:   inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  --border-subtle:   rgba(255, 255, 255, 0.07);
+  --border-card-hover: rgba(255, 255, 255, 0.16);
+  --surface-glass:   linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
 }
 
 /* ── Sovereign Manifesto — Light Editorial Swiss ──────────────────────────── */
@@ -168,6 +209,7 @@
   --border-accent:   #d42b2b;
   --color-brand:     #d42b2b;
   --color-brand-hover: #b91c1c;
+  --color-glow:      rgba(212, 43, 43, 0.3);
   --color-accent:    #1a3dc4;
   --color-highlight: #f5c518;
   --color-cyan:      #1a3dc4;
@@ -184,6 +226,10 @@
   --shadow-card:     3px 3px 0 #0a0a0a;
   --shadow-card-hover: 5px 5px 0 #d42b2b;
   --bevel-highlight: none;
+  --surface-bevel:   inset 0 1px 0 rgba(0, 0, 0, 0.05);
+  --border-subtle:   rgba(10, 10, 10, 0.12);
+  --border-card-hover: rgba(10, 10, 10, 0.35);
+  --surface-glass:   linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0) 100%);
 }
 
 /* ── Sovereign Light — High Contrast Clean ────────────────────────────────── */
@@ -202,6 +248,7 @@
   --border-accent:   #2563eb;
   --color-brand:     #2563eb;
   --color-brand-hover: #1d4ed8;
+  --color-glow:      rgba(37, 99, 235, 0.3);
   --color-accent:    #0ea5e9;
   --color-highlight: #7c3aed;
   --color-cyan:      #0891b2;
@@ -218,4 +265,8 @@
   --shadow-card:     0 1px 3px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.06);
   --shadow-card-hover: 0 0 0 2px #2563eb, 0 8px 24px rgba(37,99,235,0.15);
   --bevel-highlight: inset 0 1px 0 rgba(255,255,255,0.9);
+  --surface-bevel:   inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --border-subtle:   rgba(0, 0, 0, 0.09);
+  --border-card-hover: rgba(37, 99, 235, 0.4);
+  --surface-glass:   linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, rgba(0, 0, 0, 0) 100%);
 }

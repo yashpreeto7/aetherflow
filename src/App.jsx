@@ -34,6 +34,8 @@ export default function App() {
   const pauseOnFullscreen = useStore(s => s.pauseOnFullscreen)
   const authUser         = useStore(s => s.authUser)
   const isAuthenticated  = useStore(s => s.isAuthenticated)
+  const glowAmbience     = useStore(s => s.glowAmbience) || 'balanced'
+  const reducedMotion    = useStore(s => s.reducedMotion) || false
   const setAuthUser      = useStore(s => s.setAuthUser)
   const clearAuth        = useStore(s => s.clearAuth)
   const setShowAuthModal = useStore(s => s.setShowAuthModal)
@@ -41,6 +43,17 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = React.useState(false)
   const [signingOut, setSigningOut] = React.useState(false)
   const userMenuRef = React.useRef(null)
+
+  // Sync ambience & reduced motion attributes to root document
+  React.useEffect(() => {
+    const mult = glowAmbience === 'vivid' ? '1.5' : glowAmbience === 'balanced' ? '1' : glowAmbience === 'subtle' ? '0.4' : '0'
+    document.documentElement.style.setProperty('--glow-multiplier', mult)
+    if (reducedMotion) {
+      document.documentElement.classList.add('reduced-motion')
+    } else {
+      document.documentElement.classList.remove('reduced-motion')
+    }
+  }, [glowAmbience, reducedMotion])
 
   // Close user menu on outside click
   React.useEffect(() => {
@@ -236,9 +249,9 @@ export default function App() {
         {/* Sidebar */}
         <aside style={{
           background: 'var(--bg-sidebar)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRight: '1px solid var(--border-main)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          borderRight: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
           padding: '12px 8px',
@@ -252,7 +265,7 @@ export default function App() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
+              gap: 11,
               padding: '8px 8px 20px',
               overflow: 'hidden',
               cursor: 'pointer',
@@ -261,22 +274,27 @@ export default function App() {
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <div style={{
-              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+              width: 32, height: 32, borderRadius: 9, flexShrink: 0,
               background: 'var(--color-brand)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px color-mix(in srgb, var(--color-brand) 50%, transparent)',
+              boxShadow: '0 0 16px var(--color-glow), var(--surface-bevel)',
             }}>
               <Zap size={16} color="#fff" />
             </div>
             {!sidebarCollapsed && (
-              <span className="font-display font-bold text-lg" style={{ letterSpacing: '-0.5px' }}>
-                AetherFlow
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span className="font-display font-bold text-lg" style={{ letterSpacing: '-0.5px', lineHeight: 1.2 }}>
+                  AetherFlow
+                </span>
+                <span style={{ fontSize: 9.5, color: 'var(--text-subtle)', fontFamily: 'var(--font-mono)', letterSpacing: '0.05em' }}>
+                  v1.0.7 SOVEREIGN
+                </span>
+              </div>
             )}
           </div>
 
           {/* Nav */}
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             {NAV.map(({ to, icon: Icon, label }) => (
               <NavLink key={to} to={to} end={to === '/'} style={{ textDecoration: 'none' }}>
                 {({ isActive }) => (
@@ -288,12 +306,14 @@ export default function App() {
                     borderRadius: 8,
                     color: isActive ? 'var(--color-brand)' : 'var(--text-muted)',
                     background: isActive ? 'color-mix(in srgb, var(--color-brand) 12%, transparent)' : 'transparent',
+                    border: isActive ? '1px solid color-mix(in srgb, var(--color-brand) 28%, transparent)' : '1px solid transparent',
+                    boxShadow: isActive ? '0 0 14px var(--color-glow), var(--bevel-highlight)' : 'none',
                     transition: 'all 0.15s ease',
                     cursor: 'pointer',
                     overflow: 'hidden',
                     whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'var(--text-main)' }}}
+                  onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-main) 6%, transparent)'; e.currentTarget.style.color = 'var(--text-main)' }}}
                   onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}}
                   >
                     <Icon size={17} style={{ flexShrink: 0 }} />

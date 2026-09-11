@@ -3,11 +3,14 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 16:58 IST — Release v1.0.7 Published:
-1. Made 'Hover' the default thumbnail mode with automatic Zustand state migration from older versions.
-2. Implemented Viewport Lazy Loading and Off-Screen Unloading in `WallpaperThumbnail` via `IntersectionObserver`: strictly limits active hardware decoders and GPU memory to only the ~4 cards visible in viewport.
-3. Fixed Home Top Preview (Hero banner) when applying wallpapers from Library or Marketplace: added `key={activeWallpaper.id || activeWallpaper.name}` to `<WallpaperPlayer>`, synchronized `activeWallpaper` in `applyWallpaperToDesktop` and `handleApply`, and removed `crossOrigin = 'anonymous'` on YouTube thumbnails.
-4. Successfully tagged `v1.0.7`, pushed to GitHub, and published GitHub Release with NSIS installer (`AetherFlow-Setup.exe`), portable bundle, and standalone `AetherFlow.exe`.
+2026-09-11 18:05 IST — Theme Consolidation, Custom Theme Studio, Local Liked Wallpapers & Ambience Dynamics:
+1. Removed theme selector from `Home.jsx` and `Library.jsx`; consolidated all theme customization exclusively inside `Settings.jsx` under the `Appearance` tab.
+2. Built a full-featured **Custom Theme Studio** in `Settings.jsx` with real-time live preview, 5 quick starter presets (`Cyber Neon`, `Emerald Matrix`, `Solar Flare`, `Crimson Blood`, `Nordic Blue`), 7 color pickers, and persistent "Save & Apply" to `useStore` with RGB tuple generation and localStorage sync.
+3. Created a Saved Custom Themes gallery with active badges, multi-color palette swatches, and 1-click delete with fallback to default Sovereign Onyx.
+4. Added a local **Liked Wallpapers** filter in both `Home.jsx` and `Library.jsx` with real-time counters and heart/favorite action buttons on all wallpaper cards.
+5. Replaced ineffective glassmorphism/material surface sliders with **Visual Ambience & Dynamics** (Accent Glow Ambience segmented control: `Vivid`, `Balanced`, `Subtle`, `Off` and Reduced Motion / Snappy UI toggle).
+6. Eliminated hardcoded colors across CSS files and components (using `color-mix(in srgb, var(--text-main) 6%, transparent)` and CSS variables) for contrast adaptivity across both dark and light modes.
+7. Fixed custom theme `:root` CSS variable fallback formulas ensuring complete background and surface opacity.
 
 
 ---
@@ -189,6 +192,8 @@ npm run tauri:dev
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Audio & Multi-Monitor Fixes: Removed duplicate top volume slider (retained single bottom slider); fixed wallpaper starting at 100% volume (prioritized adheredAudio, passed targetAudio in handleApply, added --no-config to MPV); fixed slider dragging cursor blocked (added user-select: none, touch-action: none, draggable={false}, and 35ms IPC debounce); fixed multi-monitor YouTube audio echo by permanently locking secondary displays to muted so audio plays only from primary display |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Fixed YouTube Audio Fully Muted Across All Screens: eliminated broken myLabel !== 'wallpaper_0' in wallpaper.jsx; added get_primary_monitor_label in main.rs; injected explicit isPrimary/isSecondary into win_config; updated web-stream.js, AddWebStreamModal, and volume slider auto-unmute on vol > 0; recompiled release binary and deployed fresh AetherFlow.exe |
 | 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Release v1.0.7: Set Hover as default thumbnail mode with Zustand migration; implemented Viewport Lazy Loading and off-screen unloading via IntersectionObserver (bounded hardware decoders & RAM); synchronized Home top preview (Hero banner) on Library/Marketplace apply with React key prop remounting; bumped version to 1.0.7 and published GitHub Release |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Comprehensive Executive UI/UX Transformation: Upgraded design tokens in `themes.css` and `index.css` with bevel highlights (`--surface-bevel`), crisp borders (`--border-subtle`), and glowing ambient shadows (`--color-glow`); overhauled Settings into categorized tabs (Performance, Appearance, Thumbnails, Taskbar, Audio, System) with 5-color swatch theme cards and taskbar visual option cards; elevated Home hero preview into a telemetry cockpit HUD with glowing live status chips, active engine parameter tuning bar, segmented pill category filters, and preview mode controls; polished App.jsx sidebar with glowing active indicators and Sovereign version badge; enhanced StatusBar with 38px height, telemetry RAM compaction chip, and pulsing live indicator; verified zero logic regressions, clean build in ~540ms, and verified visually with Playwright screenshots |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Theme Consolidation & Studio, Local Liked Filter, & Ambience Settings: Removed theme switcher from Home & Library and consolidated strictly into Settings Appearance tab; built full Custom Theme Studio with live preview, 5 starter presets, 7 color pickers, and persistent Save & Apply; created saved custom themes gallery with color swatches & 1-click delete; added local Liked Wallpapers filter & heart buttons across Home and Library; replaced glassmorphism sliders with Accent Glow Ambience (Vivid/Balanced/Subtle/Off) & Reduced Motion toggle; removed hardcoded colors across CSS/components with contrast-safe color-mix and CSS variables; fixed custom theme :root background fallback. |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

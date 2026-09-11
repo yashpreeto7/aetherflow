@@ -4,13 +4,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   Play, Pause, Zap, MonitorPlay, Square, Monitor, Plus, Search,
   Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe, Eye,
-  Volume2, VolumeX
+  Volume2, VolumeX, SlidersHorizontal, Heart
 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
-import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
+import { WALLPAPER_LIST } from '../engines/index.js'
 import WallpaperPlayer from '../components/WallpaperPlayer/index.jsx'
 import WallpaperThumbnail from '../components/WallpaperThumbnail/index.jsx'
-import ThemeEditor from '../components/ThemeEditor/index.jsx'
 import { AddWallpaperModal, RenameWallpaperModal, AddWebStreamModal } from '../components/Modals/WallpaperModals.jsx'
 import {
   applyWallpaperToDesktop,
@@ -399,10 +398,9 @@ function HomePreviewModal({ wallpaper, onClose, onApply, isLive }) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const [showThemeEditor, setShowThemeEditor] = useState(false)
   const [applying, setApplying]               = useState(false)
   const [searchQuery, setSearchQuery]         = useState('')
-  const [filterCategory, setFilterCategory]   = useState('all') // 'all' | 'builtin' | 'custom'
+  const [filterCategory, setFilterCategory]   = useState('all') // 'all' | 'liked' | 'builtin' | 'custom' | 'stream'
   const [hoveredId, setHoveredId]             = useState(null)
 
   // Modals state
@@ -416,9 +414,8 @@ export default function HomePage() {
   const setActiveWallpaper    = useStore(s => s.setActiveWallpaper)
   const currentDesktopWallpaper = useStore(s => s.currentDesktopWallpaper)
   const isWallpaperRunning    = useStore(s => s.isWallpaperRunning)
-  const activeTheme           = useStore(s => s.activeTheme)
-  const setActiveTheme        = useStore(s => s.setActiveTheme)
-  const customThemes          = useStore(s => s.themes)
+  const likedWallpaperIds     = useStore(s => s.likedWallpaperIds) || []
+  const toggleLikeWallpaper   = useStore(s => s.toggleLikeWallpaper)
   const installed             = useStore(s => s.installed)
   const uninstallItem         = useStore(s => s.uninstallItem)
   const homeWallpaperIds      = useStore(s => s.homeWallpaperIds) || []
@@ -439,6 +436,7 @@ export default function HomePage() {
   const setThumbnailMode      = useStore(s => s.setThumbnailMode)
   const wallpaperAudioSettings = useStore(s => s.wallpaperAudioSettings) || {}
   const setWallpaperAudio     = useStore(s => s.setWallpaperAudio)
+  const fpsCap                = useStore(s => s.fpsCap) || 60
 
   const screenArrangement     = useStore(s => s.screenArrangement)
   const monitorWallpapers     = useStore(s => s.monitorWallpapers)
@@ -611,6 +609,7 @@ export default function HomePage() {
 
   const filteredWallpapers = useMemo(() => {
     return homeWallpapers.filter(w => {
+      if (filterCategory === 'liked' && !(likedWallpaperIds || []).includes(w.id)) return false
       if (filterCategory === 'builtin' && w.isCustom) return false
       if (filterCategory === 'custom' && (!w.isCustom || w.config?.streamUrl)) return false
       if (filterCategory === 'stream' && !w.config?.streamUrl) return false
@@ -622,7 +621,7 @@ export default function HomePage() {
       }
       return true
     })
-  }, [homeWallpapers, filterCategory, searchQuery])
+  }, [homeWallpapers, filterCategory, searchQuery, likedWallpaperIds])
 
   // ── Select a wallpaper (for previewing & tuning sliders) ───────────────────
   function selectWallpaper(wallpaper) {
@@ -809,7 +808,18 @@ export default function HomePage() {
 
       {/* Hero Preview Panel for Selected / Active Wallpaper */}
       {activeWallpaper ? (
-        <div className="card" style={{ marginBottom: 28, overflow: 'hidden', position: 'relative', height: 180 }}>
+        <div
+          className="card"
+          style={{
+            marginBottom: 24,
+            overflow: 'hidden',
+            position: 'relative',
+            height: 195,
+            borderRadius: 14,
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-card), var(--surface-bevel)',
+          }}
+        >
           {!isTopPreviewPaused ? (
             <WallpaperPlayer
               key={activeWallpaper.id || activeWallpaper.name}
@@ -839,40 +849,57 @@ export default function HomePage() {
                   top: 14,
                   right: 14,
                   background: 'rgba(10, 14, 24, 0.85)',
-                  backdropFilter: 'blur(8px)',
-                  border: '1px solid var(--border-main)',
-                  borderRadius: 6,
-                  padding: '3px 9px',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 8,
+                  padding: '4px 10px',
                   fontSize: 10,
                   fontWeight: 700,
-                  letterSpacing: '0.4px',
+                  letterSpacing: '0.05em',
                   color: 'var(--text-muted)',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 5,
+                  gap: 6,
                   zIndex: 4,
+                  boxShadow: 'var(--surface-bevel)',
                 }}
               >
                 <Pause size={10} />
-                <span>PREVIEW PAUSED (ZERO GPU/RAM)</span>
+                <span>PREVIEW PAUSED (ZERO RAM / GPU)</span>
               </div>
             </div>
           )}
           <div style={{
             position: 'absolute', inset: 0,
-            background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 60%, transparent 100%)',
-            display: 'flex', alignItems: 'flex-end', padding: 18,
+            background: 'linear-gradient(to top, rgba(7, 10, 18, 0.94) 0%, rgba(7, 10, 18, 0.45) 55%, rgba(0, 0, 0, 0.1) 100%)',
+            display: 'flex', alignItems: 'flex-end', padding: '20px 22px',
             zIndex: 10, pointerEvents: 'auto',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end', gap: 14 }}>
               <div>
                 <div className="flex items-center gap-2" style={{ marginBottom: 6 }}>
                   {selectedIsLive ? (
-                    <div className="badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)', gap: 5 }}>
-                      <div className="status-dot-live" /> LIVE ON {activeScreensForSelected.join(', ').toUpperCase()}
+                    <div
+                      className="badge"
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.18)',
+                        color: '#34d399',
+                        border: '1px solid rgba(16, 185, 129, 0.45)',
+                        boxShadow: '0 0 14px rgba(16, 185, 129, 0.25)',
+                        gap: 6,
+                        padding: '4px 10px',
+                        fontWeight: 600,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      <div className="status-dot-live" />
+                      <span>LIVE · {activeScreensForSelected.join(', ').toUpperCase()}</span>
                     </div>
                   ) : (
-                    <div className="badge">SELECTED PREVIEW</div>
+                    <div className="badge" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', letterSpacing: '0.04em', fontWeight: 600 }}>
+                      SELECTED PREVIEW
+                    </div>
                   )}
                   {activeWallpaper.config?.streamUrl ? (
                     <div className="badge badge-brand" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
@@ -883,10 +910,10 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="font-bold text-lg flex items-center gap-2">
-                  <span>{(customNames || {})[activeWallpaper?.id] || activeWallpaper?.name}</span>
+                  <span style={{ letterSpacing: '-0.2px' }}>{(customNames || {})[activeWallpaper?.id] || activeWallpaper?.name}</span>
                   <button
                     className="btn-icon"
-                    style={{ padding: 2 }}
+                    style={{ padding: 3 }}
                     title="Rename Wallpaper"
                     onClick={() => setRenameModal({ isOpen: true, id: activeWallpaper.id, currentName: activeWallpaper.name })}
                   >
@@ -901,14 +928,16 @@ export default function HomePage() {
                   className="btn btn-ghost"
                   style={{
                     height: 36,
-                    padding: '4px 10px',
+                    padding: '4px 12px',
                     fontSize: 11.5,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 5,
-                    background: isTopPreviewPaused ? 'rgba(59, 130, 246, 0.2)' : 'rgba(10, 14, 22, 0.75)',
-                    border: '1px solid var(--border-main)',
+                    gap: 6,
+                    background: isTopPreviewPaused ? 'rgba(59, 130, 246, 0.18)' : 'rgba(10, 14, 22, 0.8)',
+                    border: '1px solid var(--border-subtle)',
                     color: isTopPreviewPaused ? 'var(--color-brand)' : 'var(--text-muted)',
+                    boxShadow: 'var(--surface-bevel)',
+                    borderRadius: 8,
                   }}
                   onClick={() => {
                     setIsTopPreviewPaused(p => !p)
@@ -922,17 +951,34 @@ export default function HomePage() {
                 {isWallpaperRunning && (
                   <button
                     className="btn"
-                    style={{ background: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.3)' }}
+                    style={{
+                      background: 'rgba(239,68,68,0.18)',
+                      color: '#fca5a5',
+                      border: '1px solid rgba(239,68,68,0.35)',
+                      height: 36,
+                      padding: '0 12px',
+                      borderRadius: 8,
+                    }}
                     onClick={handleStop}
                   >
-                    <Square size={13} fill="#fca5a5" style={{ marginRight: 6 }} /> Stop
+                    <Square size={12} fill="#fca5a5" style={{ marginRight: 6 }} /> Stop
                   </button>
                 )}
                 <button
                   className="btn btn-primary"
                   onClick={() => handleApply()}
                   disabled={applying}
-                  style={{ opacity: applying ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6, minWidth: 140, justifyContent: 'center' }}
+                  style={{
+                    opacity: applying ? 0.7 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    minWidth: 145,
+                    height: 36,
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    boxShadow: '0 0 16px var(--color-glow)',
+                  }}
                 >
                   <MonitorPlay size={15} />
                   {applying ? 'Applying…' : selectedIsLive ? 'Re-apply' : 'Apply to Desktop'}
@@ -958,9 +1004,31 @@ export default function HomePage() {
 
       {/* Property Controls (Opacity / Brightness / Speed or Fit) */}
       {activeWallpaper && (
-        <div className="card p-4" style={{ marginBottom: 28, userSelect: 'none', WebkitUserSelect: 'none' }}>
+        <div
+          className="card p-4"
+          style={{
+            marginBottom: 24,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-card), var(--surface-bevel)',
+            borderRadius: 14,
+          }}
+        >
+          <div className="flex items-center justify-between" style={{ marginBottom: 18, paddingBottom: 12, borderBottom: '1px solid var(--border-subtle)' }}>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal size={14} style={{ color: 'var(--color-brand)' }} />
+              <span className="font-semibold text-xs uppercase tracking-wider text-muted">Active Engine Parameters</span>
+            </div>
+            <div className="telemetry-chip">
+              <span style={{ color: 'var(--color-brand)', fontWeight: 600 }}>{activeWallpaper.engine || activeWallpaper.id || 'native'}</span>
+              <span style={{ opacity: 0.4 }}>•</span>
+              <span>{fpsCap} FPS CAP</span>
+            </div>
+          </div>
+
           {screenArrangement === 'per-screen' && monitors.length > 1 && (
-            <div style={{ marginBottom: 20, padding: 14, background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border-main)' }}>
+            <div style={{ marginBottom: 20, padding: 14, background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border-subtle)', boxShadow: 'var(--surface-bevel)' }}>
               <div className="text-xs font-semibold uppercase tracking-wider text-muted" style={{ marginBottom: 10 }}>Target Monitor</div>
               <div className="flex gap-2">
                 {monitors.map((m, i) => {
@@ -971,7 +1039,17 @@ export default function HomePage() {
                       key={m.label}
                       className={`btn ${isSelected ? 'btn-primary' : 'btn-ghost'}`}
                       onClick={() => handleSelectMonitor(m.label)}
-                      style={{ flex: 1, padding: 8, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 5,
+                        alignItems: 'center',
+                        borderRadius: 8,
+                        border: isSelected ? '1px solid var(--color-brand)' : '1px solid var(--border-subtle)',
+                        boxShadow: isSelected ? '0 0 12px var(--color-glow)' : 'none',
+                      }}
                     >
                       <Monitor size={16} />
                       <span style={{ fontSize: 11, fontWeight: 600 }}>Screen {i + 1}</span>
@@ -1168,40 +1246,45 @@ export default function HomePage() {
         </div>
 
         {/* Category Filters & Thumbnail Mode Selector */}
-        <div className="flex items-center justify-between gap-2" style={{ flexWrap: 'wrap' }}>
-          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+        <div className="flex items-center justify-between gap-3" style={{ flexWrap: 'wrap' }}>
+          <div className="flex items-center gap-1.5" style={{ flexWrap: 'wrap', background: 'color-mix(in srgb, var(--text-main) 4%, transparent)', padding: 3, borderRadius: 10, border: '1px solid var(--border-subtle)' }}>
             {[
-              { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
-              { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
-              { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
-              { id: 'stream', label: `Web Streams (${homeWallpapers.filter(w => w.config?.streamUrl).length})` },
+              { id: 'all', label: 'All Favorites', count: homeWallpapers.length },
+              { id: 'liked', label: 'Liked', count: homeWallpapers.filter(w => (likedWallpaperIds || []).includes(w.id)).length, icon: Heart },
+              { id: 'builtin', label: 'Built-in Canvas', count: homeWallpapers.filter(w => !w.isCustom).length },
+              { id: 'custom', label: 'Custom Media', count: homeWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length },
+              { id: 'stream', label: 'Web Streams', count: homeWallpapers.filter(w => w.config?.streamUrl).length },
             ].map(cat => (
               <button
                 key={cat.id}
-                className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
-                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
+                style={{
+                  cursor: 'pointer',
+                  padding: '5px 12px',
+                  fontSize: 11.5,
+                  fontWeight: filterCategory === cat.id ? 600 : 500,
+                  borderRadius: 7,
+                  background: filterCategory === cat.id ? 'var(--bg-card-hover)' : 'transparent',
+                  color: filterCategory === cat.id ? (cat.id === 'liked' ? 'var(--color-rose)' : 'var(--color-brand)') : 'var(--text-muted)',
+                  border: filterCategory === cat.id ? (cat.id === 'liked' ? '1px solid var(--color-rose)' : '1px solid var(--color-brand)') : '1px solid transparent',
+                  boxShadow: filterCategory === cat.id ? `0 0 12px ${cat.id === 'liked' ? 'rgba(244,63,94,0.3)' : 'var(--color-glow)'}` : 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  transition: 'all 0.15s ease',
+                }}
                 onClick={() => setFilterCategory(cat.id)}
               >
-                {cat.label}
+                {cat.icon && <cat.icon size={12} fill={filterCategory === cat.id ? 'currentColor' : 'none'} />}
+                <span>{cat.label}</span>
+                <span style={{ opacity: 0.65, fontSize: 10, fontFamily: 'var(--font-mono)' }}>{cat.count}</span>
               </button>
             ))}
           </div>
 
           {/* Thumbnail / Preview Mode Selector */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 3,
-              background: 'rgba(255, 255, 255, 0.04)',
-              border: '1px solid var(--border-main)',
-              borderRadius: 8,
-              padding: '3px 4px',
-            }}
-            title="Card Preview Mode: On (Always), Hover (On Mouse Hover), Off (Minimalist vector badges)"
-          >
-            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 4, paddingRight: 3, fontWeight: 500 }}>
-              Thumbnails:
+          <div className="segmented-control" title="Card Preview Mode: On (Always), Hover (On Mouse Hover), Off (Minimalist vector badges)">
+            <span style={{ fontSize: 10.5, color: 'var(--text-subtle)', paddingLeft: 6, paddingRight: 4, fontWeight: 600, letterSpacing: '0.02em' }}>
+              PREVIEWS:
             </span>
             {[
               { id: 'always', label: 'On', title: 'Always Show Thumbnails' },
@@ -1210,14 +1293,7 @@ export default function HomePage() {
             ].map(m => (
               <button
                 key={m.id}
-                className={`btn ${thumbnailMode === m.id ? 'btn-primary' : 'btn-ghost'}`}
-                style={{
-                  padding: '2px 8px',
-                  fontSize: 10.5,
-                  height: 22,
-                  borderRadius: 5,
-                  fontWeight: thumbnailMode === m.id ? 700 : 500,
-                }}
+                className={`segmented-item ${thumbnailMode === m.id ? 'active' : ''}`}
                 onClick={() => setThumbnailMode(m.id)}
                 title={m.title}
               >
@@ -1261,6 +1337,8 @@ export default function HomePage() {
             const isVideo       = typeInfo.type === 'video'
             const videoPath     = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath
             const videoSrc      = videoPath ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath)) : ''
+
+            const isLiked       = (likedWallpaperIds || []).includes(wallpaper.id)
 
             return (
               <div
@@ -1309,7 +1387,7 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* Top-Right: Live Status Badge & Unpin Button */}
+                  {/* Top-Right: Live Status Badge, Like Button & Unpin Button */}
                   <div className="mp-badge-top-right flex items-center gap-1">
                     {isLive && (
                       <div
@@ -1326,6 +1404,27 @@ export default function HomePage() {
                         <span>{activeScreens[0] === 'All Screens' ? 'LIVE' : activeScreens.join(', ')}</span>
                       </div>
                     )}
+
+                    {/* Heart / Like Button */}
+                    <button
+                      className="btn-icon"
+                      style={{
+                        background: isLiked ? 'color-mix(in srgb, var(--color-rose) 30%, rgba(0,0,0,0.7))' : 'rgba(0,0,0,0.65)',
+                        color: isLiked ? 'var(--color-rose)' : 'rgba(255,255,255,0.85)',
+                        padding: 5,
+                        borderRadius: 6,
+                        backdropFilter: 'blur(8px)',
+                        border: isLiked ? '1px solid var(--color-rose)' : '1px solid rgba(255,255,255,0.14)',
+                        transition: 'all 0.15s ease',
+                      }}
+                      title={isLiked ? 'Unlike wallpaper' : 'Like wallpaper'}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleLikeWallpaper(wallpaper.id)
+                      }}
+                    >
+                      <Heart size={12} fill={isLiked ? 'currentColor' : 'none'} />
+                    </button>
 
                     <button
                       className="btn-icon"
@@ -1502,77 +1601,6 @@ export default function HomePage() {
           })}
         </div>
       )}
-
-      {/* Themes Section */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 className="font-semibold text-base">Themes</h2>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10, marginBottom: 24 }}>
-        {/* Create Theme Button */}
-        <div
-          className="card card-interactive"
-          style={{ padding: '12px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed' }}
-          onClick={() => setShowThemeEditor(true)}
-        >
-          <div className="text-xs font-medium text-brand">+ Create Theme</div>
-        </div>
-
-        {/* Custom Themes */}
-        {Object.entries(customThemes || {}).map(([id, tokens]) => {
-          const isActive = activeTheme === id
-          const meta = tokens._meta || { name: 'Custom Theme', bg: '#000', accent: '#fff' }
-          return (
-            <div
-              key={id}
-              className={`card card-interactive ${isActive ? 'card-active' : ''}`}
-              style={{ padding: '12px 14px', cursor: 'pointer' }}
-              onClick={() => setActiveTheme(id)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                  background: meta.bg.startsWith('#') ? meta.bg : `rgb(${meta.bg})`,
-                  border: `2px solid ${meta.accent}`,
-                  boxShadow: `0 0 8px ${meta.accent}66`,
-                }} />
-                <div style={{ overflow: 'hidden' }}>
-                  <div className="text-xs font-medium truncate">{meta.name}</div>
-                  <div className="text-xs text-muted">Custom</div>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-
-        {/* Built-in Themes */}
-        {BUILTIN_THEMES.map(theme => {
-          const isActive = activeTheme === theme.id
-          return (
-            <div
-              key={theme.id}
-              className={`card card-interactive ${isActive ? 'card-active' : ''}`}
-              style={{ padding: '12px 14px', cursor: 'pointer' }}
-              onClick={() => setActiveTheme(theme.id)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                  background: theme.bg,
-                  border: `2px solid ${theme.accent}`,
-                  boxShadow: `0 0 8px ${theme.accent}66`,
-                }} />
-                <div>
-                  <div className="text-xs font-medium truncate">{theme.name.replace('Sovereign ', '')}</div>
-                  <div className="text-xs text-muted">{theme.category}</div>
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {showThemeEditor && <ThemeEditor onClose={() => setShowThemeEditor(false)} />}
 
       {/* Modals */}
       <AddWallpaperModal

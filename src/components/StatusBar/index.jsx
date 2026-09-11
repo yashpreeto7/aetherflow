@@ -78,34 +78,59 @@ export default function StatusBar() {
   return (
     <div style={{
       gridColumn: '2 / 3',
-      height: 36,
+      height: 38,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '0 16px',
+      padding: '0 18px',
       background: 'var(--bg-sidebar)',
-      backdropFilter: 'blur(20px)',
-      WebkitBackdropFilter: 'blur(20px)',
-      borderTop: '1px solid var(--border-main)',
+      backdropFilter: 'blur(24px)',
+      WebkitBackdropFilter: 'blur(24px)',
+      borderTop: '1px solid var(--border-subtle)',
+      boxShadow: 'var(--bevel-highlight)',
       fontSize: 11,
       color: 'var(--text-muted)',
       userSelect: 'none',
       zIndex: 10,
     }}>
       {/* Left */}
-      <div className="flex items-center gap-4">
-        <button className="btn-icon" onClick={toggleSidebar} style={{ padding: 4 }}>
+      <div className="flex items-center gap-3">
+        <button className="btn-icon" onClick={toggleSidebar} style={{ padding: 4, borderRadius: 6 }}>
           <ChevronLeft size={13} style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
         </button>
 
-        <div className="flex items-center gap-2">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '3px 9px',
+            borderRadius: 6,
+            background: 'color-mix(in srgb, var(--text-main) 4%, transparent)',
+            border: '1px solid var(--border-subtle)',
+          }}
+          title={`Active Wallpaper: ${activeWallpaper?.name ?? 'None'}`}
+        >
           <Zap size={11} style={{ color: 'var(--color-brand)' }} />
-          <span>{activeWallpaper?.name ?? 'No wallpaper selected'}</span>
+          <span style={{ fontWeight: 500, color: 'var(--text-main)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeWallpaper?.name ?? 'No wallpaper selected'}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '3px 9px',
+            borderRadius: 6,
+            background: 'color-mix(in srgb, var(--text-main) 4%, transparent)',
+            border: '1px solid var(--border-subtle)',
+          }}
+          title={`Current Theme: ${themeLabel}`}
+        >
           <Palette size={11} style={{ color: 'var(--color-accent)' }} />
-          <span style={{ textTransform: 'capitalize' }}>{themeLabel}</span>
+          <span style={{ textTransform: 'capitalize', fontWeight: 500, color: 'var(--text-muted)' }}>{themeLabel}</span>
         </div>
       </div>
 
@@ -113,8 +138,16 @@ export default function StatusBar() {
       <div className="flex items-center gap-3">
         {isWallpaperRunning ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#34d399', fontWeight: 600 }}>
-              <span className="status-dot-live" />
+            <span style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              color: 'var(--color-emerald)',
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+            }}>
+              <span className="status-dot-live" style={{ boxShadow: '0 0 10px rgba(16, 185, 129, 0.6)' }} />
               Live on Desktop
             </span>
             <button
@@ -128,16 +161,17 @@ export default function StatusBar() {
                 height: 24,
                 fontSize: 11,
                 fontWeight: 600,
-                background: 'rgba(239, 68, 68, 0.25)',
-                border: '1px solid rgba(239, 68, 68, 0.5)',
-                color: '#fca5a5',
+                background: 'color-mix(in srgb, var(--color-rose) 14%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--color-rose) 40%, transparent)',
+                color: 'var(--color-rose)',
                 borderRadius: 6,
                 cursor: 'pointer',
+                boxShadow: 'var(--surface-bevel)',
                 transition: 'all 0.15s ease',
               }}
               title="Stop wallpaper running on desktop"
             >
-              <Square size={10} fill="#fca5a5" />
+              <Square size={10} fill="currentColor" />
               {stopping ? 'Stopping…' : 'Stop Wallpaper'}
             </button>
           </div>
@@ -150,9 +184,9 @@ export default function StatusBar() {
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {audioReactive && (
-          <div className="flex items-center gap-2" style={{ color: 'var(--color-emerald)' }}>
+          <div className="flex items-center gap-2" style={{ color: 'var(--color-emerald)', fontSize: 11 }}>
             <Mic size={11} />
             <span>Audio reactive</span>
           </div>
@@ -165,14 +199,15 @@ export default function StatusBar() {
             title={`AetherFlow Total Suite Memory: ${memUsage.total_mb} MB\n• Main App: ${memUsage.host_mb} MB\n• UI & Graphics (WebView2): ${memUsage.webview_mb} MB\n• Video Player (MPV): ${memUsage.mpv_mb} MB\n\nClick to Trim / Compact Memory`}
             style={{
               cursor: 'pointer',
-              padding: '2px 8px',
+              padding: '3px 9px',
               borderRadius: 6,
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-main)',
-              fontSize: 10,
+              background: 'color-mix(in srgb, var(--text-main) 4%, transparent)',
+              border: '1px solid var(--border-subtle)',
+              boxShadow: 'var(--surface-bevel)',
+              fontSize: 10.5,
               fontWeight: 600,
               color: memUsage.total_mb > 350 ? 'var(--color-amber)' : 'var(--text-main)',
-              transition: 'all 0.2s ease',
+              transition: 'all 0.18s ease',
             }}
           >
             <Activity size={10} style={{ color: 'var(--color-brand)' }} />
@@ -180,7 +215,7 @@ export default function StatusBar() {
           </div>
         )}
 
-        <button className="btn-icon" onClick={() => navigate('/settings')} style={{ padding: 4 }}>
+        <button className="btn-icon" onClick={() => navigate('/settings')} style={{ padding: 4, borderRadius: 6 }} title="AetherFlow Settings">
           <Settings size={13} />
         </button>
       </div>
