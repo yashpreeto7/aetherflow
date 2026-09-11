@@ -127,26 +127,52 @@ html, body, #root {
 /* ── Slider ────────────────────────────────────────────────────────────────── */
 .slider {
   width: 100%;
-  height: 4px;
+  height: 6px;
   appearance: none;
+  -webkit-appearance: none;
   background: var(--border-main);
   border-radius: 999px;
   outline: none;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 .slider::-webkit-slider-thumb {
   appearance: none;
-  width: 14px;
-  height: 14px;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--color-brand);
   box-shadow: 0 0 8px color-mix(in srgb, var(--color-brand) 60%, transparent);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .slider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
   box-shadow: 0 0 14px color-mix(in srgb, var(--color-brand) 80%, transparent);
+}
+.slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.28);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--color-brand) 90%, transparent);
+}
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-brand);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-brand) 60%, transparent);
+  cursor: grab;
+  user-select: none;
+}
+.slider:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.28);
 }
 
 /* ── Toggle ────────────────────────────────────────────────────────────────── */

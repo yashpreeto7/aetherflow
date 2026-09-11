@@ -362,7 +362,8 @@ pub fn spawn_mpv_wallpaper(
 
     // Lively-style standalone borderless window flags:
     // MPV initializes its own Direct3D 11 swapchain without cross-process --wid restrictions.
-    cmd.arg("--no-border")
+    cmd.arg("--no-config")
+        .arg("--no-border")
         .arg("--no-osc")
         .arg("--no-osd-bar")
         .arg("--osd-level=0")

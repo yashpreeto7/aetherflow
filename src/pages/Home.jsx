@@ -446,6 +446,7 @@ export default function HomePage() {
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
   const [isTopPreviewPaused, setIsTopPreviewPaused] = useState(false)
+  const volumeIpcTimerRef = useRef(null)
 
   useEffect(() => {
     let unlistenMonitors
@@ -637,11 +638,15 @@ export default function HomePage() {
     setApplying(true)
     try {
       const mon = screenArrangement === 'per-screen' ? selectedMonitorLabel : null
+      const targetAudio = wallpaperAudioSettings[wp.id] || {
+        volume: wp.config?.volume ?? audioVolume ?? 50,
+        muted: wp.config?.muted ?? audioMuted ?? false,
+      }
       await applyWallpaperToDesktop(wp, {
         targetMonitor: mon,
         speed: wallpaperSpeed,
-        volume: audioVolume,
-        muted: audioMuted,
+        volume: targetAudio.volume,
+        muted: targetAudio.muted,
         opacity: wallpaperOpacity,
         brightness: wallpaperBrightness,
       })
@@ -734,14 +739,18 @@ export default function HomePage() {
     if (!activeWallpaper) return
     const nextAudio = { ...currentWallpaperAudio, volume: vol }
     setWallpaperAudio(activeWallpaper.id, nextAudio)
+    useStore.setState({ audioVolume: vol })
 
-    // If active wallpaper is running on desktop, update live native audio immediately
+    // If active wallpaper is running on desktop, debounced update of native audio
     if (isWallpaperRunning) {
-      await tauriInvoke('set_mpv_volume', { monitorLabel: null, volume: vol }).catch(() => {})
-      await tauriInvoke('update_wallpaper_config', {
-        config: { volume: vol, muted: nextAudio.muted },
-        monitorLabel: null,
-      }).catch(() => {})
+      clearTimeout(volumeIpcTimerRef.current)
+      volumeIpcTimerRef.current = setTimeout(async () => {
+        await tauriInvoke('set_mpv_volume', { monitorLabel: null, volume: vol }).catch(() => {})
+        await tauriInvoke('update_wallpaper_config', {
+          config: { volume: vol, muted: nextAudio.muted },
+          monitorLabel: null,
+        }).catch(() => {})
+      }, 35)
     }
   }
 
@@ -750,6 +759,7 @@ export default function HomePage() {
     const nextMuted = !currentWallpaperAudio.muted
     const nextAudio = { ...currentWallpaperAudio, muted: nextMuted }
     setWallpaperAudio(activeWallpaper.id, nextAudio)
+    useStore.setState({ audioMuted: nextMuted })
 
     // If active wallpaper is running on desktop, update live native audio immediately
     if (isWallpaperRunning) {
@@ -897,72 +907,6 @@ export default function HomePage() {
                   {isTopPreviewPaused ? <Play size={13} fill="currentColor" /> : <Pause size={13} />}
                   <span>{isTopPreviewPaused ? 'Resume Preview' : 'Pause Preview'}</span>
                 </button>
-                {/* Wallpaper Adhered Audio Control */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: 'rgba(10, 14, 22, 0.75)',
-                    backdropFilter: 'blur(8px)',
-                    border: '1px solid var(--border-main)',
-                    borderRadius: 8,
-                    padding: '4px 10px',
-                    height: 36,
-                  }}
-                  title={`Wallpaper Audio (Adhered to ${(customNames || {})[activeWallpaper?.id] || activeWallpaper?.name}): ${currentWallpaperAudio.muted ? 'Muted' : `${currentWallpaperAudio.volume}%`}`}
-                >
-                  <button
-                    className="btn-icon"
-                    style={{
-                      padding: 4,
-                      borderRadius: 6,
-                      color: currentWallpaperAudio.muted ? 'var(--color-rose)' : 'var(--color-brand)',
-                      background: currentWallpaperAudio.muted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.12)',
-                      border: currentWallpaperAudio.muted ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)',
-                    }}
-                    onClick={handleWallpaperMuteToggle}
-                    title={currentWallpaperAudio.muted ? "Unmute wallpaper" : "Mute wallpaper"}
-                  >
-                    {currentWallpaperAudio.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-                  </button>
-
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={currentWallpaperAudio.muted ? 0 : currentWallpaperAudio.volume}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10)
-                      if (currentWallpaperAudio.muted && v > 0) {
-                        setWallpaperAudio(activeWallpaper.id, { volume: v, muted: false })
-                      } else {
-                        handleWallpaperVolumeChange(v)
-                      }
-                    }}
-                    style={{
-                      width: 68,
-                      height: 4,
-                      accentColor: 'var(--color-brand)',
-                      cursor: 'pointer',
-                      opacity: currentWallpaperAudio.muted ? 0.45 : 1,
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      fontWeight: 600,
-                      minWidth: 32,
-                      textAlign: 'right',
-                      color: currentWallpaperAudio.muted ? 'var(--color-rose)' : 'var(--text-main)',
-                    }}
-                  >
-                    {currentWallpaperAudio.muted ? 'Mute' : `${currentWallpaperAudio.volume}%`}
-                  </span>
-                </div>
-
                 {isWallpaperRunning && (
                   <button
                     className="btn"
@@ -1002,7 +946,7 @@ export default function HomePage() {
 
       {/* Property Controls (Opacity / Brightness / Speed or Fit) */}
       {activeWallpaper && (
-        <div className="card p-4" style={{ marginBottom: 28 }}>
+        <div className="card p-4" style={{ marginBottom: 28, userSelect: 'none', WebkitUserSelect: 'none' }}>
           {screenArrangement === 'per-screen' && monitors.length > 1 && (
             <div style={{ marginBottom: 20, padding: 14, background: 'var(--bg-card)', borderRadius: 10, border: '1px solid var(--border-main)' }}>
               <div className="text-xs font-semibold uppercase tracking-wider text-muted" style={{ marginBottom: 10 }}>Target Monitor</div>
@@ -1033,7 +977,7 @@ export default function HomePage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20 }}>
             <div>
-              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
                 <span>Opacity</span>
                 <span className="text-brand font-mono">{Math.round(wallpaperOpacity * 100)}%</span>
               </div>
@@ -1042,12 +986,15 @@ export default function HomePage() {
                 className="slider"
                 min={0.1} max={1} step={0.05}
                 value={wallpaperOpacity}
+                draggable={false}
+                onDragStart={e => e.preventDefault()}
+                style={{ touchAction: 'none' }}
                 onChange={e => handleOpacity(parseFloat(e.target.value))}
               />
             </div>
 
             <div>
-              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+              <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
                 <span>Brightness</span>
                 <span className="text-brand font-mono">{Math.round(wallpaperBrightness * 100)}%</span>
               </div>
@@ -1056,13 +1003,16 @@ export default function HomePage() {
                 className="slider"
                 min={0.1} max={1.5} step={0.05}
                 value={wallpaperBrightness}
+                draggable={false}
+                onDragStart={e => e.preventDefault()}
+                style={{ touchAction: 'none' }}
                 onChange={e => handleBrightness(parseFloat(e.target.value))}
               />
             </div>
 
             {isCurrentWallpaperImage ? (
               <div>
-                <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+                <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
                   <span>Scaling / Fit</span>
                   <span className="text-brand font-mono capitalize">{activeWallpaper.config?.fit || 'cover'}</span>
                 </div>
@@ -1081,7 +1031,7 @@ export default function HomePage() {
               </div>
             ) : (
               <div>
-                <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8 }}>
+                <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
                   <span>Speed</span>
                   <span className="text-brand font-mono">{parseFloat(wallpaperSpeed).toFixed(1)}×</span>
                 </div>
@@ -1090,13 +1040,16 @@ export default function HomePage() {
                   className="slider"
                   min={0.1} max={3} step={0.1}
                   value={wallpaperSpeed}
+                  draggable={false}
+                  onDragStart={e => e.preventDefault()}
+                  style={{ touchAction: 'none' }}
                   onChange={e => handleSpeed(parseFloat(e.target.value))}
                 />
               </div>
             )}
 
             <div>
-              <div className="flex justify-between items-center text-xs text-muted" style={{ marginBottom: 8 }}>
+              <div className="flex justify-between items-center text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
                 <span className="flex items-center gap-1.5">
                   <button
                     className="btn-icon"
@@ -1120,10 +1073,14 @@ export default function HomePage() {
                 className="slider"
                 min={0} max={100} step={1}
                 value={currentWallpaperAudio.muted ? 0 : currentWallpaperAudio.volume}
+                draggable={false}
+                onDragStart={e => e.preventDefault()}
+                style={{ touchAction: 'none' }}
                 onChange={e => {
                   const v = parseInt(e.target.value, 10)
                   if (currentWallpaperAudio.muted && v > 0) {
                     setWallpaperAudio(activeWallpaper.id, { volume: v, muted: false })
+                    useStore.setState({ audioVolume: v, audioMuted: false })
                   } else {
                     handleWallpaperVolumeChange(v)
                   }

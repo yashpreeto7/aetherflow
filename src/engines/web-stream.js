@@ -67,7 +67,8 @@ export function createWebStream(canvas, options = {}) {
   let thumbImg = null
   let thumbLoaded = false
   let currentUrl = options.streamUrl || options.url || ''
-  let currentMuted = options.muted ?? true
+  let isSecondary = Boolean(options.isSecondary)
+  let currentMuted = isSecondary ? true : (options.muted ?? true)
   let currentSpeed = Number(options.speedMultiplier ?? options.speed ?? 1)
   let isRunning = false
   let isPausedByUser = false
@@ -449,22 +450,35 @@ export function createWebStream(canvas, options = {}) {
       if (newOpts.paused) pause()
       else resume()
     }
-    if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
-      currentMuted = newOpts.muted
-      try {
-        if (currentMuted) {
-          playerA?.mute()
-          playerB?.mute()
-        } else {
-          const active = activeSlot === 'A' ? playerA : playerB
-          active?.unMute()
-        }
-      } catch {}
+    if (newOpts.isSecondary !== undefined) {
+      isSecondary = Boolean(newOpts.isSecondary)
     }
-    if (newOpts.volume !== undefined) {
-      const vol = Math.round(newOpts.volume)
-      try { playerA?.setVolume(vol) } catch {}
-      try { playerB?.setVolume(vol) } catch {}
+    if (isSecondary) {
+      currentMuted = true
+      try {
+        playerA?.mute()
+        playerB?.mute()
+        playerA?.setVolume(0)
+        playerB?.setVolume(0)
+      } catch {}
+    } else {
+      if (newOpts.muted !== undefined && newOpts.muted !== currentMuted) {
+        currentMuted = newOpts.muted
+        try {
+          if (currentMuted) {
+            playerA?.mute()
+            playerB?.mute()
+          } else {
+            const active = activeSlot === 'A' ? playerA : playerB
+            active?.unMute()
+          }
+        } catch {}
+      }
+      if (newOpts.volume !== undefined) {
+        const vol = Math.round(newOpts.volume)
+        try { playerA?.setVolume(vol) } catch {}
+        try { playerB?.setVolume(vol) } catch {}
+      }
     }
     if (newOpts.opacity !== undefined) {
       const activeWrap = activeSlot === 'A' ? wrapA : wrapB

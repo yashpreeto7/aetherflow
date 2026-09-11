@@ -1169,6 +1169,8 @@ async fn apply_wallpaper(
                                 if !hwnd.is_null() {
                                     pin_hwnd_as_wallpaper(hwnd, Some((mon_x, mon_y, mon_w, mon_h)));
                                 }
+                                let _ = proc.set_volume(screen_volume);
+                                let _ = proc.set_mute(screen_muted);
                                 let msg = format!("[MPV] Successfully assigned MPV video wallpaper to {} (HWND=0x{:X}, vol={}, muted={}, speed={}, br={}, op={})", 
                                     label_clone, proc.hwnd, screen_volume, screen_muted, speed_val, brightness_val, opacity_val);
                                 log_msg(&msg);
@@ -1271,17 +1273,12 @@ async fn apply_wallpaper(
                 let payload = serde_json::json!({
                     "engineId": resolved_engine_id.clone(),
                     "config": win_config,
-                    "target": target.clone(),
+                    "target": label.clone(),
                 });
-                let _ = win.emit("aura:set-engine", payload.clone());
                 let _ = win.emit_to(label.as_str(), "aura:set-engine", payload.clone());
-                let _ = app.emit("aura:set-engine", payload.clone());
-                let _ = win.emit("aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
-                let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": target.clone() }));
-                let _ = win.emit("aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
-                let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": target.clone() }));
-                let _ = win.emit("aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
-                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-brightness", serde_json::json!({ "brightness": brightness, "target": label.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-opacity", serde_json::json!({ "opacity": opacity, "target": label.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": label.clone() }));
             }
         }
     }
@@ -1653,13 +1650,10 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
                     }
                 }
             }
-            let payload = serde_json::json!({ "config": win_config, "target": target.clone() });
-            let _ = win.emit("aura:update-config", payload.clone());
+            let payload = serde_json::json!({ "config": win_config, "target": label.clone() });
             let _ = win.emit_to(label.as_str(), "aura:update-config", payload.clone());
-            let _ = app.emit("aura:update-config", payload.clone());
             if let Some(fps_val) = config.get("fps").and_then(|v| v.as_f64()) {
-                let _ = win.emit("aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
-                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": target.clone() }));
+                let _ = win.emit_to(label.as_str(), "aura:set-fps", serde_json::json!({ "fps": fps_val, "target": label.clone() }));
             }
         }
     }

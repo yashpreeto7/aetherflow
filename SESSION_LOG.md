@@ -1167,3 +1167,32 @@
   - `npm run build`: ✅ Passes in 486ms with zero errors.
   - Playwright visual tests: verified all cards in "On" mode display high-res static thumbnails/posters (videos, images, YouTube streams, canvas SVGs); verified Top Preview Pause/Resume toggle; verified modal open/close teardown with zero console errors.
 ---
+
+## Session: 2026-09-11 15:00 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Removed Duplicate Volume Bar**:
+    - Cleaned up the Top Preview (Hero banner) on `Home.jsx`: removed the top volume slider and percentage pill.
+    - Retained single, unified Volume control in the Property Controls grid with Mute button, percentage readout, and full slider.
+  - **Fixed Wallpaper Starting at 100% Volume**:
+    - Diagnosed that `handleApply` in `Home.jsx` was passing `volume: audioVolume` (global state default 100%) and overriding the wallpaper's specific adhered volume.
+    - Updated `handleApply` to resolve `targetAudio = wallpaperAudioSettings[wp.id]` and pass `targetAudio.volume` and `targetAudio.muted`.
+    - Updated `applyWallpaperToDesktop` in `wallpaperActions.js` to prioritize `adheredAudio.volume` over generic fallback options.
+    - Added `--no-config` to MPV in `src-tauri/src/mpv.rs` to ensure MPV never loads external `%APPDATA%\mpv\mpv.conf` with 100% volume defaults.
+    - In `src-tauri/src/main.rs`, added immediate post-spawn IPC volume and mute synchronization (`proc.set_volume(screen_volume)`, `proc.set_mute(screen_muted)`).
+  - **Fixed Slider Dragging Cursor Blocked (🚫)**:
+    - Root cause: In Chromium/WebView2, dragging near or on range inputs without `user-select: none` initiated HTML text selection of surrounding text ("Volume", "50%"). This triggered native drag-and-drop, switching the cursor to `not-allowed` / `no-drop` (🚫 blocked icon) and stealing pointer capture from the range thumb.
+    - Added `userSelect: 'none'` and `WebkitUserSelect: 'none'` to the Property Controls container.
+    - Added `user-select: none`, `-webkit-user-select: none`, and `touch-action: none` to `.slider` in `src/styles/index.css`, with `cursor: grab` and `:active` `cursor: grabbing`.
+    - Added `draggable={false}` and `onDragStart={e => e.preventDefault()}` on all slider elements.
+    - Added 35ms IPC debounce timer (`volumeIpcTimerRef`) so dragging smoothly at 60fps does not block the UI thread with synchronous named pipe calls.
+  - **Fixed Multi-Monitor YouTube Audio Desync / Echo**:
+    - Multi-monitor YouTube previously unmuted both monitors because global emissions (`app.emit("aura:set-engine")`) with `target: "*"` broadcast the primary monitor's unmuted config to secondary monitors.
+    - In `src-tauri/src/main.rs`: Targeted payloads directly per window (`"target": label.clone()`) and switched to `win.emit_to(label.as_str(), ...)`. Secondary monitors receive `screen_muted: true`, `screen_volume: 0.0`, `isSecondary: true`.
+    - In `src/engines/web-stream.js`: Enforced `options.isSecondary` permanently lock to muted; blocked `unMute()` or volume changes on secondary monitors; muted ping-pong player B.
+    - In `src/wallpaper.jsx`: Enforced that secondary windows (`myLabel !== 'wallpaper_0'`) automatically force `cfg.isSecondary = true`, `cfg.muted = true`, `cfg.volume = 0`.
+    - Recompiled native release binary with `cargo build --release --bin aetherflow` (2m 14s) and deployed fresh `AetherFlow.exe`.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 1.00s with zero errors.
+  - Playwright visual tests: Verified single volume slider on Home; verified dragging volume slider smoothly updates value without cursor blocked 🚫 icon.
+---

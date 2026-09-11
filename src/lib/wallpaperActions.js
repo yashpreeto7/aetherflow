@@ -91,8 +91,8 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
   
   const adheredAudio = state.wallpaperAudioSettings?.[wallpaper.id]
   const speed = options.speed ?? wallpaper.config?.speedMultiplier ?? state.wallpaperSpeed ?? 1
-  const volume = options.volume ?? adheredAudio?.volume ?? wallpaper.config?.volume ?? state.audioVolume ?? 50
-  const muted = options.muted ?? adheredAudio?.muted ?? wallpaper.config?.muted ?? state.audioMuted ?? false
+  const volume = options.forceVolume ?? adheredAudio?.volume ?? options.volume ?? wallpaper.config?.volume ?? state.audioVolume ?? 50
+  const muted = options.forceMuted ?? adheredAudio?.muted ?? options.muted ?? wallpaper.config?.muted ?? state.audioMuted ?? false
   const opacity = options.opacity ?? state.wallpaperOpacity ?? 1
   const brightness = options.brightness ?? state.wallpaperBrightness ?? 0.85
   const fps = options.fps ?? state.fps ?? 60
