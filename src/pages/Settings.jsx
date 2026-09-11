@@ -1140,7 +1140,10 @@ export default function SettingsPage() {
                     >
                       <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
                         <span className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
-                          {report.label} ({report.width}×{report.height})
+                          {(() => {
+                            const matched = monitors.find(m => m.label === report.label)
+                            return matched ? `${matched.displayName || `Display ${matched.displayNumber}`} (${report.width}×${report.height})` : `${report.label} (${report.width}×${report.height})`
+                          })()}
                         </span>
                         <span
                           className="telemetry-chip font-mono"
@@ -2214,7 +2217,7 @@ export default function SettingsPage() {
               <span className="badge font-mono" style={{ fontSize: 10 }}>
                 {preferredAudioMonitor === 'auto'
                   ? 'Auto (Primary)'
-                  : (monitors.find(m => m.label === preferredAudioMonitor)?.name || 'Custom Display')}
+                  : (monitors.find(m => m.label === preferredAudioMonitor)?.displayName || monitors.find(m => m.label === preferredAudioMonitor)?.name || 'Custom Display')}
               </span>
             </div>
 
@@ -2283,7 +2286,7 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-1.5">
                           <Monitor size={14} style={{ color: isSelected ? 'var(--color-brand)' : 'var(--text-muted)' }} />
                           <span className="font-semibold text-xs" style={{ color: isSelected ? 'var(--color-brand)' : 'var(--text-main)' }}>
-                            Display {idx + 1}
+                            {m.displayName || `Display ${m.displayNumber || idx + 1}`}
                           </span>
                         </div>
                         {m.isPrimary && (

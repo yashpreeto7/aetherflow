@@ -46,10 +46,19 @@ function WallpaperCanvas() {
     }
   }, [isScreensaver])
 
-  // Screensaver user input wakeup detection (any mouse movement > 15px, click, or keypress cancels screensaver)
+  // Initialize sovereign-onyx theme token values on document element
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', 'sovereign-onyx')
+      document.body.style.backgroundColor = '#000000'
+    }
+  }, [])
+
+  // Screensaver user input wakeup detection (grace period of 1200ms, then mouse movement > 10px, click, or keypress cancels screensaver)
   useEffect(() => {
     if (!isScreensaver) return
 
+    const mountTime = Date.now()
     let dismissed = false
     const dismiss = async () => {
       if (dismissed) return
@@ -64,20 +73,39 @@ function WallpaperCanvas() {
 
     let startPos = null
     const onMouseMove = (e) => {
+      // Grace period: ignore mouse movement within the first 1200ms of opening
+      if (Date.now() - mountTime < 1200) {
+        startPos = { x: e.clientX, y: e.clientY }
+        return
+      }
       if (!startPos) {
         startPos = { x: e.clientX, y: e.clientY }
         return
       }
       const dist = Math.hypot(e.clientX - startPos.x, e.clientY - startPos.y)
-      if (dist > 15) {
+      if (dist > 10) {
         dismiss()
       }
     }
 
-    const onKeyDown = () => dismiss()
-    const onMouseDown = () => dismiss()
-    const onWheel = () => dismiss()
-    const onPointerDown = () => dismiss()
+    const onKeyDown = (e) => {
+      // Escape or Space can dismiss after 300ms, any key dismisses after grace period
+      if (e.key === 'Escape' || e.key === ' ' || e.key === 'Enter') {
+        if (Date.now() - mountTime > 300) dismiss()
+      } else if (Date.now() - mountTime >= 1200) {
+        dismiss()
+      }
+    }
+
+    const onMouseDown = () => {
+      if (Date.now() - mountTime >= 1200) dismiss()
+    }
+    const onWheel = () => {
+      if (Date.now() - mountTime >= 1200) dismiss()
+    }
+    const onPointerDown = () => {
+      if (Date.now() - mountTime >= 1200) dismiss()
+    }
 
     window.addEventListener('mousemove', onMouseMove, { passive: true })
     window.addEventListener('keydown', onKeyDown, { passive: true })
@@ -359,13 +387,15 @@ function WallpaperCanvas() {
 
   return (
     <div style={{
-      position: 'absolute',
+      position: 'fixed',
       top: 0,
       left: 0,
-      width: '100%',
-      height: '100%',
+      right: 0,
+      bottom: 0,
+      width: '100vw',
+      height: '100vh',
       overflow: 'hidden',
-      background: '#000',
+      background: '#000000',
     }}>
       <canvas
         ref={canvasRef}

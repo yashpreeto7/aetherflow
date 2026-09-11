@@ -3,12 +3,12 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-12 01:15 IST — Lively Update Enhancements (Screensaver, Diagnostic Grid, Visualizer Audio Source, Choose a Fit):
-1. **Screensaver System**: Win32 `GetLastInputInfo` idle monitor, fullscreen topmost windows across all displays, grace period, lock on resume, luxury HUD clock/date, and tray preview.
-2. **16x8 Diagnostic Grid**: Real-time 128-tile desktop coverage diagnostic visualizer in Settings.
-3. **Visualizer Audio Source Device Selection**: Real hardware audio input enumeration (`enumerateDevices`), dynamic device switching, fallback on disconnect, and live VU signal level meter in Settings.
-4. **Picture Wallpaper "Choose a Fit" & Web Wallpaper Theme Polish**: Full support for `fill`, `fit`, `stretch`, `center`, and `tile`, custom letterbox matte background color picker, and dark theme iframe background prevention of white flashing.
-5. **Verified**: `npm run build` (524ms), `cargo check` (0 errors, 0 warnings).
+2026-09-12 02:15 IST — Multi-Monitor Screensaver Borderless Fullscreen & Display Sorting Fixes:
+1. **Screensaver Borderless Fullscreen**: Stripped `WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME`, disabled DWM non-client margins and Win11 rounded corners, applied physical `rcMonitor` bounds via `GetMonitorInfoW`, and added 1500ms launch grace period.
+2. **Orphan & Freeze Prevention**: Added unconditional cleanup of all `screensaver_*` windows in `dismiss_screensaver`, synchronized wallpaper pause/resume and mute/unmute, and added `Esc`/`Space`/`Enter` dismissal.
+3. **Black Background Enforced**: Added `data-theme="sovereign-onyx"` and forced `#000000 !important` background in `wallpaper.html` and `wallpaper.jsx` to prevent white screens on secondary displays.
+4. **Monitor Display Ordering & Naming**: Sorted Primary monitor first (`Display 1 (Primary)`), followed by horizontal spatial order (`Display 2`). Mapped friendly display titles in 16×8 Grid Diagnostic, Audio by Display, and Home pills.
+5. **Standalone Binary Recompiled**: Built frontend (`npm run build`, 675ms) and release binary (`cargo build --release`, 2m 46s), updated root `AetherFlow.exe` (timestamp: 2:09:45 AM), launched at PID 35144.
 
 
 

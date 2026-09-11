@@ -746,8 +746,13 @@ pub fn start_system_state_monitor(app: AppHandle) {
                         let _ = trigger_screensaver(app.clone(), false);
                     }
                 } else if is_screensaver_active {
-                    // If user moved mouse or typed (< 500ms since last input), wake up!
-                    if idle_ms < 500 {
+                    let elapsed = SCREENSAVER_ACTIVATED_AT.lock().ok()
+                        .and_then(|g| g.as_ref().map(|t| t.elapsed()))
+                        .unwrap_or(std::time::Duration::from_secs(999));
+
+                    // Only dismiss if the screensaver has been active for at least 1500ms
+                    // to prevent the launch click from immediately killing it
+                    if elapsed >= std::time::Duration::from_millis(1500) && idle_ms < 500 {
                         log_msg("[SCREENSAVER] User input detected via GetLastInputInfo. Dismissing screensaver.");
                         println!("[SCREENSAVER] User input detected. Dismissing screensaver.");
                         let _ = dismiss_screensaver(app.clone());
@@ -756,6 +761,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
             }
 
             if is_screensaver_active {
+                std::thread::sleep(std::time::Duration::from_millis(150));
                 continue;
             }
 
@@ -1710,20 +1716,46 @@ fn ensure_wallpaper_windows(app: &AppHandle) {
 #[tauri::command]
 fn get_monitors(app: AppHandle) -> serde_json::Value {
     let monitors = app.available_monitors().unwrap_or_default();
-    let mut out = Vec::new();
-    for m in monitors {
-        if let Some(name) = m.name() {
-            let label = get_monitor_label(name);
-            out.push(serde_json::json!({
-                "name": name,
-                "label": label,
-                "width": m.size().width,
-                "height": m.size().height,
-                "x": m.position().x,
-                "y": m.position().y,
-                "isPrimary": m.position().x == 0 && m.position().y == 0 // simple heuristic for primary
-            }));
+    let mut mon_data: Vec<_> = monitors.into_iter().filter_map(|m| {
+        let name = m.name()?.to_string();
+        let label = get_monitor_label(&name);
+        let pos = m.position();
+        let size = m.size();
+        let is_primary = pos.x == 0 && pos.y == 0;
+        Some((name, label, size.width, size.height, pos.x, pos.y, is_primary))
+    }).collect();
+
+    // Primary monitor first, then left-to-right (x ascending), then top-to-bottom (y ascending)
+    mon_data.sort_by(|a, b| {
+        if a.6 != b.6 {
+            b.6.cmp(&a.6) // primary first
+        } else if a.4 != b.4 {
+            a.4.cmp(&b.4)
+        } else {
+            a.5.cmp(&b.5)
         }
+    });
+
+    let mut out = Vec::new();
+    for (idx, (name, label, width, height, x, y, is_primary)) in mon_data.into_iter().enumerate() {
+        let display_num = idx + 1;
+        let display_name = if is_primary {
+            format!("Display {} (Primary)", display_num)
+        } else {
+            format!("Display {}", display_num)
+        };
+
+        out.push(serde_json::json!({
+            "name": name,
+            "label": label,
+            "displayNumber": display_num,
+            "displayName": display_name,
+            "width": width,
+            "height": height,
+            "x": x,
+            "y": y,
+            "isPrimary": is_primary
+        }));
     }
     serde_json::json!(out)
 }
@@ -2314,11 +2346,15 @@ fn trigger_screensaver(app: AppHandle, is_preview: bool) -> Result<(), String> {
         is_preview, fade_secs
     );
 
-    // Pause desktop wallpapers while screensaver is active
+    // Pause desktop wallpapers and mute sound while screensaver is active
     set_mpv_pause(None, true);
+    set_mpv_mute(app.clone(), None, true);
+    let _ = app.emit("aura:pause", serde_json::json!({ "target": "*" }));
+    let _ = app.emit("aura:mute", serde_json::json!({ "target": "*" }));
     for (label, win) in app.webview_windows() {
         if label.starts_with("wallpaper_") {
-            let _ = win.emit_to(label.as_str(), "aura:pause", serde_json::json!({}));
+            let _ = win.emit_to(label.as_str(), "aura:pause", serde_json::json!({ "target": label }));
+            let _ = win.emit_to(label.as_str(), "aura:mute", serde_json::json!({ "target": label }));
         }
     }
 
@@ -2361,14 +2397,41 @@ fn trigger_screensaver(app: AppHandle, is_preview: bool) -> Result<(), String> {
                             let raw = hwnd.0 as HWND;
                             let hwnd_topmost = -1 as isize as HWND;
                             unsafe {
+                                // 1. Strip all non-client window borders, caption and thickframe
+                                let style = GetWindowLongW(raw, GWL_STYLE) as u32;
+                                let new_style = (style | WS_POPUP | WS_VISIBLE) & !(WS_CHILD | WS_CAPTION | WS_THICKFRAME | WS_BORDER | 0x00C00000);
+                                SetWindowLongW(raw, GWL_STYLE, new_style as i32);
+
+                                let ex_style = GetWindowLongW(raw, GWL_EXSTYLE) as u32;
+                                let new_ex_style = (ex_style | WS_EX_TOOLWINDOW | 0x00000008u32) & !(0x00000100 | 0x00000200 | 0x00000001 | 0x00020000);
+                                SetWindowLongW(raw, GWL_EXSTYLE, new_ex_style as i32);
+
+                                // 2. Disable DWM non-client margins and Windows 11 rounded corners
+                                let ncr_disabled: u32 = 1;
+                                DwmSetWindowAttribute(raw, 2, &ncr_disabled as *const u32 as *const _, std::mem::size_of::<u32>() as u32);
+                                let do_not_round: u32 = 1;
+                                DwmSetWindowAttribute(raw, 33, &do_not_round as *const u32 as *const _, std::mem::size_of::<u32>() as u32);
+
+                                // 3. Retrieve authoritative physical monitor bounds from Win32
+                                let monitor_handle = MonitorFromWindow(raw, MONITOR_DEFAULTTONEAREST);
+                                let mut minfo: MONITORINFO = std::mem::zeroed();
+                                minfo.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+                                let (mon_x, mon_y, mon_w, mon_h) = if GetMonitorInfoW(monitor_handle, &mut minfo) != 0 {
+                                    let rc = minfo.rcMonitor;
+                                    (rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top)
+                                } else {
+                                    (pos.x, pos.y, size.width as i32, size.height as i32)
+                                };
+
+                                // 4. Set true borderless fullscreen position
                                 SetWindowPos(
                                     raw,
                                     hwnd_topmost,
-                                    pos.x,
-                                    pos.y,
-                                    size.width as i32,
-                                    size.height as i32,
-                                    SWP_SHOWWINDOW,
+                                    mon_x,
+                                    mon_y,
+                                    mon_w,
+                                    mon_h,
+                                    SWP_SHOWWINDOW | SWP_FRAMECHANGED,
                                 );
                             }
                         }
@@ -2400,6 +2463,26 @@ fn dismiss_screensaver(app: AppHandle) -> Result<(), String> {
         }
     };
 
+    // 1. ALWAYS unconditionally close all screensaver windows
+    let windows = app.webview_windows();
+    for (label, win) in windows {
+        if label.starts_with("screensaver_") {
+            let _ = win.close();
+        }
+    }
+
+    // 2. ALWAYS resume desktop wallpapers and unmute audio
+    set_mpv_pause(None, false);
+    set_mpv_mute(app.clone(), None, false);
+    let _ = app.emit("aura:resume", serde_json::json!({ "target": "*" }));
+    let _ = app.emit("aura:unmute", serde_json::json!({ "target": "*" }));
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") {
+            let _ = win.emit_to(label.as_str(), "aura:resume", serde_json::json!({ "target": label }));
+            let _ = win.emit_to(label.as_str(), "aura:unmute", serde_json::json!({ "target": label }));
+        }
+    }
+
     if !was_active {
         return Ok(());
     }
@@ -2429,22 +2512,6 @@ fn dismiss_screensaver(app: AppHandle) -> Result<(), String> {
         "[SCREENSAVER] Dismissing screensaver: preview={}, elapsed={}s, grace={}s, lock_on_resume={}",
         is_preview, elapsed_secs, grace_period_secs, lock_on_resume
     );
-
-    // 1. Close all screensaver windows
-    let windows = app.webview_windows();
-    for (label, win) in windows {
-        if label.starts_with("screensaver_") {
-            let _ = win.close();
-        }
-    }
-
-    // 2. Resume desktop wallpapers
-    set_mpv_pause(None, false);
-    for (label, win) in app.webview_windows() {
-        if label.starts_with("wallpaper_") {
-            let _ = win.emit_to(label.as_str(), "aura:resume", serde_json::json!({}));
-        }
-    }
 
     // 3. Grace period logic: if not preview and past grace period, lock workstation if requested
     if !is_preview && lock_on_resume && elapsed_secs >= grace_period_secs as u64 {

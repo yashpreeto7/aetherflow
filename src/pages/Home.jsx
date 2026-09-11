@@ -676,8 +676,8 @@ export default function HomePage() {
       const matched = Object.entries(monitorWallpapers || {})
         .filter(([_, current]) => current?.id === wp.id)
         .map(([label]) => {
-          const idx = monitors.findIndex(m => m.label === label)
-          return idx >= 0 ? `Screen ${idx + 1}` : 'Screen'
+          const mon = monitors.find(m => m.label === label)
+          return mon?.displayName || 'Screen'
         })
       return matched
     }
@@ -1064,7 +1064,7 @@ export default function HomePage() {
                       }}
                     >
                       <Monitor size={16} />
-                      <span style={{ fontSize: 11, fontWeight: 600 }}>Screen {i + 1}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>{m.displayName || `Display ${m.displayNumber || i + 1}`}</span>
                       {monWp && (
                         <span style={{ fontSize: 10, opacity: 0.8, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {monWp.name}

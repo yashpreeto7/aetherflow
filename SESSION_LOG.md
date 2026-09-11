@@ -1751,3 +1751,27 @@
   - `cargo check`: ✅ 2.96s clean, 0 errors, 0 warnings.
 ---
 
+## Session: 2026-09-12 02:12 (Screensaver Multi-Monitor Fixes, Monitor Ordering, & Diagnostic Polish)
+- **Agent:** Antigravity (Google DeepMind)
+- **Completed:**
+  1. **Screensaver Borderless Fullscreen & Freeze Resolution**:
+     - Stripped Win32 window non-client borders and sizing frames (`WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME`) using `WS_POPUP`.
+     - Disabled DWM non-client rendering policy margins and Windows 11 corner rounding.
+     - Queried physical monitor rect via `GetMonitorInfoW(MonitorFromWindow)` for true 1:1 pixel coverage across mixed-DPI displays.
+     - Added 1500ms activation grace period in `start_system_state_monitor` and 1200ms in `wallpaper.jsx` to prevent mouse/tray launch clicks from instantly killing the screensaver.
+     - Unconditionally close all `screensaver_*` windows in `dismiss_screensaver` to eliminate orphaned/stuck windows.
+     - Synchronized wallpaper pausing and audio muting (`aura:pause`, `aura:mute`, `set_mpv_pause`, `set_mpv_mute`) during screensaver, and clean resumption on dismiss.
+     - Added `data-theme="sovereign-onyx"` and reinforced `#000000 !important` background in `wallpaper.html` and `wallpaper.jsx` to eliminate white screen on secondary displays.
+  2. **Monitor Sorting & Friendly Display Naming**:
+     - Updated `get_monitors` in `main.rs` to sort Primary monitor first (`Display 1 (Primary)`), followed by horizontal spatial order (`Display 2`).
+     - Mapped `report.label` in the 16×8 Grid Diagnostic to friendly display names (`Display 1 (Primary) 2560×1440`, `Display 2 1920×1080`) instead of raw `wallpaper__DISPLAY6`.
+     - Updated Audio Output by Display and Home monitor pills to use `displayName`.
+  3. **Release Compilation & Standalone Binary Update**:
+     - Built frontend bundle (`npm run build`, 675ms).
+     - Compiled optimized release binary (`cargo build --release`, 2m 46s).
+     - Replaced `AetherFlow.exe` with new release binary (timestamp: 2:09:45 AM) containing all features and launched at PID 35144.
+- **Build & Verification**:
+  - `npm run build`: ✅ 675ms clean.
+  - `cargo check`: ✅ 0 errors, 0 warnings.
+  - `cargo build --release`: ✅ 0 errors, binary updated.
+---
