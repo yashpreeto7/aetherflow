@@ -1226,3 +1226,39 @@
   - Fresh `AetherFlow.exe` running on desktop.
   - Verified in Playwright: YouTube stream wallpapers display volume, unmute/mute toggles correctly, and controls respond cleanly.
 ---
+
+## Session: 2026-09-11 16:30 (Hover Default, Thumbnail Viewport Lazy Loading & Top Preview Fix)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Requests**:
+  1. Make 'Hover' the default thumbnail mode.
+  2. Implement viewport lazy loading so off-screen cards do not load simultaneously, causing high RAM usage.
+  3. Decide whether loaded cards should unload (Decision: **Yes, unload** off-screen cards to release hardware decoders and prevent GPU memory exhaustion).
+  4. Fix Home page top preview (Hero banner) when applying a wallpaper from Library or Marketplace.
+  5. Commit and push changes.
+- **Root Causes & Solutions**:
+  1. **Thumbnail Mode Default**:
+     - Updated `useStore.js` with `version: 2` and a state migration callback that automatically resets/migrates stored thumbnail mode to `'hover'` while keeping all user data intact.
+     - Confirmed `[ Hover ]` button is highlighted as active across Home, Library, and Settings.
+  2. **Viewport Lazy Loading & Off-Screen Unloading**:
+     - In `src/components/WallpaperThumbnail/index.jsx`, integrated an `IntersectionObserver` on the root card container with `rootMargin: '140px 0px'`.
+     - When `thumbnailMode === 'always'`, only cards currently in the viewport mount media.
+     - As soon as a card scrolls out of view, its `<video>` or high-res `<img>` is unmounted. For `<video>` elements, `VideoPosterFrame` immediately executes `cleanupVideo()`, pausing, stripping `src`, and destroying the hardware video decoder pipeline.
+     - Verified with Playwright: On Home page with 38 cards, exactly 4 cards in the viewport mount media. After scrolling down to the bottom, the count stays at exactly 4 cards mounted (top cards unloaded).
+  3. **Home Top Preview on Apply**:
+     - In `src/lib/wallpaperActions.js`, updated `applyWallpaperToDesktop` to call `state.setActiveWallpaper(wallpaper)`.
+     - In `src/pages/Library.jsx`, updated `handleApply` to call `setActiveWallpaper(item)`.
+     - In `src/pages/Marketplace.jsx`, updated `handleApply` to dynamically support video/stream/image types, un-mute streams by default, pin to Home favorites, and set `activeWallpaper`.
+     - In `src/pages/Home.jsx`, added a synchronization effect to align `activeWallpaper` with `currentDesktopWallpaper`, and added `key={activeWallpaper.id || activeWallpaper.name}` to `<WallpaperPlayer>` so changing wallpapers triggers clean unmounting of old engines and instant mounting of new ones.
+     - In `src/engines/web-stream.js`, removed `thumbImg.crossOrigin = 'anonymous'` which caused YouTube thumbnails (`img.youtube.com`) to be blocked by CORS.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 567ms with zero errors.
+  - `cargo build --release --bin aetherflow`: ✅ Passes in 3m 28s with zero errors.
+  - Updated release executable at `.\AetherFlow.exe`.
+  - Playwright automated browser test verified:
+    - Default thumbnail mode is `Hover`.
+    - In `On` mode, only 4 cards in viewport mount media; scrolling to bottom unloads top cards (still 4 total).
+    - Applying `upside down` from Library immediately updates and runs in the Home page Hero preview.
+    - Applying `Lofi Cafe & Gentle Rain` from Marketplace immediately updates and runs in the Home page Hero preview.
+  - Git commit: `85a6a37` pushed to `origin/main`.
+---
+
