@@ -5,7 +5,7 @@ import {
   LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles, Eye,
   Sliders, Palette, ShieldCheck, Check, Volume2, VolumeX, Moon, Sun, Cpu,
   Trash2, Plus, Save, RotateCcw, Paintbrush, User, Upload, Download, Copy,
-  LogIn, LogOut, Shield, Globe, Key, FileText, Cloud, FileDown, FileUp
+  LogIn, LogOut, Shield, Globe, Key, FileText, Cloud, FileDown, FileUp, Folder, FolderOpen
 } from 'lucide-react'
 import { checkForUpdate, openReleaseUrl, APP_VERSION } from '../lib/updater.js'
 import { BUILTIN_THEMES } from '../engines/index.js'
@@ -558,6 +558,38 @@ export default function SettingsPage() {
   const setAudioVolume = useStore(s => s.setAudioVolume)
   const audioMuted = useStore(s => s.audioMuted)
   const toggleAudioMuted = useStore(s => s.toggleAudioMuted)
+  const preferredAudioMonitor = useStore(s => s.preferredAudioMonitor) || 'auto'
+  const setPreferredAudioMonitor = useStore(s => s.setPreferredAudioMonitor)
+  const [monitors, setMonitors] = useState([])
+
+  useEffect(() => {
+    let unlistenMonitors
+    function loadMonitors() {
+      import('@tauri-apps/api/core').then(({ invoke }) => {
+        invoke('get_monitors').then(res => {
+          if (Array.isArray(res)) setMonitors(res)
+        }).catch(() => {})
+      }).catch(() => {})
+    }
+    loadMonitors()
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('aura:monitors-changed', () => loadMonitors()).then(u => { unlistenMonitors = u })
+    }).catch(() => {})
+    window.addEventListener('focus', loadMonitors)
+    return () => {
+      if (unlistenMonitors) unlistenMonitors()
+      window.removeEventListener('focus', loadMonitors)
+    }
+  }, [])
+
+  const [wallpaperDirectory, setWallpaperDirectory] = useState('')
+  useEffect(() => {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke('get_wallpaper_directory').then(dir => {
+        if (dir) setWallpaperDirectory(dir)
+      }).catch(() => {})
+    }).catch(() => {})
+  }, [])
 
   // Taskbar store bindings
   const taskbarStyle = useStore(s => s.taskbarStyle) || 'default'
@@ -626,6 +658,7 @@ export default function SettingsPage() {
     const pMaximized = overrides.pauseOnMaximized !== undefined ? overrides.pauseOnMaximized : pauseOnMaximized
     const mMode = overrides.multiMonitorPauseMode !== undefined ? overrides.multiMonitorPauseMode : multiMonitorPauseMode
     const aRule = overrides.audioPlaybackRule !== undefined ? overrides.audioPlaybackRule : audioPlaybackRule
+    const pAudioMon = overrides.preferredAudioMonitor !== undefined ? overrides.preferredAudioMonitor : preferredAudioMonitor
     import('@tauri-apps/api/core').then(({ invoke }) => {
       invoke('sync_performance_settings', {
         pauseOnBattery: pBattery,
@@ -633,6 +666,7 @@ export default function SettingsPage() {
         pauseOnMaximized: pMaximized,
         multiMonitorPauseMode: mMode,
         audioPlaybackRule: aRule,
+        preferredAudioMonitor: pAudioMon === 'auto' ? null : pAudioMon,
       }).catch(() => {})
     }).catch(() => {})
   }
@@ -663,6 +697,11 @@ export default function SettingsPage() {
   const handleAudioPlaybackRuleChange = (rule) => {
     setAudioPlaybackRule(rule)
     syncAllPerformance({ audioPlaybackRule: rule })
+  }
+
+  const handlePreferredAudioMonitorChange = (monLabel) => {
+    setPreferredAudioMonitor(monLabel)
+    syncAllPerformance({ preferredAudioMonitor: monLabel })
   }
 
   const handleVolumeChange = (v) => {
@@ -1695,6 +1734,191 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+
+          {/* Card 2: Audio Output by Display (Multi-Monitor Audio Routing) */}
+          <div className="setting-card" style={{ marginTop: 16 }}>
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <Volume2 size={16} style={{ color: 'var(--color-brand)' }} />
+                <span className="text-sm font-semibold">Audio Output by Display</span>
+              </div>
+              <span className="badge font-mono" style={{ fontSize: 10 }}>
+                {preferredAudioMonitor === 'auto'
+                  ? 'Auto (Primary)'
+                  : (monitors.find(m => m.label === preferredAudioMonitor)?.name || 'Custom Display')}
+              </span>
+            </div>
+
+            <div style={{ padding: '16px 18px' }}>
+              <div className="text-xs text-muted" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+                Select which monitor's wallpaper outputs sound. In multi-monitor setups, other displays are automatically muted to prevent audio desync and echo.
+              </div>
+
+              {/* Output Mode Selector */}
+              <div className="segmented-control" style={{ marginBottom: 16 }}>
+                <button
+                  type="button"
+                  className={`segmented-item ${preferredAudioMonitor === 'auto' ? 'active-brand' : ''}`}
+                  onClick={() => handlePreferredAudioMonitorChange('auto')}
+                >
+                  Auto (Primary Screen)
+                </button>
+                <button
+                  type="button"
+                  className={`segmented-item ${preferredAudioMonitor !== 'auto' ? 'active-brand' : ''}`}
+                  onClick={() => {
+                    const first = monitors[0]?.label || 'wallpaper_0'
+                    handlePreferredAudioMonitorChange(first)
+                  }}
+                >
+                  Specific Display ({monitors.length > 1 ? `${monitors.length} Displays` : 'Per-Screen'})
+                </button>
+              </div>
+
+              {/* Visual Interactive Displays */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(auto-fit, minmax(200px, 1fr))`,
+                gap: 12,
+                marginBottom: 16,
+              }}>
+                {(monitors.length > 0 ? monitors : [
+                  { label: 'wallpaper_0', name: '\\\\.\\DISPLAY1', width: 1920, height: 1080, isPrimary: true }
+                ]).map((m, idx) => {
+                  const isSelected = preferredAudioMonitor === 'auto'
+                    ? (m.isPrimary || idx === 0)
+                    : preferredAudioMonitor === m.label
+
+                  return (
+                    <div
+                      key={m.label || idx}
+                      onClick={() => handlePreferredAudioMonitorChange(m.label)}
+                      className={`option-card ${isSelected ? 'selected' : ''}`}
+                      style={{
+                        padding: '14px 16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        minHeight: 100,
+                        position: 'relative',
+                        background: isSelected
+                          ? 'color-mix(in srgb, var(--color-brand) 12%, var(--bg-card))'
+                          : 'var(--bg-card)',
+                        borderColor: isSelected ? 'var(--color-brand)' : 'var(--border-subtle)',
+                        boxShadow: isSelected ? '0 0 16px -4px var(--color-brand)' : 'none',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Monitor size={14} style={{ color: isSelected ? 'var(--color-brand)' : 'var(--text-muted)' }} />
+                          <span className="font-semibold text-xs" style={{ color: isSelected ? 'var(--color-brand)' : 'var(--text-main)' }}>
+                            Display {idx + 1}
+                          </span>
+                        </div>
+                        {m.isPrimary && (
+                          <span className="badge" style={{ fontSize: 9, padding: '1px 5px' }}>Primary</span>
+                        )}
+                      </div>
+
+                      <div style={{ margin: '10px 0' }}>
+                        <div className="text-xs font-mono" style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                          {m.width} × {m.height}
+                        </div>
+                        <div className="text-xs text-muted" style={{ fontSize: 10, marginTop: 2 }}>
+                          {m.name || m.label}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between" style={{ marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
+                        <span style={{ fontSize: 10.5, color: isSelected ? 'var(--color-brand)' : 'var(--text-muted)', fontWeight: isSelected ? 600 : 400 }}>
+                          {isSelected ? 'Sound Active' : 'Muted'}
+                        </span>
+                        {isSelected ? (
+                          <span
+                            style={{
+                              width: 22, height: 22, borderRadius: '50%',
+                              background: 'var(--color-brand)',
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              color: '#fff',
+                            }}
+                            title="Active sound emitter"
+                          >
+                            <Volume2 size={12} strokeWidth={2.5} />
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', opacity: 0.4 }}>
+                            <VolumeX size={14} />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Lively Feature: Play audio only when desktop is focused */}
+              <div className="flex items-center justify-between" style={{
+                padding: '12px 14px',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: 8,
+                border: '1px solid var(--border-subtle)',
+                marginBottom: 12,
+              }}>
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-main)' }}>
+                    Play audio only when desktop is focused
+                  </span>
+                  <span className="text-xs text-muted" style={{ fontSize: 10.5, marginTop: 2 }}>
+                    Mutes wallpaper audio as soon as another window or game is active
+                  </span>
+                </div>
+                <label className="toggle" style={{ margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={audioPlaybackRule === 'mute-focused'}
+                    onChange={() => {
+                      const nextRule = audioPlaybackRule === 'mute-focused' ? 'mute-covered' : 'mute-focused'
+                      handleAudioPlaybackRuleChange(nextRule)
+                    }}
+                  />
+                  <div className="toggle-track" />
+                  <div className="toggle-thumb" />
+                </label>
+              </div>
+
+              {/* Audio Playback Policy Segments */}
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted" style={{ marginBottom: 6 }}>
+                  Audio Playback Policy
+                </div>
+                <div className="segmented-control" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                  <button
+                    type="button"
+                    className={`segmented-item ${audioPlaybackRule === 'mute-covered' ? 'active-brand' : ''}`}
+                    onClick={() => handleAudioPlaybackRuleChange('mute-covered')}
+                  >
+                    Mute When Covered
+                  </button>
+                  <button
+                    type="button"
+                    className={`segmented-item ${audioPlaybackRule === 'mute-focused' ? 'active-brand' : ''}`}
+                    onClick={() => handleAudioPlaybackRuleChange('mute-focused')}
+                  >
+                    Mute When Focused
+                  </button>
+                  <button
+                    type="button"
+                    className={`segmented-item ${audioPlaybackRule === 'always' ? 'active-brand' : ''}`}
+                    onClick={() => handleAudioPlaybackRuleChange('always')}
+                  >
+                    Always Active
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1731,6 +1955,71 @@ export default function SettingsPage() {
                 <div className="toggle-thumb" />
               </label>
             </SettingRow>
+          </div>
+
+          {/* Wallpaper Storage Card */}
+          <div className="setting-card">
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <FolderOpen size={16} style={{ color: 'var(--color-brand)' }} />
+                <span className="text-sm font-semibold">Wallpaper Library Storage</span>
+              </div>
+              <span className="badge font-mono" style={{ fontSize: 10 }}>Self-Contained</span>
+            </div>
+
+            <div style={{ padding: '16px 18px' }}>
+              <div className="text-xs text-muted" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+                Imported video and image wallpapers are automatically stored inside your isolated AetherFlow library folder. You can safely delete or relocate original files from your Downloads or Desktop without affecting your active wallpapers.
+              </div>
+
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 14px',
+                borderRadius: 8,
+                background: 'rgba(0,0,0,0.25)',
+                border: '1px solid var(--border-subtle)',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                  <Folder size={16} style={{ color: 'var(--color-brand)', flexShrink: 0 }} />
+                  <span className="font-mono text-xs text-muted" style={{ wordBreak: 'break-all', userSelect: 'all' }}>
+                    {wallpaperDirectory || 'Loading library path…'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
+                    onClick={() => {
+                      if (wallpaperDirectory) {
+                        navigator.clipboard?.writeText?.(wallpaperDirectory)
+                        showToast('success', 'Library path copied to clipboard')
+                      }
+                    }}
+                    title="Copy path to clipboard"
+                  >
+                    <Copy size={12} /> Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: 11, padding: '4px 12px', height: 28, display: 'flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => {
+                      import('@tauri-apps/api/core').then(({ invoke }) => {
+                        invoke('open_wallpaper_directory').catch(() => {})
+                      }).catch(() => {})
+                    }}
+                  >
+                    <ExternalLink size={12} /> Open Folder
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Software Updates */}

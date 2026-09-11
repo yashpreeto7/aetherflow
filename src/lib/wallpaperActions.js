@@ -209,7 +209,7 @@ export async function importWallpaperDialog() {
       const path = typeof selected === 'string' ? selected : selected[0]
       if (!path) return null
 
-      return addCustomMediaWallpaper(path)
+      return await addCustomMediaWallpaper(path)
     }
   } catch (err) {
     console.error('[AetherFlow] Failed to open import dialog:', err)
@@ -218,21 +218,33 @@ export async function importWallpaperDialog() {
 }
 
 /**
- * Adds a media file path (picture or video) into the user's installed library with optional custom name & home pinning
+ * Adds a media file path (picture or video) into the user's installed library with optional custom name & home pinning.
+ * Self-contained: Copies media to %APPDATA%\AetherFlow\library\ so deleting original files doesn't break wallpapers.
  */
-export function addCustomMediaWallpaper(path, customName = null, pinToHome = true) {
+export async function addCustomMediaWallpaper(path, customName = null, pinToHome = true) {
   if (!path) return null
-  const filename = path.split('\\').pop().split('/').pop()
-  const cleanName = filename.replace(/\.[^/.]+$/, '') // remove extension for title
 
-  const isImg = /\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(path)
+  let finalPath = path
+  try {
+    const importedPath = await tauriInvoke('import_wallpaper_media', { sourcePath: path })
+    if (importedPath) {
+      finalPath = importedPath
+    }
+  } catch (err) {
+    console.warn('[AetherFlow] Self-contained media copy failed, using source path:', err)
+  }
+
+  const filename = finalPath.split('\\').pop().split('/').pop()
+  const cleanName = filename.replace(/\.[^/.]+$/, '').replace(/^\d{9,12}[-_]/, '')
+
+  const isImg = /\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(finalPath)
 
   const item = isImg ? {
     id: 'local-' + Date.now(),
     type: 'wallpaper',
     name: customName?.trim() || cleanName || filename,
     engine: 'image-player',
-    config: { imagePath: path, fit: 'cover' },
+    config: { imagePath: finalPath, fit: 'cover' },
     tags: ['custom', 'picture', 'image'],
     installedAt: new Date().toISOString(),
     isCustom: true,
@@ -242,7 +254,7 @@ export function addCustomMediaWallpaper(path, customName = null, pinToHome = tru
     type: 'wallpaper',
     name: customName?.trim() || cleanName || filename,
     engine: 'video-player',
-    config: { videoPath: path, speedMultiplier: 1 },
+    config: { videoPath: finalPath, speedMultiplier: 1 },
     tags: ['custom', 'video'],
     installedAt: new Date().toISOString(),
     isCustom: true,

@@ -135,9 +135,9 @@ export default function LibraryPage() {
     return () => { if (unlistenFn) unlistenFn() }
   }, [])
 
-  function handleConfirmAdd({ name, pinToHome }) {
+  async function handleConfirmAdd({ name, pinToHome }) {
     if (!addModal.path) return
-    const newItem = addCustomMediaWallpaper(addModal.path, name, pinToHome)
+    const newItem = await addCustomMediaWallpaper(addModal.path, name, pinToHome)
     setAddModal({ isOpen: false, path: '', initialName: '' })
     if (newItem) {
       handleApply(newItem)

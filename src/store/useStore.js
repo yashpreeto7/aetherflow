@@ -331,6 +331,7 @@ export const useStore = create(
       pauseOnMaximized: true,
       multiMonitorPauseMode: 'per-display', // 'per-display' | 'all-displays'
       audioPlaybackRule: 'mute-covered',    // 'mute-covered' | 'mute-focused' | 'always'
+      preferredAudioMonitor: 'auto',        // 'auto' | specific monitor label (e.g. 'wallpaper_DISPLAY1')
       audioReactive: false,
       audioSource: 'mic',             // 'mic' | 'system'
       fps: 60,                        // Target FPS cap
@@ -420,6 +421,7 @@ export const useStore = create(
       togglePauseOnMaximized: () => set((s) => ({ pauseOnMaximized: !s.pauseOnMaximized })),
       setMultiMonitorPauseMode: (v) => set({ multiMonitorPauseMode: v }),
       setAudioPlaybackRule: (v) => set({ audioPlaybackRule: v }),
+      setPreferredAudioMonitor: (v) => set({ preferredAudioMonitor: v }),
       toggleAudioReactive: () => set((s) => ({ audioReactive: !s.audioReactive })),
       setAudioSource: (v) => set({ audioSource: v }),
 
@@ -502,6 +504,7 @@ export const useStore = create(
         pauseOnMaximized: s.pauseOnMaximized,
         multiMonitorPauseMode: s.multiMonitorPauseMode,
         audioPlaybackRule: s.audioPlaybackRule,
+        preferredAudioMonitor: s.preferredAudioMonitor,
         audioReactive: s.audioReactive,
         audioSource: s.audioSource,
         fps: s.fps,

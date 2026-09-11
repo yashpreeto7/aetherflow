@@ -35,6 +35,7 @@ export default function App() {
   const pauseOnMaximized = useStore(s => s.pauseOnMaximized) ?? true
   const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
   const audioPlaybackRule = useStore(s => s.audioPlaybackRule) || 'mute-covered'
+  const preferredAudioMonitor = useStore(s => s.preferredAudioMonitor) || 'auto'
   const authUser         = useStore(s => s.authUser)
   const isAuthenticated  = useStore(s => s.isAuthenticated)
   const glowAmbience     = useStore(s => s.glowAmbience) || 'balanced'
@@ -177,11 +178,12 @@ export default function App() {
           pauseOnMaximized: pauseOnMaximized !== false,
           multiMonitorPauseMode: multiMonitorPauseMode,
           audioPlaybackRule: audioPlaybackRule,
+          preferredAudioMonitor: preferredAudioMonitor === 'auto' ? null : preferredAudioMonitor,
         }).catch(() => {})
       } catch (err) {}
     }
     syncPerformance()
-  }, [pauseOnBattery, pauseOnFullscreen, pauseOnMaximized, multiMonitorPauseMode, audioPlaybackRule])
+  }, [pauseOnBattery, pauseOnFullscreen, pauseOnMaximized, multiMonitorPauseMode, audioPlaybackRule, preferredAudioMonitor])
 
   // Ensure window is visible and focused on mount unless launched minimized at startup
   React.useEffect(() => {

@@ -64,6 +64,7 @@ pub struct PerformanceSettings {
     pub pause_on_maximized: bool,
     pub multi_monitor_pause_mode: String,
     pub audio_playback_rule: String,
+    pub preferred_audio_monitor: Option<String>,
 }
 
 static PERFORMANCE_SETTINGS: Mutex<PerformanceSettings> = Mutex::new(PerformanceSettings {
@@ -72,6 +73,7 @@ static PERFORMANCE_SETTINGS: Mutex<PerformanceSettings> = Mutex::new(Performance
     pause_on_maximized: true,
     multi_monitor_pause_mode: String::new(),
     audio_playback_rule: String::new(),
+    preferred_audio_monitor: None,
 });
 
 static IS_SYSTEM_PAUSED: Mutex<bool> = Mutex::new(false);
@@ -168,6 +170,7 @@ pub fn is_running_on_battery() -> bool {
 pub struct MonitorOcclusionStatus {
     pub is_fullscreen: bool,
     pub is_maximized: bool,
+    pub coverage_ratio: f32,
 }
 
 #[cfg(windows)]
@@ -233,6 +236,71 @@ pub fn is_foreground_window_fullscreen() -> bool {
     false
 }
 
+#[derive(Clone, Debug)]
+pub struct MonitorGrid {
+    pub left: i32,
+    pub top: i32,
+    pub width: i32,
+    pub height: i32,
+    pub tiles: u128, // 16 columns x 8 rows = 128 tiles bitmask
+}
+
+impl MonitorGrid {
+    pub fn new(left: i32, top: i32, width: i32, height: i32) -> Self {
+        Self {
+            left,
+            top,
+            width: width.max(1),
+            height: height.max(1),
+            tiles: 0,
+        }
+    }
+
+    pub fn mark_window(&mut self, wr: &RECT) {
+        // Intersection of window rect with monitor bounds
+        let inter_left = wr.left.max(self.left);
+        let inter_top = wr.top.max(self.top);
+        let inter_right = wr.right.min(self.left.saturating_add(self.width));
+        let inter_bottom = wr.bottom.min(self.top.saturating_add(self.height));
+
+        if inter_right <= inter_left || inter_bottom <= inter_top {
+            return;
+        }
+
+        // Ignore tiny fragments or invisible shadow borders under 30x30
+        if (inter_right - inter_left) < 30 || (inter_bottom - inter_top) < 30 {
+            return;
+        }
+
+        let rel_left = (inter_left - self.left) as i64;
+        let rel_right = (inter_right - self.left) as i64;
+        let rel_top = (inter_top - self.top) as i64;
+        let rel_bottom = (inter_bottom - self.top) as i64;
+
+        let w = self.width as i64;
+        let h = self.height as i64;
+
+        let col_start = ((rel_left * 16) / w).clamp(0, 15) as usize;
+        let col_end = (((rel_right * 16 + w - 1) / w).clamp(1, 16) - 1) as usize;
+
+        let row_start = ((rel_top * 8) / h).clamp(0, 7) as usize;
+        let row_end = (((rel_bottom * 8 + h - 1) / h).clamp(1, 8) - 1) as usize;
+
+        for r in row_start..=row_end {
+            for c in col_start..=col_end {
+                let bit_idx = r * 16 + c;
+                if bit_idx < 128 {
+                    self.tiles |= 1u128 << bit_idx;
+                }
+            }
+        }
+    }
+
+    pub fn coverage_ratio(&self) -> f32 {
+        self.tiles.count_ones() as f32 / 128.0
+    }
+}
+
 struct OcclusionEnumState {
     shell_hwnd: HWND,
     self_pid: u32,
@@ -242,6 +310,7 @@ struct OcclusionEnumState {
     mpv_hwnds: Vec<usize>,
     wallpaper_hwnds: Vec<usize>,
     monitor_map: HashMap<String, MonitorOcclusionStatus>,
+    grid_map: HashMap<String, MonitorGrid>,
     visible_inspected: usize,
 }
 
@@ -360,6 +429,11 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
         return 0; // Stop enumeration after 120 candidate visible windows
     }
 
+    // Mark tiles for each monitor this window intersects (Grid Pause Algorithm)
+    for grid in state.grid_map.values_mut() {
+        grid.mark_window(&wr);
+    }
+
     let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
     if !monitor.is_null() {
         let mut mi: MONITORINFOEXW = std::mem::zeroed();
@@ -475,6 +549,18 @@ pub fn inspect_monitor_occlusion_states(app: &AppHandle) -> (HashMap<String, Mon
             }
         }
 
+        let mut grid_map: HashMap<String, MonitorGrid> = HashMap::new();
+        if let Ok(monitors) = app.available_monitors() {
+            for m in monitors {
+                if let Some(name) = m.name() {
+                    let label = get_monitor_label(name);
+                    let pos = m.position();
+                    let size = m.size();
+                    grid_map.insert(label, MonitorGrid::new(pos.x, pos.y, size.width as i32, size.height as i32));
+                }
+            }
+        }
+
         let mut state = OcclusionEnumState {
             shell_hwnd,
             self_pid,
@@ -484,10 +570,26 @@ pub fn inspect_monitor_occlusion_states(app: &AppHandle) -> (HashMap<String, Mon
             mpv_hwnds,
             wallpaper_hwnds,
             monitor_map,
+            grid_map,
             visible_inspected: 0,
         };
 
         EnumWindows(Some(enum_occlusion_proc), &mut state as *mut _ as LPARAM);
+
+        // Evaluate Grid Pause Algorithm: if collectively occluded tiles exceed 85%, mark display as maximized/covered
+        for (label, grid) in &state.grid_map {
+            let ratio = grid.coverage_ratio();
+            let entry = state.monitor_map.entry(label.clone()).or_default();
+            entry.coverage_ratio = ratio;
+            if ratio >= 0.85 {
+                entry.is_maximized = true;
+                log_msg(&format!(
+                    "[GRID OCCLUSION] monitor='{}' coverage={:.1}% ({}/128 tiles occluded) -> marked as covered",
+                    label, ratio * 100.0, grid.tiles.count_ones()
+                ));
+            }
+        }
+
         (state.monitor_map, is_app_focused)
     }
 }
@@ -608,28 +710,31 @@ pub fn start_system_state_monitor(app: AppHandle) {
             let any_monitor_physically_covered = !physically_covered_monitors.is_empty();
 
             // Identify which display is the active audio emitter
-            let primary_label = get_primary_monitor_label(&app);
-            let audio_source_label = {
-                let mut found = None;
-                if let Ok(guard) = MPV_PLAYERS.lock() {
-                    if let Some(ref map) = *guard {
-                        if map.len() == 1 {
-                            found = map.keys().next().cloned();
-                        } else if map.len() > 1 {
-                            if let Some(ref p) = primary_label {
-                                if map.contains_key(p) {
-                                    found = Some(p.clone());
-                                }
-                            }
-                            if found.is_none() {
+            let target_audio_pref = get_target_audio_monitor_label(&app);
+            let audio_source_label = target_audio_pref
+                .filter(|p| wallpaper_labels.contains(p))
+                .or_else(|| {
+                    let mut found = None;
+                    if let Ok(guard) = MPV_PLAYERS.lock() {
+                        if let Some(ref map) = *guard {
+                            if map.len() == 1 {
                                 found = map.keys().next().cloned();
+                            } else if map.len() > 1 {
+                                let primary = get_primary_monitor_label(&app);
+                                if let Some(ref p) = primary {
+                                    if map.contains_key(p) {
+                                        found = Some(p.clone());
+                                    }
+                                }
+                                if found.is_none() {
+                                    found = map.keys().next().cloned();
+                                }
                             }
                         }
                     }
-                }
-                found.or_else(|| primary_label.clone())
-                     .or_else(|| wallpaper_labels.first().cloned())
-            };
+                    found.or_else(|| get_primary_monitor_label(&app))
+                         .or_else(|| wallpaper_labels.first().cloned())
+                });
 
             // Audio playback policy evaluation:
             let all_paused = target_paused_monitors.len() >= wallpaper_labels.len() && !wallpaper_labels.is_empty();
@@ -690,11 +795,16 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 let mute_event = if should_mute_audio { "aura:mute" } else { "aura:unmute" };
                 for (label, win) in &windows {
                     if label.starts_with("wallpaper_") {
-                        let _ = win.emit_to(label.as_str(), mute_event, serde_json::json!({ "target": "*" }));
+                        let is_target = match audio_source_label {
+                            Some(ref src) => src == label,
+                            None => true,
+                        };
+                        let win_event = if should_mute_audio || !is_target { "aura:mute" } else { "aura:unmute" };
+                        let _ = win.emit_to(label.as_str(), win_event, serde_json::json!({ "target": label }));
                     }
                 }
                 let _ = app.emit(mute_event, serde_json::json!({ "target": "*" }));
-                let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {}, force_sync={})", should_mute_audio, audio_playback_rule, force_sync);
+                let msg = format!("[SYSTEM MONITOR] Audio policy transition -> muted: {} (rule: {}, audio_src: {:?}, force_sync={})", should_mute_audio, audio_playback_rule, audio_source_label, force_sync);
                 log_msg(&msg);
                 println!("{}", msg);
             }
@@ -1157,6 +1267,17 @@ fn get_primary_monitor_label(app: &AppHandle) -> Option<String> {
     })
 }
 
+fn get_target_audio_monitor_label(app: &AppHandle) -> Option<String> {
+    if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
+        if let Some(ref pref) = guard.preferred_audio_monitor {
+            if !pref.is_empty() && pref != "auto" {
+                return Some(pref.clone());
+            }
+        }
+    }
+    get_primary_monitor_label(app)
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct MonSnapshot {
     name: String,
@@ -1532,10 +1653,9 @@ async fn apply_wallpaper(
         };
 
         let speed_val = config.get("speedMultiplier").and_then(|v| v.as_f64()).or_else(|| config.get("speed").and_then(|v| v.as_f64())).unwrap_or(1.0);
-        let _fps_val = config.get("fps").and_then(|v| v.as_f64()).unwrap_or(60.0);
         let is_duplicated = target == "*";
         let mut audio_assigned = false;
-        let primary_label = get_primary_monitor_label(&app);
+        let target_audio_label = get_target_audio_monitor_label(&app);
 
         for (idx, mon) in monitors.iter().enumerate() {
             if let Some(name) = mon.name() {
@@ -1544,20 +1664,29 @@ async fn apply_wallpaper(
                     continue;
                 }
 
-                // In duplicated mode, ONLY the primary screen (or first screen) plays audio.
-                // Secondary screens MUST be muted to prevent echo / out-of-sync audio!
-                let is_primary = primary_label.as_deref() == Some(label.as_str()) || (idx == 0 && primary_label.is_none());
+                // In duplicated mode, or per-screen mode with selected audio display,
+                // only the target audio display plays audio.
+                let is_target_audio = target_audio_label.as_deref() == Some(label.as_str()) || (idx == 0 && target_audio_label.is_none());
                 let screen_muted = if global_muted {
                     true
                 } else if is_duplicated {
-                    if is_primary && !audio_assigned {
+                    if is_target_audio && !audio_assigned {
                         audio_assigned = true;
                         false
                     } else {
                         true // Secondary duplicate screen -> Mute audio!
                     }
                 } else {
-                    false
+                    let has_explicit_pref = if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
+                        guard.preferred_audio_monitor.is_some()
+                    } else {
+                        false
+                    };
+                    if has_explicit_pref {
+                        !is_target_audio
+                    } else {
+                        false
+                    }
                 };
                 let screen_volume = if screen_muted { 0.0 } else { global_volume };
 
@@ -1654,7 +1783,6 @@ async fn apply_wallpaper(
 
         // 2. Show canvas webview windows and send engine events
         let windows = app.webview_windows();
-        let primary_label = get_primary_monitor_label(&app);
         let mut audio_assigned = false;
         for (label, win) in windows {
             if label.starts_with("wallpaper_") && (target == "*" || target == label) {
@@ -1681,28 +1809,39 @@ async fn apply_wallpaper(
                     pin_hwnd_as_wallpaper(hwnd, mon_bounds);
                 }
 
-                // In duplicated / all screens mode, ONLY the primary screen plays audio.
-                // Secondary screens MUST be muted to prevent echo / out-of-sync audio!
-                let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_assigned && primary_label.is_none());
-                let is_secondary = !is_primary && target == "*";
+                // In duplicated / all screens mode, or per-screen mode with selected audio display,
+                // only the target audio display plays audio.
+                let target_audio_label = get_target_audio_monitor_label(&app);
+                let is_target_audio = target_audio_label.as_deref() == Some(label.as_str())
+                    || (!audio_assigned && target_audio_label.is_none());
+                let is_secondary = !is_target_audio && target == "*";
 
                 let screen_muted = if global_muted {
                     true
                 } else if target == "*" {
-                    if is_primary && !audio_assigned {
+                    if is_target_audio && !audio_assigned {
                         audio_assigned = true;
                         false
                     } else {
                         true // Secondary duplicate screen -> Mute audio!
                     }
                 } else {
-                    global_muted
+                    let has_explicit_pref = if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
+                        guard.preferred_audio_monitor.is_some()
+                    } else {
+                        false
+                    };
+                    if has_explicit_pref {
+                        !is_target_audio
+                    } else {
+                        global_muted
+                    }
                 };
                 let screen_volume = if screen_muted { 0.0 } else { global_volume };
 
                 let mut win_config = config.clone();
                 if let Some(obj) = win_config.as_object_mut() {
-                    obj.insert("isPrimary".to_string(), serde_json::json!(is_primary));
+                    obj.insert("isPrimary".to_string(), serde_json::json!(is_target_audio));
                     obj.insert("isSecondary".to_string(), serde_json::json!(is_secondary));
                     obj.insert("muted".to_string(), serde_json::json!(screen_muted));
                     obj.insert("volume".to_string(), serde_json::json!(screen_volume));
@@ -1840,7 +1979,7 @@ fn set_mpv_volume(monitor_label: Option<String>, volume: f64) {
 #[tauri::command]
 fn set_mpv_mute(app: AppHandle, monitor_label: Option<String>, muted: bool) {
     let target = monitor_label.unwrap_or_else(|| "*".to_string());
-    let primary_label = get_primary_monitor_label(&app);
+    let target_audio_label = get_target_audio_monitor_label(&app);
     if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
         if let Some(ref map) = *mpv_guard {
             if target == "*" {
@@ -1854,9 +1993,9 @@ fn set_mpv_mute(app: AppHandle, monitor_label: Option<String>, muted: bool) {
                             let _ = proc.set_mute(false);
                         }
                     } else {
-                        let target_unmute_label = if let Some(ref p) = primary_label {
-                            if map.contains_key(p) {
-                                p.clone()
+                        let target_unmute_label = if let Some(ref t) = target_audio_label {
+                            if map.contains_key(t) {
+                                t.clone()
                             } else {
                                 map.keys().next().cloned().unwrap_or_default()
                             }
@@ -1910,6 +2049,78 @@ fn get_custom_wallpapers_file(app: &AppHandle) -> std::path::PathBuf {
         }
     }
     primary
+}
+
+fn get_wallpaper_library_dir(app: &AppHandle) -> std::path::PathBuf {
+    let base = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let lib = base.join("library");
+    let _ = std::fs::create_dir_all(&lib);
+    lib
+}
+
+#[tauri::command]
+fn get_wallpaper_directory(app: AppHandle) -> String {
+    get_wallpaper_library_dir(&app).to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn open_wallpaper_directory(app: AppHandle) -> Result<(), String> {
+    let dir = get_wallpaper_library_dir(&app);
+    let dir_str = dir.to_string_lossy().to_string();
+    open_url(dir_str)
+}
+
+#[tauri::command]
+fn import_wallpaper_media(app: AppHandle, source_path: String) -> Result<String, String> {
+    let src = std::path::Path::new(&source_path);
+    if !src.exists() {
+        return Err(format!("Source file does not exist: {}", source_path));
+    }
+
+    let library_dir = get_wallpaper_library_dir(&app);
+
+    // If file is already inside the library dir, keep it
+    if src.starts_with(&library_dir) {
+        return Ok(source_path);
+    }
+
+    let file_stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("wallpaper");
+    let file_ext = src.extension().and_then(|s| s.to_str()).unwrap_or("bin");
+
+    let sanitized_stem: String = file_stem
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
+        .collect();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let dest_filename = format!("{}_{}.{}", timestamp, sanitized_stem.trim(), file_ext);
+    let dest_path = library_dir.join(&dest_filename);
+
+    log_msg(&format!(
+        "[WALLPAPER IMPORT] Copying media to self-contained library: {:?} -> {:?}",
+        src, dest_path
+    ));
+
+    match std::fs::copy(&src, &dest_path) {
+        Ok(bytes) => {
+            log_msg(&format!(
+                "[WALLPAPER IMPORT] Successfully copied {} bytes to {:?}",
+                bytes, dest_path
+            ));
+            Ok(dest_path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            log_msg(&format!(
+                "[WALLPAPER IMPORT] Copy failed: {}. Falling back to original path.",
+                e
+            ));
+            Ok(source_path)
+        }
+    }
 }
 
 #[tauri::command]
@@ -2112,17 +2323,17 @@ fn update_wallpaper_config(app: AppHandle, config: serde_json::Value, monitor_la
         }
     }
 
-    let primary_label = get_primary_monitor_label(&app);
+    let target_audio_label = get_target_audio_monitor_label(&app);
     let mut audio_assigned = false;
     let windows = app.webview_windows();
     for (label, win) in &windows {
         if label.starts_with("wallpaper_") && (target == "*" || target == *label) {
-            let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_assigned && primary_label.is_none());
-            let is_secondary = !is_primary && target == "*";
+            let is_target_audio = target_audio_label.as_deref() == Some(label.as_str()) || (!audio_assigned && target_audio_label.is_none());
+            let is_secondary = !is_target_audio && target == "*";
 
             let mut win_config = config.clone();
             if let Some(obj) = win_config.as_object_mut() {
-                obj.insert("isPrimary".to_string(), serde_json::json!(is_primary));
+                obj.insert("isPrimary".to_string(), serde_json::json!(is_target_audio));
                 obj.insert("isSecondary".to_string(), serde_json::json!(is_secondary));
                 if is_secondary {
                     obj.insert("muted".to_string(), serde_json::json!(true));
@@ -2211,14 +2422,48 @@ fn get_system_info() -> serde_json::Value {
     })
 }
 
+fn reassign_live_audio_output(app: &AppHandle) {
+    let target_audio = get_target_audio_monitor_label(app);
+    log_msg(&format!("[AUDIO ROUTING] Reassigning live wallpaper audio output to target: {:?}", target_audio));
+
+    // 1. Update active MPV players: unmute target, mute all others
+    if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *mpv_guard {
+            for (label, proc) in map {
+                let should_play = match target_audio {
+                    Some(ref t) => t == label,
+                    None => true,
+                };
+                let _ = proc.set_mute(!should_play);
+            }
+        }
+    }
+
+    // 2. Update Webview windows (Canvas / HTML / iframe video players)
+    let windows = app.webview_windows();
+    for (label, win) in &windows {
+        if label.starts_with("wallpaper_") {
+            let should_play = match target_audio {
+                Some(ref t) => t == label,
+                None => true,
+            };
+            let mute_event = if should_play { "aura:unmute" } else { "aura:mute" };
+            let _ = win.emit_to(label.as_str(), mute_event, serde_json::json!({ "target": label }));
+        }
+    }
+}
+
 #[tauri::command]
 fn sync_performance_settings(
+    app: AppHandle,
     pause_on_battery: bool,
     pause_on_fullscreen: bool,
     pause_on_maximized: Option<bool>,
     multi_monitor_pause_mode: Option<String>,
     audio_playback_rule: Option<String>,
+    preferred_audio_monitor: Option<String>,
 ) {
+    let mut audio_pref_changed = false;
     if let Ok(mut guard) = PERFORMANCE_SETTINGS.lock() {
         guard.pause_on_battery = pause_on_battery;
         guard.pause_on_fullscreen = pause_on_fullscreen;
@@ -2231,8 +2476,19 @@ fn sync_performance_settings(
         if let Some(ar) = audio_playback_rule {
             guard.audio_playback_rule = ar;
         }
+        if let Some(pref) = preferred_audio_monitor {
+            let clean_pref = if pref == "auto" || pref.is_empty() { None } else { Some(pref) };
+            if guard.preferred_audio_monitor != clean_pref {
+                guard.preferred_audio_monitor = clean_pref;
+                audio_pref_changed = true;
+            }
+        }
     }
     MONITOR_SYNC_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    if audio_pref_changed {
+        reassign_live_audio_output(&app);
+    }
 }
 
 #[tauri::command]
@@ -3301,6 +3557,9 @@ fn main() {
             start_oauth_listener,
             open_oauth_window,
             get_detailed_memory_usage,
+            import_wallpaper_media,
+            get_wallpaper_directory,
+            open_wallpaper_directory,
         ])
         .setup(|app| {
             #[cfg(windows)]
