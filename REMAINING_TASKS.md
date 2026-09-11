@@ -285,5 +285,6 @@ Mark these off as you complete them:
 - [x] TASK 14: Custom Theme Studio & Import/Export System (Draft mode non-intrusive preview, JSON export to clipboard/file, theme import with token validation and normalization, starter presets)
 - [x] TASK 15: Dedicated Account Tab in Settings (Authenticated vs Guest states, live Supabase & local storage diagnostics, user profile card)
 - [x] TASK 16: Win32 Occlusion, Multi-Monitor Pausing & Audio Policies Overhaul (pause on maximized windows, per-monitor Z-order occlusion engine, isolated vs global pausing, mute when covered vs mute when focused vs always active, borderless fullscreen F11 detection, verified by user)
+- [x] TASK 16.1: MPV Video Engine Self-Occlusion & Global/Isolated State Desync Fix (excluded MPV child PIDs/HWNDs and desktop window hierarchy from occlusion engine, added MONITOR_SYNC_REQUESTED atomic flush on setting/mode switch, resolved secondary display unmuting in set_mpv_mute)
 - [ ] TASK 17: UI/UX Redesign & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
 
