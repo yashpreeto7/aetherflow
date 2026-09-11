@@ -281,3 +281,6 @@ Mark these off as you complete them:
 - [x] TASK 10: YouTube & Live Web Stream Wallpapers (embedded iframes + instant thumbnails)
 - [x] TASK 11: In-App GitHub Releases Auto-Updater (Settings check + startup toast notification)
 - [x] TASK 12: Community Marketplace Backend & Live Database Migration (Supabase RPCs, 20-wallpaper catalog, real-time likes & installs, Staff Pick curation, My Submissions)
+- [x] TASK 13: Release v1.0.7 (Hover default thumbnail mode with Zustand migration v2, Viewport Lazy Loading and off-screen unloading via IntersectionObserver, Home top preview hero synchronization, YouTube thumbnail CORS fix)
+- [ ] TASK 14: UI/UX Overhaul & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
+
