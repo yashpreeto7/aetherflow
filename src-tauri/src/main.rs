@@ -49,13 +49,88 @@ struct SystemPowerStatus {
     battery_full_life_time: u32,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+#[allow(non_snake_case)]
+pub struct LASTINPUTINFO {
+    pub cbSize: u32,
+    pub dwTime: u32,
+}
+
 #[cfg(windows)]
 extern "system" {
     fn GetSystemPowerStatus(lpSystemPowerStatus: *mut SystemPowerStatus) -> i32;
+    fn GetLastInputInfo(plii: *mut LASTINPUTINFO) -> i32;
+    fn GetTickCount() -> u32;
+    fn LockWorkStation() -> i32;
+}
+
+#[cfg(windows)]
+pub fn get_system_idle_millis() -> u64 {
+    unsafe {
+        let mut lii = LASTINPUTINFO {
+            cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+            dwTime: 0,
+        };
+        if GetLastInputInfo(&mut lii) != 0 {
+            let tick = GetTickCount();
+            let elapsed = tick.wrapping_sub(lii.dwTime);
+            return elapsed as u64;
+        }
+    }
+    0
+}
+
+#[cfg(not(windows))]
+pub fn get_system_idle_millis() -> u64 {
+    0
 }
 
 use std::sync::Mutex;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScreensaverSettings {
+    pub enabled: bool,
+    pub idle_timeout_mins: u32,
+    pub mode: String,
+    pub specific_engine: Option<String>,
+    pub specific_config: Option<serde_json::Value>,
+    pub fade_in_secs: f64,
+    pub lock_on_resume: bool,
+    pub grace_period_secs: u32,
+    pub mute_audio: bool,
+}
+
+static SCREENSAVER_SETTINGS: Mutex<ScreensaverSettings> = Mutex::new(ScreensaverSettings {
+    enabled: false,
+    idle_timeout_mins: 5,
+    mode: String::new(),
+    specific_engine: None,
+    specific_config: None,
+    fade_in_secs: 1.0,
+    lock_on_resume: false,
+    grace_period_secs: 5,
+    mute_audio: true,
+});
+
+static SCREENSAVER_ACTIVE: Mutex<bool> = Mutex::new(false);
+static SCREENSAVER_ACTIVATED_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+static SCREENSAVER_IS_PREVIEW: Mutex<bool> = Mutex::new(false);
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MonitorGridReport {
+    pub label: String,
+    pub width: i32,
+    pub height: i32,
+    pub covered_tiles: u32,
+    pub total_tiles: u32,
+    pub coverage_percent: f64,
+    pub is_occluded: bool,
+    pub tiles: Vec<bool>,
+}
+
+static LATEST_GRID_REPORTS: Mutex<Vec<MonitorGridReport>> = Mutex::new(Vec::new());
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PerformanceSettings {
@@ -576,6 +651,7 @@ pub fn inspect_monitor_occlusion_states(app: &AppHandle) -> (HashMap<String, Mon
 
         EnumWindows(Some(enum_occlusion_proc), &mut state as *mut _ as LPARAM);
 
+        let mut reports = Vec::new();
         // Evaluate Grid Pause Algorithm: if collectively occluded tiles exceed 85%, mark display as maximized/covered
         for (label, grid) in &state.grid_map {
             let ratio = grid.coverage_ratio();
@@ -588,6 +664,29 @@ pub fn inspect_monitor_occlusion_states(app: &AppHandle) -> (HashMap<String, Mon
                     label, ratio * 100.0, grid.tiles.count_ones()
                 ));
             }
+
+            let mut bool_tiles = Vec::with_capacity(128);
+            for r in 0..8 {
+                for c in 0..16 {
+                    let idx = r * 16 + c;
+                    let is_set = (grid.tiles & (1u128 << idx)) != 0;
+                    bool_tiles.push(is_set);
+                }
+            }
+            reports.push(MonitorGridReport {
+                label: label.clone(),
+                width: grid.width,
+                height: grid.height,
+                covered_tiles: grid.tiles.count_ones(),
+                total_tiles: 128,
+                coverage_percent: (ratio as f64) * 100.0,
+                is_occluded: ratio >= 0.85,
+                tiles: bool_tiles,
+            });
+        }
+
+        if let Ok(mut guard) = LATEST_GRID_REPORTS.lock() {
+            *guard = reports;
         }
 
         (state.monitor_map, is_app_focused)
@@ -617,6 +716,48 @@ pub fn start_system_state_monitor(app: AppHandle) {
             }
 
             let force_sync = MONITOR_SYNC_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst);
+
+            // ── Screensaver Idle Detection & Input Wakeup ─────────────────
+            let is_screensaver_active = SCREENSAVER_ACTIVE.lock().map(|g| *g).unwrap_or(false);
+            let screensaver_cfg = SCREENSAVER_SETTINGS.lock().map(|g| g.clone()).unwrap_or_else(|_| ScreensaverSettings {
+                enabled: false,
+                idle_timeout_mins: 5,
+                mode: String::new(),
+                specific_engine: None,
+                specific_config: None,
+                fade_in_secs: 1.0,
+                lock_on_resume: false,
+                grace_period_secs: 5,
+                mute_audio: true,
+            });
+
+            #[cfg(windows)]
+            {
+                let idle_ms = get_system_idle_millis();
+                if screensaver_cfg.enabled && !is_screensaver_active {
+                    let timeout_ms = (screensaver_cfg.idle_timeout_mins as u64).max(1) * 60 * 1000;
+                    if idle_ms >= timeout_ms {
+                        let msg = format!(
+                            "[SCREENSAVER] System idle: {}ms >= {}ms. Triggering screensaver.",
+                            idle_ms, timeout_ms
+                        );
+                        log_msg(&msg);
+                        println!("{}", msg);
+                        let _ = trigger_screensaver(app.clone(), false);
+                    }
+                } else if is_screensaver_active {
+                    // If user moved mouse or typed (< 500ms since last input), wake up!
+                    if idle_ms < 500 {
+                        log_msg("[SCREENSAVER] User input detected via GetLastInputInfo. Dismissing screensaver.");
+                        println!("[SCREENSAVER] User input detected. Dismissing screensaver.");
+                        let _ = dismiss_screensaver(app.clone());
+                    }
+                }
+            }
+
+            if is_screensaver_active {
+                continue;
+            }
 
             let (pause_on_battery, pause_on_fullscreen, pause_on_maximized, multi_monitor_pause_mode, audio_playback_rule) = {
                 if let Ok(guard) = PERFORMANCE_SETTINGS.lock() {
@@ -2124,6 +2265,273 @@ fn import_wallpaper_media(app: AppHandle, source_path: String) -> Result<String,
 }
 
 #[tauri::command]
+fn sync_screensaver_settings(settings: ScreensaverSettings) -> Result<(), String> {
+    if let Ok(mut guard) = SCREENSAVER_SETTINGS.lock() {
+        *guard = settings;
+        log_msg(&format!(
+            "[SCREENSAVER] Settings updated: enabled={}, timeout={}m, mode='{}', lock_on_resume={}, grace={}s",
+            guard.enabled, guard.idle_timeout_mins, guard.mode, guard.lock_on_resume, guard.grace_period_secs
+        ));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_screensaver_settings() -> Result<ScreensaverSettings, String> {
+    if let Ok(guard) = SCREENSAVER_SETTINGS.lock() {
+        Ok(guard.clone())
+    } else {
+        Err("Failed to lock screensaver settings".to_string())
+    }
+}
+
+#[tauri::command]
+fn trigger_screensaver(app: AppHandle, is_preview: bool) -> Result<(), String> {
+    if let Ok(guard) = SCREENSAVER_ACTIVE.lock() {
+        if *guard {
+            return Ok(());
+        }
+    }
+
+    if let Ok(mut guard) = SCREENSAVER_ACTIVE.lock() {
+        *guard = true;
+    }
+    if let Ok(mut guard) = SCREENSAVER_ACTIVATED_AT.lock() {
+        *guard = Some(std::time::Instant::now());
+    }
+    if let Ok(mut guard) = SCREENSAVER_IS_PREVIEW.lock() {
+        *guard = is_preview;
+    }
+
+    let fade_secs = SCREENSAVER_SETTINGS.lock().map(|s| s.fade_in_secs).unwrap_or(1.0);
+
+    log_msg(&format!(
+        "[SCREENSAVER] Activating screensaver (preview={}, fadeIn={:.1}s)",
+        is_preview, fade_secs
+    ));
+    println!(
+        "[SCREENSAVER] Activating screensaver (preview={}, fadeIn={:.1}s)",
+        is_preview, fade_secs
+    );
+
+    // Pause desktop wallpapers while screensaver is active
+    set_mpv_pause(None, true);
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") {
+            let _ = win.emit_to(label.as_str(), "aura:pause", serde_json::json!({}));
+        }
+    }
+
+    // Create a topmost, borderless screensaver window on each monitor
+    if let Ok(monitors) = app.available_monitors() {
+        for m in monitors {
+            let m_name = m.name().map_or("Display", |v| v.as_str());
+            let clean_label = get_monitor_label(m_name);
+            let win_label = format!("screensaver_{}", clean_label);
+
+            if let Some(existing) = app.get_webview_window(&win_label) {
+                let _ = existing.close();
+            }
+
+            let pos = m.position();
+            let size = m.size();
+            let scale = m.scale_factor();
+            let logical_w = size.width as f64 / scale;
+            let logical_h = size.height as f64 / scale;
+            let logical_x = pos.x as f64 / scale;
+            let logical_y = pos.y as f64 / scale;
+
+            let url = format!("wallpaper.html?mode=screensaver&monitor={}&fadeIn={:.1}", clean_label, fade_secs);
+            let win_res = WebviewWindowBuilder::new(&app, &win_label, WebviewUrl::App(url.into()))
+                .title(&format!("AetherFlow Screensaver - {}", m_name))
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .inner_size(logical_w, logical_h)
+                .position(logical_x, logical_y)
+                .build();
+
+            match win_res {
+                Ok(win) => {
+                    #[cfg(windows)]
+                    {
+                        if let Ok(hwnd) = win.hwnd() {
+                            let raw = hwnd.0 as HWND;
+                            let hwnd_topmost = -1 as isize as HWND;
+                            unsafe {
+                                SetWindowPos(
+                                    raw,
+                                    hwnd_topmost,
+                                    pos.x,
+                                    pos.y,
+                                    size.width as i32,
+                                    size.height as i32,
+                                    SWP_SHOWWINDOW,
+                                );
+                            }
+                        }
+                    }
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+                Err(err) => {
+                    let err_msg = format!("[SCREENSAVER] Failed to create window for {}: {}", m_name, err);
+                    log_msg(&err_msg);
+                    eprintln!("{}", err_msg);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn dismiss_screensaver(app: AppHandle) -> Result<(), String> {
+    let was_active = {
+        if let Ok(mut guard) = SCREENSAVER_ACTIVE.lock() {
+            let active = *guard;
+            *guard = false;
+            active
+        } else {
+            false
+        }
+    };
+
+    if !was_active {
+        return Ok(());
+    }
+
+    let is_preview = SCREENSAVER_IS_PREVIEW.lock().map(|g| *g).unwrap_or(false);
+    let elapsed_secs = SCREENSAVER_ACTIVATED_AT.lock().ok()
+        .and_then(|mut g| g.take().map(|t| t.elapsed().as_secs()))
+        .unwrap_or(0);
+
+    if let Ok(mut g) = SCREENSAVER_IS_PREVIEW.lock() {
+        *g = false;
+    }
+
+    let (lock_on_resume, grace_period_secs) = {
+        if let Ok(guard) = SCREENSAVER_SETTINGS.lock() {
+            (guard.lock_on_resume, guard.grace_period_secs)
+        } else {
+            (false, 5)
+        }
+    };
+
+    log_msg(&format!(
+        "[SCREENSAVER] Dismissing screensaver: preview={}, elapsed={}s, grace={}s, lock_on_resume={}",
+        is_preview, elapsed_secs, grace_period_secs, lock_on_resume
+    ));
+    println!(
+        "[SCREENSAVER] Dismissing screensaver: preview={}, elapsed={}s, grace={}s, lock_on_resume={}",
+        is_preview, elapsed_secs, grace_period_secs, lock_on_resume
+    );
+
+    // 1. Close all screensaver windows
+    let windows = app.webview_windows();
+    for (label, win) in windows {
+        if label.starts_with("screensaver_") {
+            let _ = win.close();
+        }
+    }
+
+    // 2. Resume desktop wallpapers
+    set_mpv_pause(None, false);
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") {
+            let _ = win.emit_to(label.as_str(), "aura:resume", serde_json::json!({}));
+        }
+    }
+
+    // 3. Grace period logic: if not preview and past grace period, lock workstation if requested
+    if !is_preview && lock_on_resume && elapsed_secs >= grace_period_secs as u64 {
+        log_msg("[SCREENSAVER] Grace period expired and lock_on_resume is enabled -> Locking workstation");
+        println!("[SCREENSAVER] Grace period expired and lock_on_resume is enabled -> Locking workstation");
+        #[cfg(windows)]
+        unsafe {
+            LockWorkStation();
+        }
+    } else if !is_preview && lock_on_resume {
+        log_msg(&format!(
+            "[SCREENSAVER] Input received within grace period ({}s < {}s) -> Skipping system lock",
+            elapsed_secs, grace_period_secs
+        ));
+        println!(
+            "[SCREENSAVER] Input received within grace period ({}s < {}s) -> Skipping system lock",
+            elapsed_secs, grace_period_secs
+        );
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn get_screensaver_active_wallpaper() -> Result<serde_json::Value, String> {
+    let settings = {
+        if let Ok(guard) = SCREENSAVER_SETTINGS.lock() {
+            guard.clone()
+        } else {
+            return Err("Failed to lock screensaver settings".to_string());
+        }
+    };
+
+    let mode = settings.mode.as_str();
+    let (engine_id, config) = match mode {
+        "blackout" => {
+            ("blackout".to_string(), serde_json::json!({}))
+        }
+        "specific" => {
+            if let Some(eng) = settings.specific_engine {
+                (eng, settings.specific_config.unwrap_or_else(|| serde_json::json!({})))
+            } else {
+                ("aurora".to_string(), serde_json::json!({}))
+            }
+        }
+        "random" => {
+            let builtins = ["matrix-rain", "cyber-particles", "synthwave-grid", "deep-space", "aurora", "tokyo-rain"];
+            let idx = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as usize) % builtins.len();
+            (builtins[idx].to_string(), serde_json::json!({}))
+        }
+        _ => {
+            // "current" or default: retrieve active desktop wallpaper
+            if let Ok(guard) = ACTIVE_WALLPAPERS.lock() {
+                if let Some(ref map) = *guard {
+                    if let Some(active) = map.values().next() {
+                        (active.engine_id.clone(), active.config.clone())
+                    } else {
+                        ("aurora".to_string(), serde_json::json!({}))
+                    }
+                } else {
+                    ("aurora".to_string(), serde_json::json!({}))
+                }
+            } else {
+                ("aurora".to_string(), serde_json::json!({}))
+            }
+        }
+    };
+
+    Ok(serde_json::json!({
+        "engineId": engine_id,
+        "config": config,
+        "fadeInSecs": settings.fade_in_secs,
+        "muteAudio": settings.mute_audio,
+        "mode": settings.mode,
+    }))
+}
+
+#[tauri::command]
+fn get_grid_detection_state() -> Result<Vec<MonitorGridReport>, String> {
+    if let Ok(guard) = LATEST_GRID_REPORTS.lock() {
+        Ok(guard.clone())
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+#[tauri::command]
 fn save_custom_wallpapers(app: AppHandle, wallpapers: Vec<serde_json::Value>) -> Result<(), String> {
     let path = get_custom_wallpapers_file(&app);
     let mut merged_map: std::collections::BTreeMap<String, serde_json::Value> = std::collections::BTreeMap::new();
@@ -3560,6 +3968,12 @@ fn main() {
             import_wallpaper_media,
             get_wallpaper_directory,
             open_wallpaper_directory,
+            sync_screensaver_settings,
+            get_screensaver_settings,
+            trigger_screensaver,
+            dismiss_screensaver,
+            get_screensaver_active_wallpaper,
+            get_grid_detection_state,
         ])
         .setup(|app| {
             #[cfg(windows)]
@@ -3735,15 +4149,17 @@ fn main() {
             });
 
             // ── System tray ───────────────────────────────────────────────────
-            let open_item  = MenuItem::with_id(app, "open",  "Open AetherFlow",      true, None::<&str>)?;
-            let pause_item = MenuItem::with_id(app, "pause", "Pause Wallpaper",   true, None::<&str>)?;
-            let resume_item = MenuItem::with_id(app, "resume", "Resume Wallpaper",  true, None::<&str>)?;
-            let stop_item  = MenuItem::with_id(app, "stop",  "Stop Wallpaper",    true, None::<&str>)?;
-            let sep        = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_item  = MenuItem::with_id(app, "quit",  "Quit AetherFlow",       true, None::<&str>)?;
+            let open_item        = MenuItem::with_id(app, "open",        "Open AetherFlow",        true, None::<&str>)?;
+            let screensaver_item = MenuItem::with_id(app, "screensaver", "Preview Screensaver",   true, None::<&str>)?;
+            let pause_item       = MenuItem::with_id(app, "pause",       "Pause Wallpaper",       true, None::<&str>)?;
+            let resume_item      = MenuItem::with_id(app, "resume",      "Resume Wallpaper",      true, None::<&str>)?;
+            let stop_item        = MenuItem::with_id(app, "stop",        "Stop Wallpaper",        true, None::<&str>)?;
+            let sep              = tauri::menu::PredefinedMenuItem::separator(app)?;
+            let quit_item        = MenuItem::with_id(app, "quit",        "Quit AetherFlow",       true, None::<&str>)?;
 
             let menu = Menu::with_items(app, &[
                 &open_item,
+                &screensaver_item,
                 &pause_item,
                 &resume_item,
                 &stop_item,
@@ -3770,6 +4186,9 @@ fn main() {
                                     SetForegroundWindow(main_h);
                                 }
                             }
+                        }
+                        "screensaver" => {
+                            let _ = trigger_screensaver(app.clone(), true);
                         }
                         "pause" => {
                             set_mpv_pause(None, true);

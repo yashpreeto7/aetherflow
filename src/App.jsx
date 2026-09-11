@@ -36,6 +36,14 @@ export default function App() {
   const multiMonitorPauseMode = useStore(s => s.multiMonitorPauseMode) || 'per-display'
   const audioPlaybackRule = useStore(s => s.audioPlaybackRule) || 'mute-covered'
   const preferredAudioMonitor = useStore(s => s.preferredAudioMonitor) || 'auto'
+  const screensaverEnabled = useStore(s => s.screensaverEnabled)
+  const screensaverTimeoutMins = useStore(s => s.screensaverTimeoutMins)
+  const screensaverMode = useStore(s => s.screensaverMode)
+  const screensaverSpecificEngine = useStore(s => s.screensaverSpecificEngine)
+  const screensaverFadeInSecs = useStore(s => s.screensaverFadeInSecs)
+  const screensaverLockOnResume = useStore(s => s.screensaverLockOnResume)
+  const screensaverGracePeriodSecs = useStore(s => s.screensaverGracePeriodSecs)
+  const screensaverMuteAudio = useStore(s => s.screensaverMuteAudio)
   const authUser         = useStore(s => s.authUser)
   const isAuthenticated  = useStore(s => s.isAuthenticated)
   const glowAmbience     = useStore(s => s.glowAmbience) || 'balanced'
@@ -184,6 +192,38 @@ export default function App() {
     }
     syncPerformance()
   }, [pauseOnBattery, pauseOnFullscreen, pauseOnMaximized, multiMonitorPauseMode, audioPlaybackRule, preferredAudioMonitor])
+
+  // Sync screensaver settings with native Rust background idle monitor
+  React.useEffect(() => {
+    async function syncScreensaver() {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        await invoke('sync_screensaver_settings', {
+          settings: {
+            enabled: !!screensaverEnabled,
+            idle_timeout_mins: Number(screensaverTimeoutMins) || 5,
+            mode: screensaverMode || 'current',
+            specific_engine: screensaverSpecificEngine || null,
+            specific_config: null,
+            fade_in_secs: Number(screensaverFadeInSecs) || 1.0,
+            lock_on_resume: !!screensaverLockOnResume,
+            grace_period_secs: Number(screensaverGracePeriodSecs) || 5,
+            mute_audio: screensaverMuteAudio !== false,
+          }
+        }).catch(() => {})
+      } catch (err) {}
+    }
+    syncScreensaver()
+  }, [
+    screensaverEnabled,
+    screensaverTimeoutMins,
+    screensaverMode,
+    screensaverSpecificEngine,
+    screensaverFadeInSecs,
+    screensaverLockOnResume,
+    screensaverGracePeriodSecs,
+    screensaverMuteAudio,
+  ])
 
   // Ensure window is visible and focused on mount unless launched minimized at startup
   React.useEffect(() => {

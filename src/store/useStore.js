@@ -105,6 +105,28 @@ export const useStore = create(
       audioVolume: 50,                // 0 to 100
       audioMuted: false,
 
+      // ── Screensaver Settings (Lively v2.1 Enhancements) ───────────────────
+      screensaverEnabled: false,
+      screensaverTimeoutMins: 5,
+      screensaverMode: 'current', // 'current' | 'random' | 'specific' | 'blackout'
+      screensaverSpecificEngine: null,
+      screensaverFadeInSecs: 1.0,
+      screensaverLockOnResume: false,
+      screensaverGracePeriodSecs: 5,
+      screensaverMuteAudio: true,
+
+      setScreensaverEnabled: (v) => set({ screensaverEnabled: v }),
+      toggleScreensaverEnabled: () => set((s) => ({ screensaverEnabled: !s.screensaverEnabled })),
+      setScreensaverTimeoutMins: (v) => set({ screensaverTimeoutMins: v }),
+      setScreensaverMode: (v) => set({ screensaverMode: v }),
+      setScreensaverSpecificEngine: (v) => set({ screensaverSpecificEngine: v }),
+      setScreensaverFadeInSecs: (v) => set({ screensaverFadeInSecs: v }),
+      setScreensaverLockOnResume: (v) => set({ screensaverLockOnResume: v }),
+      toggleScreensaverLockOnResume: () => set((s) => ({ screensaverLockOnResume: !s.screensaverLockOnResume })),
+      setScreensaverGracePeriodSecs: (v) => set({ screensaverGracePeriodSecs: v }),
+      setScreensaverMuteAudio: (v) => set({ screensaverMuteAudio: v }),
+      toggleScreensaverMuteAudio: () => set((s) => ({ screensaverMuteAudio: !s.screensaverMuteAudio })),
+
       // Card thumbnail presentation mode: 'always' | 'hover' | 'off'
       thumbnailMode: 'hover',
       setThumbnailMode: (mode) => set({ thumbnailMode: mode }),
@@ -525,6 +547,14 @@ export const useStore = create(
         isWallpaperRunning: s.isWallpaperRunning,
         taskbarStyle: s.taskbarStyle,
         taskbarBorder: s.taskbarBorder,
+        screensaverEnabled: s.screensaverEnabled,
+        screensaverTimeoutMins: s.screensaverTimeoutMins,
+        screensaverMode: s.screensaverMode,
+        screensaverSpecificEngine: s.screensaverSpecificEngine,
+        screensaverFadeInSecs: s.screensaverFadeInSecs,
+        screensaverLockOnResume: s.screensaverLockOnResume,
+        screensaverGracePeriodSecs: s.screensaverGracePeriodSecs,
+        screensaverMuteAudio: s.screensaverMuteAudio,
         authUser: s.authUser ? {
           id: s.authUser.id,
           email: s.authUser.email,

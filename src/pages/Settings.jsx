@@ -276,6 +276,28 @@ export default function SettingsPage() {
   const screenArrangement = useStore(s => s.screenArrangement)
   const setScreenArrangement = useStore(s => s.setScreenArrangement)
 
+  // Screensaver store bindings (Lively v2.1 Enhancements)
+  const screensaverEnabled = useStore(s => s.screensaverEnabled)
+  const toggleScreensaverEnabled = useStore(s => s.toggleScreensaverEnabled)
+  const screensaverTimeoutMins = useStore(s => s.screensaverTimeoutMins)
+  const setScreensaverTimeoutMins = useStore(s => s.setScreensaverTimeoutMins)
+  const screensaverMode = useStore(s => s.screensaverMode)
+  const setScreensaverMode = useStore(s => s.setScreensaverMode)
+  const screensaverSpecificEngine = useStore(s => s.screensaverSpecificEngine)
+  const setScreensaverSpecificEngine = useStore(s => s.setScreensaverSpecificEngine)
+  const screensaverFadeInSecs = useStore(s => s.screensaverFadeInSecs)
+  const setScreensaverFadeInSecs = useStore(s => s.setScreensaverFadeInSecs)
+  const screensaverLockOnResume = useStore(s => s.screensaverLockOnResume)
+  const toggleScreensaverLockOnResume = useStore(s => s.toggleScreensaverLockOnResume)
+  const screensaverGracePeriodSecs = useStore(s => s.screensaverGracePeriodSecs)
+  const setScreensaverGracePeriodSecs = useStore(s => s.setScreensaverGracePeriodSecs)
+  const screensaverMuteAudio = useStore(s => s.screensaverMuteAudio)
+  const toggleScreensaverMuteAudio = useStore(s => s.toggleScreensaverMuteAudio)
+  const installedWallpapers = useStore(s => s.installed) || []
+
+  // Grid Pause Diagnostic State
+  const [gridReports, setGridReports] = useState([])
+
   // Appearance & Theme store bindings
   const activeTheme = useStore(s => s.activeTheme)
   const setActiveTheme = useStore(s => s.setActiveTheme)
@@ -734,10 +756,34 @@ export default function SettingsPage() {
     setCheckingUpdate(false)
   }
 
+  // Live polling for Grid Pause Coverage Diagnostic when on Performance tab
+  useEffect(() => {
+    if (activeTab !== 'performance') return
+    let mounted = true
+
+    const fetchGrid = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const reports = await invoke('get_grid_detection_state')
+        if (mounted && Array.isArray(reports)) {
+          setGridReports(reports)
+        }
+      } catch (e) {}
+    }
+
+    fetchGrid()
+    const interval = setInterval(fetchGrid, 1200)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [activeTab])
+
   const TABS = [
     { id: 'performance', label: 'Performance', icon: Zap },
     { id: 'appearance',  label: 'Appearance',  icon: Palette },
     { id: 'thumbnails',  label: 'Thumbnails',  icon: Eye },
+    { id: 'screensaver', label: 'Screensaver', icon: Moon },
     { id: 'taskbar',     label: 'Taskbar',     icon: LayoutTemplate },
     { id: 'audio',       label: 'Audio',       icon: Mic },
     { id: 'system',      label: 'System',      icon: Power },
@@ -926,6 +972,94 @@ export default function SettingsPage() {
                   Distinct Per-Screen
                 </button>
               </div>
+            </div>
+
+            {/* Grid Pause Coverage Diagnostic Visualizer (Lively v2.1 Enhancements) */}
+            <div style={{ padding: '16px 18px', borderTop: '1px solid var(--border-subtle)' }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                <div className="flex items-center gap-2">
+                  <Cpu size={15} style={{ color: 'var(--color-brand)' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                    Grid Pause Coverage Diagnostic
+                  </span>
+                </div>
+                <span className="badge font-mono" style={{ fontSize: 10, background: 'color-mix(in srgb, var(--color-brand) 12%, transparent)', color: 'var(--color-brand)' }}>
+                  16×8 Tile Intersection
+                </span>
+              </div>
+              <div className="text-xs text-muted" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+                Real-time 128-tile screen occupancy matrix. Red illuminated tiles indicate foreground and background windows currently occluding the desktop. The engine dynamically pauses playback once coverage reaches 85%.
+              </div>
+
+              {gridReports.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center', borderRadius: 8, background: 'var(--bg-base)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: 12 }}>
+                  Scanning display intersection bitmasks...
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+                  {gridReports.map(report => (
+                    <div
+                      key={report.label}
+                      style={{
+                        padding: '14px',
+                        borderRadius: 10,
+                        background: 'var(--bg-base)',
+                        border: `1px solid ${report.is_occluded ? 'var(--color-rose)' : 'var(--border-subtle)'}`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
+                          {report.label} ({report.width}×{report.height})
+                        </span>
+                        <span
+                          className="telemetry-chip font-mono"
+                          style={{
+                            fontSize: 10.5,
+                            color: report.is_occluded ? 'var(--color-rose)' : 'var(--color-emerald)',
+                            background: report.is_occluded
+                              ? 'color-mix(in srgb, var(--color-rose) 15%, transparent)'
+                              : 'color-mix(in srgb, var(--color-emerald) 15%, transparent)',
+                          }}
+                        >
+                          {report.coverage_percent.toFixed(1)}% ({report.covered_tiles}/128 tiles)
+                        </span>
+                      </div>
+
+                      {/* 16x8 Matrix Tile Grid */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(16, 1fr)',
+                          gap: 3,
+                          padding: 6,
+                          background: 'rgba(0, 0, 0, 0.35)',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        {report.tiles.map((isCovered, idx) => (
+                          <div
+                            key={idx}
+                            title={`Tile #${idx + 1}: ${isCovered ? 'Covered' : 'Exposed'}`}
+                            style={{
+                              aspectRatio: '1',
+                              borderRadius: 2,
+                              background: isCovered ? 'var(--color-rose, #ef4444)' : 'rgba(255, 255, 255, 0.07)',
+                              boxShadow: isCovered ? '0 0 4px rgba(239, 68, 68, 0.6)' : 'none',
+                              transition: 'background 0.2s ease',
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between" style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                        <span>Status: <strong style={{ color: report.is_occluded ? 'var(--color-rose)' : 'var(--color-emerald)' }}>{report.is_occluded ? 'Occluded (Paused)' : 'Clear (Playing)'}</strong></span>
+                        <span>Threshold: 85%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1529,6 +1663,210 @@ export default function SettingsPage() {
                 })}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Screensaver (Lively v2.1 Enhancements) ────────────────────── */}
+      {activeTab === 'screensaver' && (
+        <div className="animate-fadeIn">
+          {/* Master Control & Preview Hero Card */}
+          <div className="setting-card">
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <Moon size={16} style={{ color: 'var(--color-brand)' }} />
+                <span className="text-sm font-semibold">Screensaver Integration</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ fontSize: 11.5, padding: '4px 14px', height: 28, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  onClick={async () => {
+                    try {
+                      const { invoke } = await import('@tauri-apps/api/core')
+                      await invoke('trigger_screensaver', { isPreview: true })
+                    } catch (e) {
+                      console.error('[Screensaver] Preview error:', e)
+                    }
+                  }}
+                  title="Test screensaver activation immediately"
+                >
+                  <Sparkles size={13} /> Preview Screensaver
+                </button>
+              </div>
+            </div>
+
+            <SettingRow
+              label="Enable System Screensaver"
+              desc="Automatically launch a full-screen dynamic screensaver across all monitors when the system is idle"
+            >
+              <button
+                type="button"
+                className={`toggle-switch ${screensaverEnabled ? 'active' : ''}`}
+                onClick={toggleScreensaverEnabled}
+                aria-label="Toggle screensaver"
+              />
+            </SettingRow>
+
+            <SliderRow
+              label="Inactivity Timeout"
+              desc="Minutes of inactivity without mouse movement or keypresses before the screensaver triggers"
+              value={screensaverTimeoutMins}
+              set={setScreensaverTimeoutMins}
+              min={1}
+              max={60}
+              step={1}
+              fmt={v => `${v} min${v > 1 ? 's' : ''}`}
+              presets={[
+                { label: '1m', val: 1 },
+                { label: '2m', val: 2 },
+                { label: '5m', val: 5 },
+                { label: '10m', val: 10 },
+                { label: '15m', val: 15 },
+                { label: '30m', val: 30 },
+              ]}
+            />
+          </div>
+
+          {/* Wallpaper Source Selection Card */}
+          <div className="setting-card">
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <Monitor size={16} style={{ color: 'var(--color-accent)' }} />
+                <span className="text-sm font-semibold">Screensaver Visual Source</span>
+              </div>
+              <span className="badge font-mono" style={{ fontSize: 10 }}>Source Mode</span>
+            </div>
+
+            <div style={{ padding: '14px 18px' }}>
+              <div className="text-xs text-muted" style={{ marginBottom: 12 }}>
+                Choose which visuals will be rendered while the screensaver is active.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                {[
+                  { id: 'current', label: 'Match Desktop', desc: 'Mirror currently playing active wallpaper' },
+                  { id: 'random', label: 'Random Engine', desc: 'Cycles a random aesthetic engine from library' },
+                  { id: 'specific', label: 'Specific Wallpaper', desc: 'Always display a chosen wallpaper' },
+                  { id: 'blackout', label: 'OLED Blackout', desc: 'Pure black zero-emission screen with clock' },
+                ].map(opt => (
+                  <div
+                    key={opt.id}
+                    className={`option-card ${screensaverMode === opt.id ? 'selected' : ''}`}
+                    onClick={() => setScreensaverMode(opt.id)}
+                    style={{ padding: '12px 14px' }}
+                  >
+                    <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
+                      <span className="font-semibold text-xs" style={{ color: screensaverMode === opt.id ? 'var(--color-brand)' : 'var(--text-main)' }}>
+                        {opt.label}
+                      </span>
+                      {screensaverMode === opt.id && (
+                        <Check size={13} style={{ color: 'var(--color-brand)' }} />
+                      )}
+                    </div>
+                    <div className="text-xs text-muted" style={{ fontSize: 11, lineHeight: 1.35 }}>
+                      {opt.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {screensaverMode === 'specific' && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+                  <label className="text-xs font-semibold" style={{ display: 'block', marginBottom: 6, color: 'var(--text-main)' }}>
+                    Select Specific Wallpaper Engine
+                  </label>
+                  <select
+                    className="select-input"
+                    value={screensaverSpecificEngine || 'aurora'}
+                    onChange={e => setScreensaverSpecificEngine(e.target.value)}
+                    style={{ width: '100%', maxWidth: 360 }}
+                  >
+                    <option value="matrix-rain">Matrix Rain (Digital Cyberpunk)</option>
+                    <option value="cyber-particles">Cyber Particles (Interactive Nebula)</option>
+                    <option value="synthwave-grid">Synthwave Grid (Retro 80s Horizon)</option>
+                    <option value="deep-space">Deep Space (Cosmic Starfield)</option>
+                    <option value="aurora">Aurora (Luminescent Waves)</option>
+                    <option value="tokyo-rain">Tokyo Rain (Atmospheric City Drops)</option>
+                    <option value="audio-spectrum">Audio Spectrum (Frequency Visualizer)</option>
+                    {installedWallpapers.filter(w => !['matrix-rain','cyber-particles','synthwave-grid','deep-space','aurora','tokyo-rain','audio-spectrum'].includes(w.id)).map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.type || 'Custom'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Transitions & Security Grace Period Card */}
+          <div className="setting-card">
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck size={16} style={{ color: 'var(--color-emerald)' }} />
+                <span className="text-sm font-semibold">Transitions & Grace Period Security</span>
+              </div>
+              <span className="badge font-mono" style={{ fontSize: 10 }}>Protection</span>
+            </div>
+
+            <SliderRow
+              label="Fade-in Animation Duration"
+              desc="Smooth optical transition time when screensaver appears. Any user interaction during this phase immediately cancels activation."
+              value={screensaverFadeInSecs}
+              set={setScreensaverFadeInSecs}
+              min={0.5}
+              max={3.0}
+              step={0.5}
+              fmt={v => `${v.toFixed(1)}s`}
+              presets={[
+                { label: '0.5s', val: 0.5 },
+                { label: '1.0s', val: 1.0 },
+                { label: '1.5s', val: 1.5 },
+                { label: '2.0s', val: 2.0 },
+              ]}
+            />
+
+            <SettingRow
+              label="Lock On Resume"
+              desc="Protect your workstation by locking Windows (Win+L) when resuming from the screensaver"
+            >
+              <button
+                type="button"
+                className={`toggle-switch ${screensaverLockOnResume ? 'active' : ''}`}
+                onClick={toggleScreensaverLockOnResume}
+                aria-label="Toggle lock on resume"
+              />
+            </SettingRow>
+
+            <SliderRow
+              label="Security Grace Period"
+              desc="If user input is detected shortly after screensaver triggers, Windows system lock is bypassed so accidental activations don't interrupt workflow."
+              value={screensaverGracePeriodSecs}
+              set={setScreensaverGracePeriodSecs}
+              min={1}
+              max={15}
+              step={1}
+              fmt={v => `${v}s`}
+              presets={[
+                { label: '3s', val: 3 },
+                { label: '5s', val: 5 },
+                { label: '10s', val: 10 },
+              ]}
+            />
+
+            <SettingRow
+              label="Mute Audio While in Screensaver"
+              desc="Automatically mute all wallpaper audio tracks when the screensaver is showing"
+            >
+              <button
+                type="button"
+                className={`toggle-switch ${screensaverMuteAudio ? 'active' : ''}`}
+                onClick={toggleScreensaverMuteAudio}
+                aria-label="Toggle mute audio in screensaver"
+              />
+            </SettingRow>
           </div>
         </div>
       )}
