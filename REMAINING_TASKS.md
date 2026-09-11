@@ -289,5 +289,16 @@ Mark these off as you complete them:
 - [x] TASK 16.2: Multi-Monitor Isolated Pausing & NULL-Handle Occlusion Bugfix (fixed `0 == 0` NULL-handle trap on `parent == shell_hwnd/progman` in `enum_occlusion_proc`, replaced state-wiping `paused_monitors.clear()` with deterministic `force_sync` reconciliation, scoped isolated audio muting strictly to the active audio source monitor, added store migration v3 with `pauseOnMaximized: true` fallback)
 - [x] TASK 16.3: "Mute When Covered" Occlusion Decoupling & Audio Source Routing (decoupled physical display occlusion from animation pause preferences so mute-covered functions even if pauseOnMaximized is false, added dynamic audio source display tracking for MPV and Webview, broadcast mute events to both MPV processes and all WebView windows)
 - [ ] TASK 17: UI/UX Redesign & Modernization on `ui/ux` branch (Design evaluation of `ui improvement ideas/` reference mockups, layout, typography, glassmorphic hierarchy, and component polish)
+- [ ] TASK 18: Lively v2.1 Advanced Features & Screensaver Multi-Monitor Engine
+  - [x] 18.1: 16×8 Grid Desktop Coverage Diagnostic Visualizer (128 sampling tiles per display, real-time bitmask calculation in Win32, interactive live visualizer in Settings Performance tab)
+  - [x] 18.2: Visualizer Audio Source Hardware Device Selection & VU Meter (dynamic input enumeration, fallback on disconnect, live decibel bar, 10s auto-stop test in Settings)
+  - [x] 18.3: Picture Wallpaper Choose a Fit & Color Matte (fill, fit, stretch, center, tile modes with custom background color picker and color presets)
+  - [x] 18.4: Monitor Display Ordering & Clean Labeling (Primary monitor sorted first as `Display 1 (Primary)`, friendly display names across diagnostic grid, audio routing, and home pills)
+  - [x] 18.5: Screensaver Core Engine (Win32 idle detection, grace period, lock on resume, luxury HUD clock/date, wallpaper pausing synchronization, unclosable/freeze bugfix)
+  - [ ] 18.6: Screensaver Multi-Monitor Edge Polish:
+    - Eliminate WebView2 white background flash on secondary monitor (`Screen 2`) during initial initialization
+    - Ensure tray-activated screensaver uses hardware `rcMonitor` across all secondary displays to prevent sizing gaps
+
+
 
 

@@ -1,5 +1,5 @@
 # AetherFlow — Session Handoff File
-> **Updated:** 2026-09-11 21:46 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** ✅ Production Ready & Fully Verified. Resolved MPV self-occlusion bug and Global/Isolated mode switching state desync. Standalone release binary updated (`.\AetherFlow.exe`, 7.09 MB). Frontend builds cleanly in 704ms.
+> **Updated:** 2026-09-12 02:30 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** 🟡 In Progress. Lively v2.1 features added: 16×8 Grid Diagnostic, Screensaver system, Visualizer Audio Source dropdown + VU meter, Picture 5-Fit selector + matte background, and Display 1/2 sorting. Screensaver multi-monitor white flash on Screen 2 and tray edge-to-edge coverage queued for next session. Standalone binary updated (`.\AetherFlow.exe`, 7.15 MB, PID 35144). Frontend builds cleanly in 675ms.
 
 ---
 
