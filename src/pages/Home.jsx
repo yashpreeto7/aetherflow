@@ -722,6 +722,18 @@ export default function HomePage() {
     }
   }
 
+  async function handleBackgroundColor(backgroundColor) {
+    if (!activeWallpaper) return
+    const updatedConfig = { ...(activeWallpaper.config || {}), backgroundColor }
+    useStore.getState().updateWallpaperConfig({ backgroundColor })
+    if (isWallpaperRunning) {
+      await tauriInvoke('update_wallpaper_config', {
+        config: updatedConfig,
+        monitorLabel: selectedMonitorLabel || null,
+      })
+    }
+  }
+
   async function handleSetWindowsWallpaper() {
     const imgPath = activeWallpaper?.config?.imagePath
     if (!imgPath) return
@@ -1103,21 +1115,76 @@ export default function HomePage() {
             {isCurrentWallpaperImage ? (
               <div>
                 <div className="flex justify-between text-xs text-muted" style={{ marginBottom: 8, userSelect: 'none' }}>
-                  <span>Scaling / Fit</span>
-                  <span className="text-brand font-mono capitalize">{activeWallpaper.config?.fit || 'cover'}</span>
+                  <span>Choose a Fit</span>
+                  <span className="text-brand font-mono capitalize">
+                    {activeWallpaper.config?.fit === 'cover' ? 'fill' : (activeWallpaper.config?.fit === 'contain' ? 'fit' : (activeWallpaper.config?.fit || 'fill'))}
+                  </span>
                 </div>
-                <div className="flex gap-1">
-                  {['cover', 'contain', 'stretch'].map(fit => (
-                    <button
-                      key={fit}
-                      className={`btn ${(activeWallpaper.config?.fit || 'cover') === fit ? 'btn-primary' : 'btn-ghost'}`}
-                      style={{ flex: 1, padding: '5px 8px', fontSize: 11, textTransform: 'capitalize' }}
-                      onClick={() => handleFit(fit)}
-                    >
-                      {fit}
-                    </button>
-                  ))}
+                <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'fill', label: 'Fill' },
+                    { id: 'fit', label: 'Fit' },
+                    { id: 'stretch', label: 'Stretch' },
+                    { id: 'center', label: 'Center' },
+                    { id: 'tile', label: 'Tile' },
+                  ].map(({ id, label }) => {
+                    const currentFit = (activeWallpaper.config?.fit || 'fill').toLowerCase()
+                    const isActive = currentFit === id || (id === 'fill' && currentFit === 'cover') || (id === 'fit' && currentFit === 'contain')
+                    return (
+                      <button
+                        key={id}
+                        className={`btn ${isActive ? 'btn-primary' : 'btn-ghost'}`}
+                        style={{ flex: 1, minWidth: 50, padding: '5px 8px', fontSize: 11 }}
+                        onClick={() => handleFit(id)}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
                 </div>
+
+                {/* Matte / Letterbox background color when Fit or Center is active */}
+                {['fit', 'contain', 'center'].includes((activeWallpaper.config?.fit || '').toLowerCase()) && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span className="text-xs text-muted">Matte Background</span>
+                    <div className="flex items-center gap-1.5">
+                      {['#000000', '#0a0e17', '#18181b', '#2d3748', '#ffffff'].map(c => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => handleBackgroundColor(c)}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: c,
+                            border: (activeWallpaper.config?.backgroundColor || '#000000') === c
+                              ? '2px solid var(--color-brand)'
+                              : '1px solid rgba(255,255,255,0.2)',
+                            cursor: 'pointer',
+                            padding: 0,
+                          }}
+                          title={c}
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        value={activeWallpaper.config?.backgroundColor || '#000000'}
+                        onChange={e => handleBackgroundColor(e.target.value)}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          padding: 0,
+                          borderRadius: 4,
+                          border: '1px solid var(--border-main)',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                        }}
+                        title="Custom matte color"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div>

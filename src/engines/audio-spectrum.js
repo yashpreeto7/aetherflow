@@ -17,6 +17,7 @@ export function createAudioSpectrum(canvas, options = {}) {
     speedMultiplier = 1,
     preview = false,  // true = thumbnail card mode, skip mic request
     useMic = false,   // true = request mic for live sound, false = beat simulation
+    audioDeviceId = 'default',
     fps = 60,
   } = options
 
@@ -41,19 +42,48 @@ export function createAudioSpectrum(canvas, options = {}) {
     if (preview || !options.useMic) return false
 
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-      analyser = audioCtx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = smoothing
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      } else if (audioCtx.state === 'suspended') {
+        await audioCtx.resume().catch(() => {})
+      }
+      if (!analyser) {
+        analyser = audioCtx.createAnalyser()
+        analyser.fftSize = 256
+        analyser.smoothingTimeConstant = smoothing
+      }
 
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop())
+        stream = null
+      }
+
+      const activeDevId = options.audioDeviceId || audioDeviceId || 'default'
+      const constraints = {
+        audio: (activeDevId && activeDevId !== 'default')
+          ? { deviceId: { exact: activeDevId } }
+          : true,
+        video: false
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints)
+      } catch (devErr) {
+        if (activeDevId !== 'default') {
+          console.warn('[AetherFlow Audio] Selected audio device unavailable, falling back to default device:', devErr)
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        } else {
+          throw devErr
+        }
+      }
+
       const src = audioCtx.createMediaStreamSource(stream)
       src.connect(analyser)
 
       dataArray = new Uint8Array(analyser.frequencyBinCount)
       return true
     } catch (e) {
-      console.warn('AuraOS Audio: microphone not available, using idle simulation', e)
+      console.warn('AuraOS Audio: microphone/device not available, using idle simulation', e)
       return false
     }
   }
@@ -172,7 +202,11 @@ export function createAudioSpectrum(canvas, options = {}) {
 
   function updateOptions(newOpts) {
     const prevUseMic = options.useMic
+    const prevDevId = options.audioDeviceId || audioDeviceId || 'default'
     Object.assign(options, newOpts)
+    if (newOpts.audioDeviceId !== undefined) {
+      audioDeviceId = newOpts.audioDeviceId
+    }
     if (newOpts.speedMultiplier !== undefined) speedMultiplier = newOpts.speedMultiplier
     if (newOpts.fps !== undefined) fps = newOpts.fps
     if (newOpts.color !== undefined) color = newOpts.color
@@ -184,8 +218,11 @@ export function createAudioSpectrum(canvas, options = {}) {
     }
     if (analyser) analyser.smoothingTimeConstant = options.smoothing ?? smoothing
 
-    if (!prevUseMic && options.useMic && !stream && !preview) {
-      initAudio().catch(e => console.warn('AuraOS Audio init error:', e))
+    const nextDevId = options.audioDeviceId || audioDeviceId || 'default'
+    if (options.useMic && !preview) {
+      if (!prevUseMic || nextDevId !== prevDevId || !stream) {
+        initAudio().catch(e => console.warn('AuraOS Audio init error:', e))
+      }
     } else if (prevUseMic && !options.useMic && stream) {
       stream.getTracks().forEach(t => t.stop())
       stream = null

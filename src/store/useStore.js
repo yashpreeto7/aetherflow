@@ -356,6 +356,9 @@ export const useStore = create(
       preferredAudioMonitor: 'auto',        // 'auto' | specific monitor label (e.g. 'wallpaper_DISPLAY1')
       audioReactive: false,
       audioSource: 'mic',             // 'mic' | 'system'
+      visualizerAudioDeviceId: 'default', // 'default' or specific hardware audio device ID
+      pictureFit: 'fill',             // 'fill' | 'fit' | 'stretch' | 'center' | 'tile'
+      pictureBackgroundColor: '#000000', // Hex background for fit/center letterboxing
       fps: 60,                        // Target FPS cap
       taskbarStyle: 'default',        // 'default' | 'clear' | 'acrylic' | 'blur'
       taskbarBorder: false,           // false = no border / clean glass, true = show top line
@@ -446,6 +449,9 @@ export const useStore = create(
       setPreferredAudioMonitor: (v) => set({ preferredAudioMonitor: v }),
       toggleAudioReactive: () => set((s) => ({ audioReactive: !s.audioReactive })),
       setAudioSource: (v) => set({ audioSource: v }),
+      setVisualizerAudioDeviceId: (id) => set({ visualizerAudioDeviceId: id }),
+      setPictureFit: (fit) => set({ pictureFit: fit }),
+      setPictureBackgroundColor: (color) => set({ pictureBackgroundColor: color }),
 
       // ── UI State (non-persisted) ──────────────────────────────────────────
       currentPage: 'home',
@@ -529,6 +535,9 @@ export const useStore = create(
         preferredAudioMonitor: s.preferredAudioMonitor,
         audioReactive: s.audioReactive,
         audioSource: s.audioSource,
+        visualizerAudioDeviceId: s.visualizerAudioDeviceId,
+        pictureFit: s.pictureFit,
+        pictureBackgroundColor: s.pictureBackgroundColor,
         fps: s.fps,
         cardOpacity: s.cardOpacity,
         cardBlur: s.cardBlur,

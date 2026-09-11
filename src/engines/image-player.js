@@ -20,32 +20,65 @@ export function createImagePlayer(canvas, options = {}) {
 
   function render() {
     if (!ctx || !canvas.width || !canvas.height) return
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    if (!isLoaded || !img || !img.complete || img.naturalWidth === 0) return
-
     const cw = canvas.width
     const ch = canvas.height
+
+    const bgColor = options.backgroundColor || '#05070a'
+    ctx.fillStyle = bgColor
+    ctx.fillRect(0, 0, cw, ch)
+
+    if (!isLoaded || !img || !img.complete || img.naturalWidth === 0) return
+
     const iw = img.naturalWidth
     const ih = img.naturalHeight
-    const fit = options.fit || 'cover'
+    const fit = (options.fit || 'fill').toLowerCase()
 
-    if (fit === 'contain') {
+    if (fit === 'tile') {
+      try {
+        const pattern = ctx.createPattern(img, 'repeat')
+        if (pattern) {
+          ctx.fillStyle = pattern
+          ctx.fillRect(0, 0, cw, ch)
+        } else {
+          ctx.drawImage(img, 0, 0, cw, ch)
+        }
+      } catch (e) {
+        ctx.drawImage(img, 0, 0, cw, ch)
+      }
+    } else if (fit === 'stretch') {
+      ctx.drawImage(img, 0, 0, cw, ch)
+    } else if (fit === 'fit' || fit === 'contain') {
       const scale = Math.min(cw / iw, ch / ih)
       const sw = iw * scale
       const sh = ih * scale
       const sx = (cw - sw) / 2
       const sy = (ch - sh) / 2
       ctx.drawImage(img, sx, sy, sw, sh)
-    } else if (fit === 'stretch') {
-      ctx.drawImage(img, 0, 0, cw, ch)
+    } else if (fit === 'center') {
+      // 1:1 original natural resolution centered, or scaled down only if larger than display
+      const scale = Math.min(1, Math.min(cw / iw, ch / ih))
+      const sw = iw * scale
+      const sh = ih * scale
+      const sx = (cw - sw) / 2
+      const sy = (ch - sh) / 2
+      ctx.drawImage(img, sx, sy, sw, sh)
     } else {
-      // 'cover' — default to fill display without distortion
+      // 'fill' or 'cover' — default to fill display without distortion
       const scale = Math.max(cw / iw, ch / ih)
       const sw = iw * scale
       const sh = ih * scale
       const sx = (cw - sw) / 2
       const sy = (ch - sh) / 2
       ctx.drawImage(img, sx, sy, sw, sh)
+    }
+
+    // Optional subtle tint overlay
+    if (options.tintColor && options.tintOpacity) {
+      ctx.save()
+      ctx.fillStyle = options.tintColor
+      ctx.globalAlpha = Math.max(0, Math.min(1, Number(options.tintOpacity)))
+      ctx.fillRect(0, 0, cw, ch)
+      ctx.restore()
     }
   }
 

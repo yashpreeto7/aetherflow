@@ -5,7 +5,7 @@ import {
   LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles, Eye,
   Sliders, Palette, ShieldCheck, Check, Volume2, VolumeX, Moon, Sun, Cpu,
   Trash2, Plus, Save, RotateCcw, Paintbrush, User, Upload, Download, Copy,
-  LogIn, LogOut, Shield, Globe, Key, FileText, Cloud, FileDown, FileUp, Folder, FolderOpen
+  LogIn, LogOut, Shield, Globe, Key, FileText, Cloud, FileDown, FileUp, Folder, FolderOpen, Music
 } from 'lucide-react'
 import { checkForUpdate, openReleaseUrl, APP_VERSION } from '../lib/updater.js'
 import { BUILTIN_THEMES } from '../engines/index.js'
@@ -327,6 +327,137 @@ export default function SettingsPage() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [importJsonText, setImportJsonText] = useState('')
   const fileInputRef = useRef(null)
+
+  // Visualizer Audio Source bindings (Lively Enhancements)
+  const visualizerAudioDeviceId = useStore(s => s.visualizerAudioDeviceId) || 'default'
+  const setVisualizerAudioDeviceId = useStore(s => s.setVisualizerAudioDeviceId)
+  const [audioInputDevices, setAudioInputDevices] = useState([
+    { deviceId: 'default', label: 'Default (Follows Windows System Default)' }
+  ])
+  const [isTestingAudio, setIsTestingAudio] = useState(false)
+  const [testAudioLevel, setTestAudioLevel] = useState(0)
+  const audioTestStreamRef = useRef(null)
+  const audioTestAnimRef = useRef(null)
+
+  useEffect(() => {
+    let active = true
+
+    async function scanAudioDevices() {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices()
+        if (!active) return
+        const inputs = devs.filter(d => d.kind === 'audioinput')
+        const list = [
+          { deviceId: 'default', label: 'Default (Follows Windows System Default)' }
+        ]
+        inputs.forEach((d, idx) => {
+          if (d.deviceId && d.deviceId !== 'default') {
+            list.push({
+              deviceId: d.deviceId,
+              label: d.label || `Audio Device ${idx + 1}`
+            })
+          }
+        })
+        setAudioInputDevices(list)
+      } catch (e) {
+        console.warn('[AetherFlow] Could not enumerate audio devices:', e)
+      }
+    }
+
+    scanAudioDevices()
+    if (navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', scanAudioDevices)
+      return () => {
+        active = false
+        navigator.mediaDevices.removeEventListener('devicechange', scanAudioDevices)
+      }
+    }
+  }, [])
+
+  async function toggleAudioTest() {
+    if (isTestingAudio) {
+      setIsTestingAudio(false)
+      if (audioTestAnimRef.current) cancelAnimationFrame(audioTestAnimRef.current)
+      if (audioTestStreamRef.current) {
+        audioTestStreamRef.current.getTracks().forEach(t => t.stop())
+        audioTestStreamRef.current = null
+      }
+      setTestAudioLevel(0)
+      return
+    }
+
+    try {
+      setIsTestingAudio(true)
+      const constraints = {
+        audio: (visualizerAudioDeviceId && visualizerAudioDeviceId !== 'default')
+          ? { deviceId: { exact: visualizerAudioDeviceId } }
+          : true,
+        video: false
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      audioTestStreamRef.current = stream
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 64
+      const src = audioCtx.createMediaStreamSource(stream)
+      src.connect(analyser)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+
+      function pump() {
+        if (!audioTestStreamRef.current) return
+        analyser.getByteFrequencyData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) sum += data[i]
+        const avg = sum / (data.length || 1)
+        setTestAudioLevel(Math.min(100, Math.round((avg / 128) * 100)))
+        audioTestAnimRef.current = requestAnimationFrame(pump)
+      }
+      pump()
+
+      setTimeout(() => {
+        if (audioTestStreamRef.current) {
+          audioTestStreamRef.current.getTracks().forEach(t => t.stop())
+          audioTestStreamRef.current = null
+          setIsTestingAudio(false)
+          setTestAudioLevel(0)
+        }
+      }, 10000)
+    } catch (err) {
+      console.warn('[AetherFlow] Audio test failed:', err)
+      setIsTestingAudio(false)
+      setTestAudioLevel(0)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (audioTestAnimRef.current) cancelAnimationFrame(audioTestAnimRef.current)
+      if (audioTestStreamRef.current) {
+        audioTestStreamRef.current.getTracks().forEach(t => t.stop())
+      }
+    }
+  }, [])
+
+  const handleVisualizerDeviceSelect = (devId) => {
+    setVisualizerAudioDeviceId(devId)
+    if (isTestingAudio) {
+      toggleAudioTest()
+    }
+    const activeWp = useStore.getState().activeWallpaper
+    if (activeWp?.engine === 'audio-spectrum' || activeWp?.id === 'audio-spectrum') {
+      useStore.getState().updateWallpaperConfig({ audioDeviceId: devId })
+      if (useStore.getState().isWallpaperRunning) {
+        import('@tauri-apps/api/core').then(({ invoke }) => {
+          invoke('update_wallpaper_config', {
+            config: { audioDeviceId: devId },
+            monitorLabel: null,
+          }).catch(() => {})
+        }).catch(() => {})
+      }
+    }
+  }
 
   const showToast = (type, text) => {
     setThemeToast({ type, text })
@@ -2254,6 +2385,96 @@ export default function SettingsPage() {
                     Always Active
                   </button>
                 </div>
+              </div>
+
+              {/* Lively Feature: Visualizer Audio Source Selection */}
+              <div style={{
+                marginTop: 18,
+                padding: '14px 16px',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: 8,
+                border: '1px solid var(--border-subtle)',
+              }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 8 }}>
+                  <div className="flex items-center gap-2">
+                    <Music size={15} style={{ color: 'var(--color-brand)' }} />
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>
+                      Visualizer Audio Source
+                    </span>
+                  </div>
+                  <span className="badge" style={{ fontSize: 9.5, padding: '2px 6px' }}>
+                    Sound Reactivity
+                  </span>
+                </div>
+                <p className="text-xs text-muted" style={{ fontSize: 11, marginBottom: 12, lineHeight: 1.4 }}>
+                  Select the playback or capture device used for sound-reactive visualizers. The Default option follows Windows system output and updates automatically when headphones or speakers change.
+                </p>
+
+                <div className="flex items-center gap-2" style={{ marginBottom: 10 }}>
+                  <select
+                    className="select-dropdown"
+                    value={visualizerAudioDeviceId}
+                    onChange={(e) => handleVisualizerDeviceSelect(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      fontSize: 11.5,
+                      background: 'rgba(0,0,0,0.35)',
+                      border: '1px solid var(--border-main)',
+                      borderRadius: 6,
+                      color: 'var(--text-main)',
+                      outline: 'none',
+                    }}
+                  >
+                    {audioInputDevices.map((dev) => (
+                      <option key={dev.deviceId} value={dev.deviceId} style={{ background: '#121620', color: '#fff' }}>
+                        {dev.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    className={`btn ${isTestingAudio ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ fontSize: 11, padding: '6px 12px', whiteSpace: 'nowrap' }}
+                    onClick={toggleAudioTest}
+                    title="Test audio input level"
+                  >
+                    {isTestingAudio ? (
+                      <>
+                        <Mic size={12} style={{ marginRight: 4, animation: 'pulse 1s infinite' }} /> Listening...
+                      </>
+                    ) : (
+                      <>
+                        <Mic size={12} style={{ marginRight: 4 }} /> Test Level
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Live VU Level Bar */}
+                {isTestingAudio && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="flex justify-between text-xs" style={{ fontSize: 10.5, marginBottom: 4 }}>
+                      <span className="text-muted">Audio Signal Level</span>
+                      <span className="text-brand font-mono">{testAudioLevel}%</span>
+                    </div>
+                    <div style={{
+                      width: '100%',
+                      height: 6,
+                      borderRadius: 3,
+                      background: 'rgba(255,255,255,0.06)',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        width: `${testAudioLevel}%`,
+                        height: '100%',
+                        background: testAudioLevel > 75 ? 'var(--color-rose)' : testAudioLevel > 30 ? 'var(--color-brand)' : 'var(--color-emerald)',
+                        transition: 'width 0.08s ease, background-color 0.15s ease',
+                      }} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

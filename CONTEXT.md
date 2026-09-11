@@ -3,11 +3,12 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-12 00:20 IST — Decoupled Physical Occlusion for "Mute When Covered" & Multi-Window Event Dispatch:
-1. **Physical Occlusion Decoupled from Animation Pause Flags**: In `start_system_state_monitor`, `physically_covered_monitors` now tracks whether screens are occluded by fullscreen or maximized windows independently of `pause_on_fullscreen` or `pause_on_maximized`. Even if users turn off visual pause on maximized windows, "Mute When Covered" reliably mutes sound.
-2. **Dynamic Audio Source Resolution**: Accurately determines the active audio-emitting display from `MPV_PLAYERS` (supporting single-player, multi-player, and primary display configurations) and Webview fallbacks.
-3. **Multi-Window Webview Audio Event Delivery**: Added `win.emit_to(label, mute_event, ...)` across all active wallpaper windows alongside global `app.emit`.
-4. **Verified**: `npm run build` (661ms), `cargo check` (0 errors), `cargo build --release` (2m 27s), and deployed updated `AetherFlow.exe` (7.44 MB) to workspace root. Live runtime diagnostics confirmed clean state tracking.
+2026-09-12 01:15 IST — Lively Update Enhancements (Screensaver, Diagnostic Grid, Visualizer Audio Source, Choose a Fit):
+1. **Screensaver System**: Win32 `GetLastInputInfo` idle monitor, fullscreen topmost windows across all displays, grace period, lock on resume, luxury HUD clock/date, and tray preview.
+2. **16x8 Diagnostic Grid**: Real-time 128-tile desktop coverage diagnostic visualizer in Settings.
+3. **Visualizer Audio Source Device Selection**: Real hardware audio input enumeration (`enumerateDevices`), dynamic device switching, fallback on disconnect, and live VU signal level meter in Settings.
+4. **Picture Wallpaper "Choose a Fit" & Web Wallpaper Theme Polish**: Full support for `fill`, `fit`, `stretch`, `center`, and `tile`, custom letterbox matte background color picker, and dark theme iframe background prevention of white flashing.
+5. **Verified**: `npm run build` (524ms), `cargo check` (0 errors, 0 warnings).
 
 
 

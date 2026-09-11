@@ -1712,3 +1712,42 @@
   - Updated root standalone executable: `.\AetherFlow.exe` (7,443,456 bytes, 12:16 AM).
   - Verified live runtime diagnostics: confirmed `covered={}` and `audio_src=Some("wallpaper__DISPLAY1")` logging properly on startup.
 ---
+
+## Session: 2026-09-12 01:00 (Lively Features - Screensaver System & 16x8 Grid Diagnostic Overlay)
+- **Agent:** Antigravity (Google DeepMind)
+- **Completed:**
+  1. **Screensaver Engine & Inactivity Monitor**:
+     - Win32 `GetLastInputInfo` idle monitor with customizable timeout (1-30 mins).
+     - Fullscreen borderless topmost windows (`HWND_TOPMOST`) across all active displays.
+     - Grace period setting (prevents immediate lock if moved within grace seconds) and optional workstation lock on resume (`LockWorkStation`).
+     - 4 visual modes: Match Desktop, Random Library Engine, Specific Wallpaper, and OLED Blackout.
+     - Smooth fade-in duration and luxury screensaver HUD clock and date in `wallpaper.jsx`.
+     - Direct system tray menu item: "Preview Screensaver".
+  2. **16x8 Grid Pause Coverage Diagnostic Visualizer**:
+     - Win32 monitor occlusion bitmask mapped to 128-tile matrix.
+     - Real-time diagnostic grid in Settings Performance tab polling every 1.2s.
+- **Build & Git**:
+  - Committed and pushed to `origin/ui/ux`: commit `fbd72c2`.
+  - `npm run build`: ✅ 559ms clean.
+  - `cargo check`: ✅ 0 errors, 0 warnings.
+  - Root binary `AetherFlow.exe` updated.
+---
+
+## Session: 2026-09-12 01:10 (Lively Features - Visualizer Audio Source & Picture Choose a Fit)
+- **Agent:** Antigravity (Google DeepMind)
+- **Completed:**
+  1. **Visualizer Audio Source Device Selection (Screenshot 002508)**:
+     - `audio-spectrum.js`: Added `audioDeviceId` support to `createAudioSpectrum`, dynamic input device constraints, automatic fallback on disconnect, and hot-swap on device change.
+     - `useStore.js`: Added `visualizerAudioDeviceId` state, setter, and persistence in `partialize`.
+     - `Settings.jsx`: Added real-time device scanning (`navigator.mediaDevices.enumerateDevices` with `devicechange` listener), device selector dropdown, interactive live VU audio signal level bar, and 10s auto-stop test button.
+     - `engines/index.js`: Registered `audioDeviceId` in descriptor.
+  2. **Picture Wallpaper "Choose a Fit" & Web Wallpaper Theme Polish (Screenshot 002529)**:
+     - `image-player.js`: Full implementation of `fill`, `fit`, `stretch`, `center` (1:1 with downscale guard), and `tile` (repeating pattern). Also draws custom `backgroundColor` letterbox fill and optional subtle tint overlay.
+     - `web-stream.js`: Set `iframeEl.style.backgroundColor` and `iframeEl.style.colorScheme = 'dark'` to eliminate white flashing and enforce dark mode on first load.
+     - `useStore.js`: Added `pictureFit` and `pictureBackgroundColor` with persistence in `partialize`.
+     - `Home.jsx`: Interactive segmented selector for `Fill`, `Fit`, `Stretch`, `Center`, and `Tile`, plus color presets and custom color picker for matte background when letterboxing occurs.
+- **Build & Verification**:
+  - `npm run build`: ✅ 524ms clean.
+  - `cargo check`: ✅ 2.96s clean, 0 errors, 0 warnings.
+---
+
