@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore.js'
 import {
   Monitor, Zap, Battery, Mic, Power, Layers, RefreshCw,
-  LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles
+  LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles, Eye
 } from 'lucide-react'
 import { checkForUpdate, openReleaseUrl, APP_VERSION } from '../lib/updater.js'
 
@@ -176,6 +176,8 @@ export default function SettingsPage() {
   const setCardBlur = useStore(s => s.setCardBlur)
   const sidebarOpacity = useStore(s => s.sidebarOpacity)
   const setSidebarOpacity = useStore(s => s.setSidebarOpacity)
+  const thumbnailMode = useStore(s => s.thumbnailMode) || 'hover'
+  const setThumbnailMode = useStore(s => s.setThumbnailMode)
 
   const sections = [
     {
@@ -203,6 +205,44 @@ export default function SettingsPage() {
             </div>
           </div>
         </>
+      ),
+    },
+    {
+      icon: Eye, title: 'Card Thumbnails & Previews',
+      content: (
+        <div>
+          <div className="text-sm font-medium" style={{ marginBottom: 6 }}>Thumbnail Presentation Mode</div>
+          <div className="text-xs text-muted" style={{ marginBottom: 14 }}>
+            Control how wallpaper cards render previews across Home and Library screens.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+            {[
+              { id: 'always', label: 'Always On', desc: 'Always shows full image and video poster frames' },
+              { id: 'hover', label: 'On Hover', desc: 'Zero-RAM vector badges; plays preview when hovered' },
+              { id: 'off', label: 'Off', desc: 'Clean vector badges only; zero video/media decoders' },
+            ].map(m => (
+              <button
+                key={m.id}
+                className={`card card-interactive ${thumbnailMode === m.id ? 'card-active' : ''}`}
+                style={{
+                  padding: '12px 14px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  border: thumbnailMode === m.id ? '1px solid var(--color-brand)' : '1px solid var(--border-main)',
+                  background: thumbnailMode === m.id ? 'rgba(var(--rgb-card), 0.9)' : 'var(--bg-card)',
+                }}
+                onClick={() => setThumbnailMode(m.id)}
+              >
+                <div className="font-semibold text-sm" style={{ color: thumbnailMode === m.id ? 'var(--color-brand)' : 'var(--text-main)', marginBottom: 4 }}>
+                  {m.label}
+                </div>
+                <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                  {m.desc}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
       ),
     },
     {

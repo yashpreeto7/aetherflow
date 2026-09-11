@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.0.4'
+export const APP_VERSION = '1.0.5'
 
 /**
  * Compares two semver strings (e.g. "v1.0.2" vs "1.0.1")

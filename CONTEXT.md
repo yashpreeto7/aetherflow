@@ -3,10 +3,9 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-10 23:35 IST — Resolved Home page card UX improvements:
-1. Removed duplicate "Apply to Desktop" option: Thumbnail hover now triggers "[Eye] Quick Preview", leaving the full-width bottom button as the sole primary action button.
-2. Added dedicated Preview options: Direct click on thumbnail, hover Quick Preview pill, and action row "[Eye] Preview" button open HomePreviewModal with live interactive preview, fullscreen/mute controls, and zero-leak unmount cleanup.
-3. Fixed custom video thumbnails: Added VideoThumbnailCard with hardware-accelerated poster frame extraction at 0.5s (strict mode safe), added HTTP 206 Partial Content range streaming in Vite middleware, and preserved `...item` (preview/mediaType) in Home wallpapers list mapping. Rebuilt and deployed AetherFlow.exe (v1.0.4).
+2026-09-11 13:50 IST — Implemented Card Thumbnail Modes & Adhered Wallpaper Audio:
+1. Card Thumbnail Presentation Modes: Added `thumbnailMode` (`always` / `hover` / `off`) to Zustand store with persistence; integrated quick 3-way toggle on Home and Library toolbars, and dedicated card in Settings. Upgraded WallpaperThumbnail to support zero-RAM vector badges, on-demand hover previews, and continuous poster frames.
+2. Top Preview Wallpaper Audio Controls: Added per-wallpaper adhered audio settings (`wallpaperAudioSettings`), embedded instant Mute toggle and Volume slider in Top Preview Hero banner and Property Controls on Home, eliminating trips to Settings to manage audio. Linked live volume/mute updates to MPV and desktop background windows.
 
 ---
 
@@ -183,6 +182,7 @@ npm run tauri:dev
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Deployed Community Marketplace backend: direct Supabase RPC integration (track_install, toggle_like, get_user_likes, marketplace_stats) and migration executed; expanded community catalog to 20 wallpapers with raw GitHub CDN priority; reset seed counts to 0 with Staff Pick badges; resolved like counter optimistic and server sync (+1); added My Submissions tab |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Resolved orphaned MPV video process on taskbar / Task Manager "End task": implemented dedicated Windows Job Object in mpv.rs with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, bound spawned children, verified instant kernel termination on TerminateProcess, and deployed updated AetherFlow.exe |
 | 2026-09-10 | Antigravity (Gemini 3.8 Flash) | Added Marketplace "+ Add to Library" option, Zero-Memory-Leak Live Preview Modal (createPortal + about:blank iframe teardown + GPU decoder release), and resolved live download counter sync with Supabase installs |
+| 2026-09-11 | Antigravity (Gemini 3.8 Flash) | Implemented Card Thumbnail Modes (Always On, On Hover, Off) with instant toolbar switch and Settings card; added Top Preview wallpaper audio controls (Mute & Volume) adhered per-wallpaper with live MPV/desktop background sync |
 ---
 *This file is maintained by AI agents. Always update the Session Log and Build Status after completing tasks.*
 

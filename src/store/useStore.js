@@ -105,6 +105,38 @@ export const useStore = create(
       audioVolume: 50,                // 0 to 100
       audioMuted: false,
 
+      // Card thumbnail presentation mode: 'always' | 'hover' | 'off'
+      thumbnailMode: 'hover',
+      setThumbnailMode: (mode) => set({ thumbnailMode: mode }),
+
+      // Per-wallpaper adhered audio settings: { [wallpaperId]: { volume: number, muted: boolean } }
+      wallpaperAudioSettings: {},
+      setWallpaperAudio: (id, audioUpdates) => set((s) => {
+        const prev = s.wallpaperAudioSettings?.[id] || { volume: s.audioVolume, muted: s.audioMuted }
+        const next = { ...prev, ...audioUpdates }
+        const nextAudioMap = { ...(s.wallpaperAudioSettings || {}), [id]: next }
+
+        // Also sync into activeWallpaper and currentDesktopWallpaper if they match this id
+        const activeWallpaper = s.activeWallpaper?.id === id
+          ? { ...s.activeWallpaper, config: { ...(s.activeWallpaper.config || {}), ...next } }
+          : s.activeWallpaper
+        const currentDesktopWallpaper = s.currentDesktopWallpaper?.id === id
+          ? { ...s.currentDesktopWallpaper, config: { ...(s.currentDesktopWallpaper.config || {}), ...next } }
+          : s.currentDesktopWallpaper
+
+        // If in installed array, also keep config in sync
+        const installed = (s.installed || []).map(item =>
+          item.id === id ? { ...item, config: { ...(item.config || {}), ...next } } : item
+        )
+
+        return {
+          wallpaperAudioSettings: nextAudioMap,
+          activeWallpaper,
+          currentDesktopWallpaper,
+          installed,
+        }
+      }),
+
       setScreenArrangement: (v) => set({ screenArrangement: v }),
       setMonitorWallpaper: (label, wp) => set((s) => ({
         monitorWallpapers: { ...s.monitorWallpapers, [label]: wp }
@@ -117,20 +149,49 @@ export const useStore = create(
       // (pinned into WorkerW via PROGMAN trick). Not the same as just being selected.
       isWallpaperRunning: false,
 
-      setActiveWallpaper: (wallpaper) => set({ activeWallpaper: wallpaper }),
+      setActiveWallpaper: (wallpaper) => set((s) => {
+        if (!wallpaper) return { activeWallpaper: null }
+        // Merge any adhered audio settings for this specific wallpaper
+        const adhered = s.wallpaperAudioSettings?.[wallpaper.id]
+        const mergedConfig = {
+          ...(wallpaper.config || {}),
+          ...(adhered ? { volume: adhered.volume, muted: adhered.muted } : {})
+        }
+        return {
+          activeWallpaper: {
+            ...wallpaper,
+            config: mergedConfig,
+          }
+        }
+      }),
       setCurrentDesktopWallpaper: (wallpaper) => set({ currentDesktopWallpaper: wallpaper }),
       setWallpaperRunning: (v) => set({ isWallpaperRunning: v }),
       setWallpaperOpacity: (v) => set({ wallpaperOpacity: v }),
       setWallpaperBrightness: (v) => set({ wallpaperBrightness: v }),
       setWallpaperSpeed: (v) => set({ wallpaperSpeed: v }),
-      updateWallpaperConfig: (updates) => set((s) => ({
-        activeWallpaper: s.activeWallpaper 
-          ? { ...s.activeWallpaper, config: { ...s.activeWallpaper.config, ...updates } }
-          : null,
-        currentDesktopWallpaper: s.currentDesktopWallpaper
-          ? { ...s.currentDesktopWallpaper, config: { ...s.currentDesktopWallpaper.config, ...updates } }
-          : null
-      })),
+      updateWallpaperConfig: (updates) => set((s) => {
+        const activeWpId = s.activeWallpaper?.id
+        let nextAudioMap = s.wallpaperAudioSettings || {}
+        if (activeWpId && (updates.volume !== undefined || updates.muted !== undefined)) {
+          const prevAudio = nextAudioMap[activeWpId] || { volume: s.audioVolume, muted: s.audioMuted }
+          nextAudioMap = {
+            ...nextAudioMap,
+            [activeWpId]: {
+              volume: updates.volume !== undefined ? updates.volume : prevAudio.volume,
+              muted: updates.muted !== undefined ? updates.muted : prevAudio.muted,
+            }
+          }
+        }
+        return {
+          wallpaperAudioSettings: nextAudioMap,
+          activeWallpaper: s.activeWallpaper 
+            ? { ...s.activeWallpaper, config: { ...s.activeWallpaper.config, ...updates } }
+            : null,
+          currentDesktopWallpaper: s.currentDesktopWallpaper
+            ? { ...s.currentDesktopWallpaper, config: { ...s.currentDesktopWallpaper.config, ...updates } }
+            : null
+        }
+      }),
 
       // ── Active Theme ──────────────────────────────────────────────────────
       activeTheme: 'sovereign-onyx',
@@ -371,6 +432,8 @@ export const useStore = create(
         monitorWallpapers: s.monitorWallpapers,
         audioVolume: s.audioVolume,
         audioMuted: s.audioMuted,
+        thumbnailMode: s.thumbnailMode,
+        wallpaperAudioSettings: s.wallpaperAudioSettings,
         homeWallpaperIds: s.homeWallpaperIds,
         customNames: s.customNames,
         isWallpaperRunning: s.isWallpaperRunning,

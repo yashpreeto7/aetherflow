@@ -32,6 +32,8 @@ export default function LibraryPage() {
   const togglePinToHome      = useStore(s => s.togglePinToHome)
   const customNames          = useStore(s => s.customNames) || {}
   const setWallpaperName     = useStore(s => s.setWallpaperName)
+  const thumbnailMode        = useStore(s => s.thumbnailMode) || 'hover'
+  const setThumbnailMode     = useStore(s => s.setThumbnailMode)
 
   const [monitors, setMonitors] = useState([])
   const [selectedMonitorLabel, setSelectedMonitorLabel] = useState(null)
@@ -320,24 +322,65 @@ export default function LibraryPage() {
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          {[
-            { id: 'all', label: `All (${allWallpapers.length})` },
-            { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
-            { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
-            { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
-            { id: 'stream', label: `Web Streams (${allWallpapers.filter(w => w.config?.streamUrl).length})` },
-          ].map(cat => (
-            <button
-              key={cat.id}
-              className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
-              style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
-              onClick={() => setFilterCategory(cat.id)}
-            >
-              {cat.label}
-            </button>
-          ))}
+        {/* Filter Pills & Thumbnail Mode Selector */}
+        <div className="flex items-center justify-between gap-2" style={{ flexWrap: 'wrap' }}>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+            {[
+              { id: 'all', label: `All (${allWallpapers.length})` },
+              { id: 'pinned', label: `Pinned to Home (${homeWallpaperIds.length})` },
+              { id: 'builtin', label: `Built-in Canvas (${WALLPAPER_LIST.length})` },
+              { id: 'custom', label: `Custom Media (${allWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
+              { id: 'stream', label: `Web Streams (${allWallpapers.filter(w => w.config?.streamUrl).length})` },
+            ].map(cat => (
+              <button
+                key={cat.id}
+                className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
+                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
+                onClick={() => setFilterCategory(cat.id)}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Thumbnail / Preview Mode Selector */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--border-main)',
+              borderRadius: 8,
+              padding: '3px 4px',
+            }}
+            title="Card Preview Mode: On (Always), Hover (On Mouse Hover), Off (Minimalist vector badges)"
+          >
+            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 4, paddingRight: 3, fontWeight: 500 }}>
+              Thumbnails:
+            </span>
+            {[
+              { id: 'always', label: 'On', title: 'Always Show Thumbnails' },
+              { id: 'hover', label: 'Hover', title: 'Show Previews on Hover (Low RAM)' },
+              { id: 'off', label: 'Off', title: 'Off — Clean Vector Badges (Zero RAM)' },
+            ].map(m => (
+              <button
+                key={m.id}
+                className={`btn ${thumbnailMode === m.id ? 'btn-primary' : 'btn-ghost'}`}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: 10.5,
+                  height: 22,
+                  borderRadius: 5,
+                  fontWeight: thumbnailMode === m.id ? 700 : 500,
+                }}
+                onClick={() => setThumbnailMode(m.id)}
+                title={m.title}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

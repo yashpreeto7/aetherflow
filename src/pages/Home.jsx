@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Play, Zap, MonitorPlay, Square, Monitor, Plus, Search,
-  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe, Eye
+  Video, Image as ImageIcon, Trash2, Check, Sparkles, Filter, X, Pin, PinOff, Pencil, ArrowRight, Globe, Eye,
+  Volume2, VolumeX
 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { WALLPAPER_LIST, BUILTIN_THEMES } from '../engines/index.js'
@@ -442,6 +443,10 @@ export default function HomePage() {
 
   const audioVolume           = useStore(s => s.audioVolume)
   const audioMuted            = useStore(s => s.audioMuted)
+  const thumbnailMode         = useStore(s => s.thumbnailMode) || 'hover'
+  const setThumbnailMode      = useStore(s => s.setThumbnailMode)
+  const wallpaperAudioSettings = useStore(s => s.wallpaperAudioSettings) || {}
+  const setWallpaperAudio     = useStore(s => s.setWallpaperAudio)
 
   const screenArrangement     = useStore(s => s.screenArrangement)
   const monitorWallpapers     = useStore(s => s.monitorWallpapers)
@@ -724,6 +729,45 @@ export default function HomePage() {
   const isCurrentWallpaperImage = activeWallpaper?.engine === 'image-player' ||
     Boolean(activeWallpaper?.config?.imagePath && !activeWallpaper?.config?.videoPath)
 
+  // ── Per-wallpaper adhered audio ───────────────────────────────────────────
+  const currentWallpaperAudio = activeWallpaper
+    ? (wallpaperAudioSettings[activeWallpaper.id] || {
+        volume: activeWallpaper.config?.volume ?? audioVolume ?? 50,
+        muted: activeWallpaper.config?.muted ?? audioMuted ?? false,
+      })
+    : { volume: audioVolume ?? 50, muted: audioMuted ?? false }
+
+  async function handleWallpaperVolumeChange(vol) {
+    if (!activeWallpaper) return
+    const nextAudio = { ...currentWallpaperAudio, volume: vol }
+    setWallpaperAudio(activeWallpaper.id, nextAudio)
+
+    // If active wallpaper is running on desktop, update live native audio immediately
+    if (isWallpaperRunning) {
+      await tauriInvoke('set_mpv_volume', { monitorLabel: null, volume: vol }).catch(() => {})
+      await tauriInvoke('update_wallpaper_config', {
+        config: { volume: vol, muted: nextAudio.muted },
+        monitorLabel: null,
+      }).catch(() => {})
+    }
+  }
+
+  async function handleWallpaperMuteToggle() {
+    if (!activeWallpaper) return
+    const nextMuted = !currentWallpaperAudio.muted
+    const nextAudio = { ...currentWallpaperAudio, muted: nextMuted }
+    setWallpaperAudio(activeWallpaper.id, nextAudio)
+
+    // If active wallpaper is running on desktop, update live native audio immediately
+    if (isWallpaperRunning) {
+      await tauriInvoke('set_mpv_mute', { monitorLabel: null, muted: nextMuted }).catch(() => {})
+      await tauriInvoke('update_wallpaper_config', {
+        config: { volume: nextAudio.volume, muted: nextMuted },
+        monitorLabel: null,
+      }).catch(() => {})
+    }
+  }
+
   const activeScreensForSelected = activeWallpaper ? getWallpaperActiveScreens(activeWallpaper) : []
   const selectedIsLive = activeScreensForSelected.length > 0
 
@@ -795,6 +839,72 @@ export default function HomePage() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* Wallpaper Adhered Audio Control */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'rgba(10, 14, 22, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    border: '1px solid var(--border-main)',
+                    borderRadius: 8,
+                    padding: '4px 10px',
+                    height: 36,
+                  }}
+                  title={`Wallpaper Audio (Adhered to ${(customNames || {})[activeWallpaper?.id] || activeWallpaper?.name}): ${currentWallpaperAudio.muted ? 'Muted' : `${currentWallpaperAudio.volume}%`}`}
+                >
+                  <button
+                    className="btn-icon"
+                    style={{
+                      padding: 4,
+                      borderRadius: 6,
+                      color: currentWallpaperAudio.muted ? 'var(--color-rose)' : 'var(--color-brand)',
+                      background: currentWallpaperAudio.muted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.12)',
+                      border: currentWallpaperAudio.muted ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)',
+                    }}
+                    onClick={handleWallpaperMuteToggle}
+                    title={currentWallpaperAudio.muted ? "Unmute wallpaper" : "Mute wallpaper"}
+                  >
+                    {currentWallpaperAudio.muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                  </button>
+
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={currentWallpaperAudio.muted ? 0 : currentWallpaperAudio.volume}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10)
+                      if (currentWallpaperAudio.muted && v > 0) {
+                        setWallpaperAudio(activeWallpaper.id, { volume: v, muted: false })
+                      } else {
+                        handleWallpaperVolumeChange(v)
+                      }
+                    }}
+                    style={{
+                      width: 68,
+                      height: 4,
+                      accentColor: 'var(--color-brand)',
+                      cursor: 'pointer',
+                      opacity: currentWallpaperAudio.muted ? 0.45 : 1,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      fontWeight: 600,
+                      minWidth: 32,
+                      textAlign: 'right',
+                      color: currentWallpaperAudio.muted ? 'var(--color-rose)' : 'var(--text-main)',
+                    }}
+                  >
+                    {currentWallpaperAudio.muted ? 'Mute' : `${currentWallpaperAudio.volume}%`}
+                  </span>
+                </div>
+
                 {isWallpaperRunning && (
                   <button
                     className="btn"
@@ -926,6 +1036,42 @@ export default function HomePage() {
                 />
               </div>
             )}
+
+            <div>
+              <div className="flex justify-between items-center text-xs text-muted" style={{ marginBottom: 8 }}>
+                <span className="flex items-center gap-1.5">
+                  <button
+                    className="btn-icon"
+                    style={{
+                      padding: 2,
+                      color: currentWallpaperAudio.muted ? 'var(--color-rose)' : 'var(--color-brand)',
+                    }}
+                    onClick={handleWallpaperMuteToggle}
+                    title={currentWallpaperAudio.muted ? "Unmute wallpaper" : "Mute wallpaper"}
+                  >
+                    {currentWallpaperAudio.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  </button>
+                  <span>Volume</span>
+                </span>
+                <span className="text-brand font-mono">
+                  {currentWallpaperAudio.muted ? 'Muted' : `${currentWallpaperAudio.volume}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                className="slider"
+                min={0} max={100} step={1}
+                value={currentWallpaperAudio.muted ? 0 : currentWallpaperAudio.volume}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10)
+                  if (currentWallpaperAudio.muted && v > 0) {
+                    setWallpaperAudio(activeWallpaper.id, { volume: v, muted: false })
+                  } else {
+                    handleWallpaperVolumeChange(v)
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {isCurrentWallpaperImage && activeWallpaper?.config?.imagePath && (
@@ -999,23 +1145,64 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Category Filters */}
-        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-          {[
-            { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
-            { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
-            { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
-            { id: 'stream', label: `Web Streams (${homeWallpapers.filter(w => w.config?.streamUrl).length})` },
-          ].map(cat => (
-            <button
-              key={cat.id}
-              className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
-              style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
-              onClick={() => setFilterCategory(cat.id)}
-            >
-              {cat.label}
-            </button>
-          ))}
+        {/* Category Filters & Thumbnail Mode Selector */}
+        <div className="flex items-center justify-between gap-2" style={{ flexWrap: 'wrap' }}>
+          <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
+            {[
+              { id: 'all', label: `All Favorites (${homeWallpapers.length})` },
+              { id: 'builtin', label: `Built-in Canvas (${homeWallpapers.filter(w => !w.isCustom).length})` },
+              { id: 'custom', label: `Custom Media (${homeWallpapers.filter(w => w.isCustom && !w.config?.streamUrl).length})` },
+              { id: 'stream', label: `Web Streams (${homeWallpapers.filter(w => w.config?.streamUrl).length})` },
+            ].map(cat => (
+              <button
+                key={cat.id}
+                className={`badge ${filterCategory === cat.id ? 'badge-brand' : ''}`}
+                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 11 }}
+                onClick={() => setFilterCategory(cat.id)}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Thumbnail / Preview Mode Selector */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid var(--border-main)',
+              borderRadius: 8,
+              padding: '3px 4px',
+            }}
+            title="Card Preview Mode: On (Always), Hover (On Mouse Hover), Off (Minimalist vector badges)"
+          >
+            <span style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 4, paddingRight: 3, fontWeight: 500 }}>
+              Thumbnails:
+            </span>
+            {[
+              { id: 'always', label: 'On', title: 'Always Show Thumbnails' },
+              { id: 'hover', label: 'Hover', title: 'Show Previews on Hover (Low RAM)' },
+              { id: 'off', label: 'Off', title: 'Off — Clean Vector Badges (Zero RAM)' },
+            ].map(m => (
+              <button
+                key={m.id}
+                className={`btn ${thumbnailMode === m.id ? 'btn-primary' : 'btn-ghost'}`}
+                style={{
+                  padding: '2px 8px',
+                  fontSize: 10.5,
+                  height: 22,
+                  borderRadius: 5,
+                  fontWeight: thumbnailMode === m.id ? 700 : 500,
+                }}
+                onClick={() => setThumbnailMode(m.id)}
+                title={m.title}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1069,7 +1256,7 @@ export default function HomePage() {
                   handleApply(wallpaper)
                 }}
               >
-                {/* ── 1. Thumbnail Container (Real Video Frame / Static Image, Zero Leak) ── */}
+                {/* ── 1. Thumbnail Container (Supports On, Hover, and Off modes, Zero Leak) ── */}
                 <div
                   className="mp-thumb-container"
                   onClick={(e) => {
@@ -1078,29 +1265,11 @@ export default function HomePage() {
                   }}
                   title={`Click to preview ${wallpaper.name}`}
                 >
-                  {thumbUrl ? (
-                    <img
-                      src={thumbUrl}
-                      alt={wallpaper.name}
-                      className="mp-thumb-img"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.target.style.display = 'none'
-                      }}
-                    />
-                  ) : isVideo && videoSrc ? (
-                    <VideoThumbnailCard videoSrc={videoSrc} name={wallpaper.name} isHovered={hoveredId === wallpaper.id} />
-                  ) : (
-                    <div
-                      className="flex items-center justify-center w-full h-full"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(var(--rgb-card), 0.9), rgba(var(--rgb-base), 0.98))',
-                        color: typeInfo.color,
-                      }}
-                    >
-                      <typeInfo.icon size={36} style={{ opacity: 0.6 }} />
-                    </div>
-                  )}
+                  <WallpaperThumbnail
+                    wallpaper={wallpaper}
+                    isHovered={hoveredId === wallpaper.id}
+                    mode={thumbnailMode}
+                  />
 
                   {/* Top-Left: Media Type Badge */}
                   <div className="mp-badge-top-left">

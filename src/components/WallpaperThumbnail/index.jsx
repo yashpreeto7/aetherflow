@@ -5,24 +5,15 @@ import {
   Waves, Compass, Flame, CloudRain, Activity, Code
 } from 'lucide-react'
 import { safeConvertFileSrc } from '../../lib/wallpaperActions.js'
+import { useStore } from '../../store/useStore.js'
 
 /**
- * WallpaperThumbnail — Zero-RAM Vector Badge with On-Demand Hover Previews.
+ * WallpaperThumbnail — Supports Always On, On Hover, and Off modes.
  *
- * When Idle (isHovered === false):
- * - Renders a lightweight, zero-RAM vector badge with glowing theme icons and gradients.
- * - Zero bitmap image fetches, zero video decoders, and zero GPU memory churn.
- * - Keeps baseline WebView2 RAM under ~35MB across all cards in the grid.
- *
- * When Hovered (isHovered === true):
- * - Video Wallpapers: Dynamically mounts the hardware video player and streams the preview loop.
- * - Image Wallpapers: Renders the full resolution image preview via convertFileSrc.
- * - YouTube Streams: Renders the official YouTube video thumbnail.
- * - Canvas Engines: Renders the crisp vector engine preview.
- *
- * On Hover Exit:
- * - Instantly unmounts media and calls .pause(), .removeAttribute('src'), and .load() on the video,
- *   forcing Chromium/Direct3D to discard the hardware decoding surface immediately.
+ * Modes:
+ * - 'always' (On): Images, streams, and canvas previews always display; videos show poster frame (#t=0.5) and play on hover.
+ * - 'hover' (On Hover): Zero-RAM vector badge when idle; streams media on mouse hover.
+ * - 'off' (Off): Always renders zero-RAM vector badges with category icons and glow gradients (zero decoders, zero media fetch).
  */
 
 const ENGINE_THEMES = {
@@ -108,7 +99,10 @@ const ENGINE_THEMES = {
   },
 }
 
-export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
+export default function WallpaperThumbnail({ wallpaper, isHovered = false, mode }) {
+  const storeThumbnailMode = useStore(s => s.thumbnailMode) || 'hover'
+  const currentMode = mode || storeThumbnailMode // 'always' | 'hover' | 'off'
+
   const engineId = wallpaper.engine || wallpaper.id
   const descriptor = ENGINES[engineId]
 
@@ -140,11 +134,17 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
   }, [isHovered])
 
   // Explicit hardware decoder teardown callback:
-  // When React unmounts the <video>, node is null. We immediately pause, strip src, and call .load()
-  // to force Chromium/Direct3D to release the hardware video decoding surface.
   const handleVideoRef = (node) => {
     if (node) {
       videoNodeRef.current = node
+      if (currentMode === 'always') {
+        if (isHovered) {
+          node.play().catch(() => {})
+        } else {
+          node.pause()
+          try { node.currentTime = 0.5 } catch (e) {}
+        }
+      }
     } else if (videoNodeRef.current) {
       try {
         videoNodeRef.current.pause()
@@ -154,6 +154,18 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
       videoNodeRef.current = null
     }
   }
+
+  // Handle hover play/pause when in 'always' mode
+  useEffect(() => {
+    const v = videoNodeRef.current
+    if (!v || currentMode !== 'always') return
+    if (isHovered) {
+      v.play().catch(() => {})
+    } else {
+      v.pause()
+      try { v.currentTime = 0.5 } catch (e) {}
+    }
+  }, [isHovered, currentMode])
 
   // Component unmount cleanup
   useEffect(() => {
@@ -206,10 +218,14 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
   const accentColor = isYouTube ? '#ef4444' : theme.color
   const badgeText = isYouTube ? 'YOUTUBE' : theme.badge
 
-  // Compute media sources for on-demand hover display
+  // Compute media sources based on thumbnailMode:
+  // - 'off': Never show preview media (pure zero-RAM vector badges)
+  // - 'hover': Only show preview media while hovered
+  // - 'always': Always show preview media (images, streams, canvas SVGs, video poster frame)
   let previewMedia = null
+  const shouldShow = currentMode === 'always' || (currentMode === 'hover' && isHovered)
 
-  if (isHovered && !imgLoadError) {
+  if (shouldShow && currentMode !== 'off' && !imgLoadError) {
     try {
       if (isVideo) {
         const videoPath = wallpaper.config?.videoPath || wallpaper.defaultConfig?.videoPath || ''
@@ -217,28 +233,38 @@ export default function WallpaperThumbnail({ wallpaper, isHovered = false }) {
           ? (videoPath.startsWith('http') || videoPath.startsWith('data:') ? videoPath : safeConvertFileSrc(videoPath))
           : ''
 
-        if (debouncedHover && videoSrc) {
-          previewMedia = (
-            <video
-              ref={handleVideoRef}
-              src={videoSrc}
-              autoPlay
-              muted
-              loop
-              playsInline
-              preload="auto"
-              onError={() => setImgLoadError(true)}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-                zIndex: 1,
-              }}
-            />
-          )
+        if (videoSrc) {
+          if (currentMode === 'always' || debouncedHover) {
+            previewMedia = (
+              <video
+                ref={handleVideoRef}
+                src={`${videoSrc}#t=0.5`}
+                autoPlay={isHovered}
+                muted
+                loop
+                playsInline
+                preload={currentMode === 'always' ? 'metadata' : 'auto'}
+                onLoadedMetadata={(e) => {
+                  try {
+                    if (currentMode === 'always' && !isHovered && e.target.currentTime === 0) {
+                      e.target.currentTime = 0.5
+                    }
+                  } catch (err) {}
+                }}
+                onError={() => setImgLoadError(true)}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  zIndex: 1,
+                  animation: 'fadeIn 0.2s ease forwards',
+                }}
+              />
+            )
+          }
         }
       } else if (isImage) {
         const imgSrc = imgPath

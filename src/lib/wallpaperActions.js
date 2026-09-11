@@ -89,9 +89,10 @@ export async function applyWallpaperToDesktop(wallpaper, options = {}) {
   const state = useStore.getState()
   const targetLabel = options.targetMonitor ?? (state.screenArrangement === 'per-screen' ? options.selectedMonitorLabel : null)
   
-  const speed = options.speed ?? state.wallpaperSpeed ?? 1
-  const volume = options.volume ?? state.audioVolume ?? 50
-  const muted = options.muted ?? state.audioMuted ?? false
+  const adheredAudio = state.wallpaperAudioSettings?.[wallpaper.id]
+  const speed = options.speed ?? wallpaper.config?.speedMultiplier ?? state.wallpaperSpeed ?? 1
+  const volume = options.volume ?? adheredAudio?.volume ?? wallpaper.config?.volume ?? state.audioVolume ?? 50
+  const muted = options.muted ?? adheredAudio?.muted ?? wallpaper.config?.muted ?? state.audioMuted ?? false
   const opacity = options.opacity ?? state.wallpaperOpacity ?? 1
   const brightness = options.brightness ?? state.wallpaperBrightness ?? 0.85
   const fps = options.fps ?? state.fps ?? 60

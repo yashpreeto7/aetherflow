@@ -30,6 +30,7 @@ src-tauri/gen/
 src-tauri/bin/
 bin/
 *.exe
+*.old
 release/
 
 # Scratch / temporary debug scripts

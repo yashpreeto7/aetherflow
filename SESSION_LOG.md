@@ -1125,3 +1125,26 @@
     - Verified `HomePreviewModal` opens smoothly, plays `elaina-tipsy` at `videoReadyState: 4`, and closes cleanly with `modalClosed: true`.
 - **Build status:** ✅ `npm run build` (680ms) passed, `cargo build --release` running in background.
 ---
+
+## Session: 2026-09-11 13:50 IST
+- **Agent:** Antigravity (Gemini 3.8 Flash)
+- **Completed:**
+  - **Implemented Card Thumbnail & Preview Setting (On, On Hover, Off)**:
+    - Added `thumbnailMode: 'always' | 'hover' | 'off'` to Zustand store (`src/store/useStore.js`) and persisted in `partialize`.
+    - Integrated 3-way toggle pill group (`[On] [Hover] [Off]`) directly into the Home page toolbar and Library filter bar.
+    - Added "Card Thumbnails & Previews" section to `Settings.jsx` with full UI and explanatory performance cards.
+    - Upgraded `WallpaperThumbnail` component to support all three modes:
+      - `always` (On): Images, YouTube stream thumbnails, SVG canvas previews, and hardware video poster frames continuously visible.
+      - `hover` (On Hover — default): Lightweight zero-RAM vector badges with category icons and glowing gradients when idle; dynamically streams media on mouse hover.
+      - `off` (Off — max performance): Always displays sleek vector badges; zero video decoders or network fetches even during hover.
+  - **Implemented Top Preview Wallpaper Audio Controls (Mute & Volume Adhered to Wallpaper)**:
+    - Created `wallpaperAudioSettings: { [wallpaperId]: { volume: number, muted: boolean } }` in `useStore.js` with persistence in `partialize`.
+    - Embedded quick Mute toggle button and compact Volume slider right inside the Top Preview (Hero banner) on Home page.
+    - Added dedicated 4th column for "Audio Volume" with Mute button and range slider in the Property Controls grid.
+    - Adhered volume and mute per wallpaper: switching wallpapers instantly loads each wallpaper's individual audio settings.
+    - Live background sync: updating volume or mute immediately invokes `set_mpv_volume`, `set_mpv_mute`, and `update_wallpaper_config` without restarting playback.
+    - Updated `applyWallpaperToDesktop` in `wallpaperActions.js` and `WallpaperPlayer` to honor adhered audio levels.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 434ms with zero errors.
+  - Playwright visual testing: verified toggle states between On, Hover, and Off modes; verified Mute toggle in Hero banner and Property Controls; verified Settings sync.
+---

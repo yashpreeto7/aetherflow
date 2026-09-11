@@ -29,8 +29,8 @@ export default function WallpaperPlayer({ engineId, config = {}, preview = false
   const mergedConfig = {
     ...config,
     speedMultiplier: (config.speedMultiplier ?? 1) * wallpaperSpeed,
-    volume: audioVolume,
-    muted: audioMuted,
+    volume: config.volume !== undefined ? config.volume : audioVolume,
+    muted: config.muted !== undefined ? config.muted : audioMuted,
     opacity: wallpaperOpacity,
     brightness: wallpaperBrightness,
     fps: fps || 60,
