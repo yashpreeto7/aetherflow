@@ -24,6 +24,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SystemParametersInfoW, SPI_SETDESKWALLPAPER, SPIF_UPDATEINIFILE, SPIF_SENDCHANGE,
     GetForegroundWindow, SetForegroundWindow, IsIconic,
     IsZoomed, GetWindowThreadProcessId,
+    GetAncestor, GetWindowTextW, GA_ROOT, GA_ROOTOWNER,
 };
 #[cfg(windows)]
 use windows_sys::Win32::Graphics::Gdi::{
@@ -74,6 +75,7 @@ static PERFORMANCE_SETTINGS: Mutex<PerformanceSettings> = Mutex::new(Performance
 });
 
 static IS_SYSTEM_PAUSED: Mutex<bool> = Mutex::new(false);
+static MONITOR_SYNC_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActiveWallpaperState {
@@ -234,6 +236,11 @@ pub fn is_foreground_window_fullscreen() -> bool {
 struct OcclusionEnumState {
     shell_hwnd: HWND,
     self_pid: u32,
+    progman: HWND,
+    workerw: HWND,
+    mpv_pids: Vec<u32>,
+    mpv_hwnds: Vec<usize>,
+    wallpaper_hwnds: Vec<usize>,
     monitor_map: HashMap<String, MonitorOcclusionStatus>,
     visible_inspected: usize,
 }
@@ -247,19 +254,39 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
         return 1;
     }
 
-    // 2. Shell window check
-    if hwnd == state.shell_hwnd {
+    // 2. Shell window & desktop checks
+    if hwnd == state.shell_hwnd || hwnd == state.progman || (!state.workerw.is_null() && hwnd == state.workerw) {
         return 1;
     }
 
-    // 3. Process ID check: ignore ALL windows belonging to AetherFlow
+    // 3. Check known HWNDs (main window, wallpaper webviews, MPV video engines)
+    let hwnd_val = hwnd as usize;
+    if state.wallpaper_hwnds.contains(&hwnd_val) || state.mpv_hwnds.contains(&hwnd_val) {
+        return 1;
+    }
+
+    // 4. Process ID check: ignore ALL windows belonging to AetherFlow or MPV child processes
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, &mut pid);
-    if pid == state.self_pid {
+    if pid == state.self_pid || state.mpv_pids.contains(&pid) {
         return 1;
     }
 
-    // 4. Cloaked check (virtual desktop / background UWP app)
+    // 5. Parent & ancestor check: ignore any window attached to Progman, WorkerW, or Shell
+    let parent = GetParent(hwnd);
+    if parent == state.progman || (!state.workerw.is_null() && parent == state.workerw) || parent == state.shell_hwnd {
+        return 1;
+    }
+    let root = GetAncestor(hwnd, GA_ROOTOWNER);
+    if root == state.progman || (!state.workerw.is_null() && root == state.workerw) || root == state.shell_hwnd {
+        return 1;
+    }
+    let parent_root = GetAncestor(hwnd, GA_ROOT);
+    if parent_root == state.progman || (!state.workerw.is_null() && parent_root == state.workerw) || parent_root == state.shell_hwnd {
+        return 1;
+    }
+
+    // 6. Cloaked check (virtual desktop / background UWP app)
     let mut cloaked: u32 = 0;
     let dwm_res = DwmGetWindowAttribute(
         hwnd,
@@ -271,28 +298,35 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
         return 1;
     }
 
-    // 5. Skip tool windows
+    // 7. Skip tool windows and transparent click-through overlays
     let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-    if (ex_style & WS_EX_TOOLWINDOW) != 0 {
+    if (ex_style & WS_EX_TOOLWINDOW) != 0 || (ex_style & 0x00000020 /* WS_EX_TRANSPARENT */) != 0 {
         return 1;
     }
 
-    // 6. Skip desktop and taskbar classes
+    // 8. Skip desktop, taskbar, shell flyouts, and video engine classes
     let mut class_buf = [0u16; 64];
     let len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 64);
-    if len > 0 {
-        let class_name = String::from_utf16_lossy(&class_buf[..len as usize]);
-        if class_name == "WorkerW"
-            || class_name == "Progman"
-            || class_name == "Shell_TrayWnd"
-            || class_name == "Shell_SecondaryTrayWnd"
-            || class_name == "Windows.UI.Core.CoreWindow"
-        {
-            return 1;
-        }
+    let class_name = if len > 0 {
+        String::from_utf16_lossy(&class_buf[..len as usize])
+    } else {
+        String::new()
+    };
+    if class_name == "WorkerW"
+        || class_name == "Progman"
+        || class_name == "SHELLDLL_DefView"
+        || class_name == "SysListView32"
+        || class_name == "Shell_TrayWnd"
+        || class_name == "Shell_SecondaryTrayWnd"
+        || class_name == "Windows.UI.Core.CoreWindow"
+        || class_name == "mpv"
+        || class_name == "SideBar_HTMLHostWindow"
+        || class_name == "Dwm"
+    {
+        return 1;
     }
 
-    // 7. Ignore tiny windows / widgets (< 160x160)
+    // 9. Ignore tiny windows / widgets (< 160x160)
     let mut wr: RECT = std::mem::zeroed();
     if GetWindowRect(hwnd, &mut wr) == 0 {
         return 1;
@@ -333,12 +367,25 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
 
             let is_maximized = is_zoomed || covers_work || covers_monitor;
 
-            let entry = state.monitor_map.entry(label).or_default();
-            if covers_monitor {
-                entry.is_fullscreen = true;
-            }
-            if is_maximized {
-                entry.is_maximized = true;
+            if covers_monitor || is_maximized {
+                let entry = state.monitor_map.entry(label.clone()).or_default();
+                if covers_monitor {
+                    entry.is_fullscreen = true;
+                }
+                if is_maximized {
+                    entry.is_maximized = true;
+                }
+                let mut title_buf = [0u16; 128];
+                let tlen = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), 128);
+                let title = if tlen > 0 {
+                    String::from_utf16_lossy(&title_buf[..tlen as usize])
+                } else {
+                    String::new()
+                };
+                log_msg(&format!(
+                    "[OCCLUSION DETECTED] HWND=0x{:X} pid={} class='{}' title='{}' monitor='{}' (fs={}, max={})",
+                    hwnd_val, pid, class_name, title, label, covers_monitor, is_maximized
+                ));
             }
         }
     }
@@ -347,19 +394,46 @@ unsafe extern "system" fn enum_occlusion_proc(hwnd: HWND, lparam: LPARAM) -> i32
 }
 
 #[cfg(windows)]
-pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionStatus>, bool) {
+pub fn inspect_monitor_occlusion_states(app: &AppHandle) -> (HashMap<String, MonitorOcclusionStatus>, bool) {
     let monitor_map: HashMap<String, MonitorOcclusionStatus> = HashMap::new();
     let mut is_app_focused = false;
     let self_pid = std::process::id();
 
+    let mut mpv_pids: Vec<u32> = Vec::new();
+    let mut mpv_hwnds: Vec<usize> = Vec::new();
+    if let Ok(guard) = MPV_PLAYERS.lock() {
+        if let Some(ref map) = *guard {
+            for proc in map.values() {
+                mpv_pids.push(proc.child.id());
+                if proc.hwnd != 0 {
+                    mpv_hwnds.push(proc.hwnd);
+                }
+            }
+        }
+    }
+
+    let mut wallpaper_hwnds: Vec<usize> = Vec::new();
+    for (label, win) in app.webview_windows() {
+        if label.starts_with("wallpaper_") || label == "main" {
+            if let Ok(h) = win.hwnd() {
+                wallpaper_hwnds.push(h.0 as usize);
+            }
+        }
+    }
+
     unsafe {
         let shell_hwnd = GetShellWindow();
-        let fg_hwnd = GetForegroundWindow();
+        let progman_class = [80, 114, 111, 103, 109, 97, 110, 0]; // "Progman\0"
+        let progman = FindWindowW(progman_class.as_ptr(), std::ptr::null());
+        let worker_class = [87, 111, 114, 107, 101, 114, 87, 0]; // "WorkerW\0"
+        let workerw = FindWindowW(worker_class.as_ptr(), std::ptr::null());
 
-        if !fg_hwnd.is_null() && fg_hwnd != shell_hwnd {
+        let fg_hwnd = GetForegroundWindow();
+        if !fg_hwnd.is_null() && fg_hwnd != shell_hwnd && fg_hwnd != progman && fg_hwnd != workerw {
+            let fg_val = fg_hwnd as usize;
             let mut fg_pid: u32 = 0;
             GetWindowThreadProcessId(fg_hwnd, &mut fg_pid);
-            if fg_pid != self_pid {
+            if fg_pid != self_pid && !mpv_pids.contains(&fg_pid) && !wallpaper_hwnds.contains(&fg_val) && !mpv_hwnds.contains(&fg_val) {
                 let mut class_buf = [0u16; 64];
                 let len = GetClassNameW(fg_hwnd, class_buf.as_mut_ptr(), 64);
                 let class_name = if len > 0 {
@@ -369,8 +443,14 @@ pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionSt
                 };
                 if class_name != "WorkerW"
                     && class_name != "Progman"
+                    && class_name != "SHELLDLL_DefView"
+                    && class_name != "SysListView32"
                     && class_name != "Shell_TrayWnd"
                     && class_name != "Shell_SecondaryTrayWnd"
+                    && class_name != "mpv"
+                    && class_name != "Windows.UI.Core.CoreWindow"
+                    && class_name != "SideBar_HTMLHostWindow"
+                    && class_name != "Dwm"
                 {
                     is_app_focused = true;
                 }
@@ -380,6 +460,11 @@ pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionSt
         let mut state = OcclusionEnumState {
             shell_hwnd,
             self_pid,
+            progman,
+            workerw,
+            mpv_pids,
+            mpv_hwnds,
+            wallpaper_hwnds,
             monitor_map,
             visible_inspected: 0,
         };
@@ -390,7 +475,7 @@ pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionSt
 }
 
 #[cfg(not(windows))]
-pub fn inspect_monitor_occlusion_states() -> (HashMap<String, MonitorOcclusionStatus>, bool) {
+pub fn inspect_monitor_occlusion_states(_app: &AppHandle) -> (HashMap<String, MonitorOcclusionStatus>, bool) {
     (HashMap::new(), false)
 }
 
@@ -409,6 +494,11 @@ pub fn start_system_state_monitor(app: AppHandle) {
             taskbar_tick = taskbar_tick.wrapping_add(1);
             if taskbar_tick % 4 == 0 {
                 taskbar::maintain_taskbar_style();
+            }
+
+            if MONITOR_SYNC_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                paused_monitors.clear();
+                audio_muted_by_policy = false;
             }
 
             let (pause_on_battery, pause_on_fullscreen, pause_on_maximized, multi_monitor_pause_mode, audio_playback_rule) = {
@@ -436,7 +526,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
             };
 
             let on_battery = pause_on_battery && is_running_on_battery();
-            let (occlusion_map, is_app_focused) = inspect_monitor_occlusion_states();
+            let (occlusion_map, is_app_focused) = inspect_monitor_occlusion_states(&app);
 
             // Collect active wallpaper window labels
             let windows = app.webview_windows();
@@ -478,8 +568,7 @@ pub fn start_system_state_monitor(app: AppHandle) {
                 let is_max = pause_on_maximized && status.is_maximized;
                 let should_pause = is_fs || is_max;
 
-                let is_covered = status.is_fullscreen || status.is_maximized;
-                if is_covered {
+                if should_pause {
                     any_monitor_covered = true;
                 }
                 if on_battery || should_pause {
@@ -502,7 +591,21 @@ pub fn start_system_state_monitor(app: AppHandle) {
             } else if audio_playback_rule == "mute-focused" {
                 is_app_focused
             } else if audio_playback_rule == "mute-covered" {
-                any_monitor_covered
+                if multi_monitor_pause_mode == "all-displays" {
+                    any_monitor_covered
+                } else {
+                    let mut audio_mon_paused = false;
+                    if let Ok(guard) = MPV_PLAYERS.lock() {
+                        if let Some(ref map) = *guard {
+                            for (lbl, _proc) in map {
+                                if target_paused_monitors.contains(lbl) {
+                                    audio_mon_paused = true;
+                                }
+                            }
+                        }
+                    }
+                    all_paused || audio_mon_paused
+                }
             } else {
                 // "always": only mute if all are paused
                 false
@@ -1590,6 +1693,8 @@ async fn apply_wallpaper(
         let _ = main_win.set_focus();
     }
 
+    MONITOR_SYNC_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+
     // Immediately schedule a delayed working set compaction after switching wallpapers
     #[cfg(windows)]
     std::thread::spawn(|| {
@@ -1645,6 +1750,8 @@ fn stop_wallpaper(app: AppHandle, monitor_label: Option<String>) {
         }
     }
 
+    MONITOR_SYNC_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+
     #[cfg(windows)]
     trim_all_process_memory();
 }
@@ -1683,23 +1790,41 @@ fn set_mpv_mute(app: AppHandle, monitor_label: Option<String>, muted: bool) {
     let primary_label = get_primary_monitor_label(&app);
     if let Ok(mpv_guard) = MPV_PLAYERS.lock() {
         if let Some(ref map) = *mpv_guard {
-            let mut audio_unmuted = false;
-            for (label, proc) in map {
-                if target == "*" {
-                    if muted {
+            if target == "*" {
+                if muted {
+                    for (_label, proc) in map {
                         let _ = proc.set_mute(true);
-                    } else {
-                        // In duplicated mode, only unmute the primary monitor to avoid audio echo
-                        let is_primary = primary_label.as_deref() == Some(label.as_str()) || (!audio_unmuted && primary_label.is_none());
-                        if is_primary && !audio_unmuted {
+                    }
+                } else {
+                    if map.len() == 1 {
+                        for (_label, proc) in map {
                             let _ = proc.set_mute(false);
-                            audio_unmuted = true;
+                        }
+                    } else {
+                        let target_unmute_label = if let Some(ref p) = primary_label {
+                            if map.contains_key(p) {
+                                p.clone()
+                            } else {
+                                map.keys().next().cloned().unwrap_or_default()
+                            }
                         } else {
-                            let _ = proc.set_mute(true);
+                            map.keys().next().cloned().unwrap_or_default()
+                        };
+
+                        for (label, proc) in map {
+                            if *label == target_unmute_label {
+                                let _ = proc.set_mute(false);
+                            } else {
+                                let _ = proc.set_mute(true);
+                            }
                         }
                     }
-                } else if target == *label {
-                    let _ = proc.set_mute(muted);
+                }
+            } else {
+                for (label, proc) in map {
+                    if target == *label {
+                        let _ = proc.set_mute(muted);
+                    }
                 }
             }
         }
@@ -2054,6 +2179,7 @@ fn sync_performance_settings(
             guard.audio_playback_rule = ar;
         }
     }
+    MONITOR_SYNC_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[tauri::command]

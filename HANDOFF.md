@@ -1,5 +1,5 @@
 # AetherFlow — Session Handoff File
-> **Updated:** 2026-09-11 21:25 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** ✅ Production Ready & Fully Verified. Win32 Occlusion, Multi-Monitor Pausing, Audio Policies, Custom Theme Studio, and Account Settings All Implemented and User-Validated. Standalone binary updated (7.09 MB). Frontend passes in ~490ms.
+> **Updated:** 2026-09-11 21:46 IST | **Current Version:** `1.0.7` | **Active Branch:** `ui/ux` | **Status:** ✅ Production Ready & Fully Verified. Resolved MPV self-occlusion bug and Global/Isolated mode switching state desync. Standalone release binary updated (`.\AetherFlow.exe`, 7.09 MB). Frontend builds cleanly in 704ms.
 
 ---
 

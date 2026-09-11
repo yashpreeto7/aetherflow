@@ -1612,3 +1612,36 @@
      - Copied release binary to root `.\AetherFlow.exe` (7.09 MB).
 ---
 
+## Session: 2026-09-11 21:45 (Resolved Self-Occlusion Bug in MPV Video Engine & Global/Isolated State Desync)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Issue**:
+  - In `Global (All Displays)` mode, wallpaper didn't stop on fullscreen or maximize, and audio didn't stop.
+  - Switching from `Global` to `Isolated` mode broke `Isolated` mode as well, even though `Isolated` mode worked fine normally.
+- **Root Cause Analysis**:
+  - MPV runs as a child process (`AetherFlow-VideoEngine.exe`) with its own PID (e.g. 32812) and HWND.
+  - While AetherFlow's main process PID (`self_pid`) was excluded, MPV child processes were NOT excluded in `enum_occlusion_proc`.
+  - Because MPV's window is 1920x1080 (or monitor dimensions) and visible, `enum_occlusion_proc` detected MPV's own wallpaper window as a fullscreen/maximized application occluding that monitor.
+  - In Global mode, this made `any_monitor_covered` permanently true, locking `target_paused_monitors` and `paused_monitors` into `{both displays}`. Because `was_p == should_p`, state transitions never fired, audio never unmuted or unpaused, and external fullscreen/maximized actions were ignored.
+  - When switching from Global to Isolated mode, the monitor running MPV remained marked as occluded by its own MPV window, leaving that monitor permanently stuck/paused and breaking Isolated mode too.
+  - Additionally, `set_mpv_mute` in `target == "*"` mode strictly checked `is_primary`. If MPV was only on a secondary display (`DISPLAY6`), it was erroneously muted on every policy transition because it didn't match the primary monitor label.
+- **Completed**:
+  1. **Comprehensive Self & Wallpaper Window Exclusions**:
+     - Added `mpv_pids`, `mpv_hwnds`, `wallpaper_hwnds`, `progman`, and `workerw` into `OcclusionEnumState`.
+     - In `enum_occlusion_proc`: skipped `hwnd == shell_hwnd || hwnd == progman || hwnd == workerw`, skipped any HWND in `wallpaper_hwnds` or `mpv_hwnds`, skipped any PID in `self_pid` or `mpv_pids`, skipped any parent or ancestor equal to `progman`, `workerw`, or `shell_hwnd` via `GetAncestor(GA_ROOT / GA_ROOTOWNER)`, skipped `WS_EX_TRANSPARENT`, and skipped window class `"mpv"`, `"WorkerW"`, `"Progman"`, `"SHELLDLL_DefView"`, `"SysListView32"`.
+     - In `inspect_monitor_occlusion_states`: excluded MPV PIDs/HWNDs and wallpaper HWNDs from `is_app_focused`.
+     - Added diagnostic logging `[OCCLUSION DETECTED] HWND=... pid=... class='...' title='...' monitor='...'` when any window causes occlusion.
+  2. **Atomic State Flush on Settings & Mode Switch**:
+     - Added static `MONITOR_SYNC_REQUESTED` atomic flag.
+     - Triggered on `sync_performance_settings`, `set_engine`, and `stop_wallpaper`.
+     - Resets `paused_monitors` and `audio_muted_by_policy` on the next monitor tick, ensuring immediate, clean re-evaluation without lingering stale states.
+  3. **Secondary Monitor Audio Unmute Fix in `set_mpv_mute`**:
+     - When `muted == false` and `target == "*"`, if only 1 MPV player exists (e.g. secondary display), un-mutes it directly. If multiple players exist, prioritizes primary or first player without muting single-engine setups.
+  4. **Mode-Aware Audio Muting**:
+     - In `all-displays` mode: `any_monitor_covered` triggers audio muting.
+     - In `per-display` mode: mutes audio only if all displays are paused or if the specific display with active audio is in `target_paused_monitors`.
+  5. **Verification & Build**:
+     - `cargo check`: ✅ Zero warnings, zero errors.
+     - `npm run build`: ✅ Built in 704ms.
+     - `cargo build --release`: ✅ Built in 2m 13s.
+     - Copied release binary to `.\AetherFlow.exe` (7.09 MB).
+---
