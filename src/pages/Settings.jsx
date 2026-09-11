@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore.js'
 import {
   Monitor, Zap, Battery, Mic, Power, Layers, RefreshCw,
   LayoutTemplate, DownloadCloud, CheckCircle2, AlertCircle, ExternalLink, Sparkles, Eye,
   Sliders, Palette, ShieldCheck, Check, Volume2, VolumeX, Moon, Sun, Cpu,
-  Trash2, Plus, Save, RotateCcw, Paintbrush
+  Trash2, Plus, Save, RotateCcw, Paintbrush, User, Upload, Download, Copy,
+  LogIn, LogOut, Shield, Globe, Key, FileText, Cloud, FileDown, FileUp
 } from 'lucide-react'
 import { checkForUpdate, openReleaseUrl, APP_VERSION } from '../lib/updater.js'
 import { BUILTIN_THEMES } from '../engines/index.js'
+import UserAvatar from '../components/UserAvatar/index.jsx'
+import { signOut, isOnline } from '../lib/supabase.js'
 
 const hexToRgbTuple = (hex) => {
   if (!hex || !hex.startsWith('#')) return hex
@@ -15,6 +18,90 @@ const hexToRgbTuple = (hex) => {
   const g = parseInt(hex.slice(3, 5), 16) || 0
   const b = parseInt(hex.slice(5, 7), 16) || 0
   return `${r}, ${g}, ${b}`
+}
+
+const rgbTupleToHex = (tuple) => {
+  if (!tuple) return '#000000'
+  if (typeof tuple === 'string' && tuple.startsWith('#')) return tuple
+  const parts = String(tuple).split(',').map(s => parseInt(s.trim(), 10) || 0)
+  if (parts.length < 3) return '#000000'
+  const toHex = (n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')
+  return `#${toHex(parts[0])}${toHex(parts[1])}${toHex(parts[2])}`
+}
+
+const BUILTIN_THEME_TOKENS = {
+  'sovereign-onyx': {
+    '--rgb-base': '9, 9, 11',
+    '--rgb-sidebar': '17, 17, 20',
+    '--rgb-card': '26, 26, 32',
+    '--color-brand': '#3b82f6',
+    '--color-brand-hover': '#2563eb',
+    '--color-accent': '#60a5fa',
+    '--text-main': '#fafafa',
+    '--text-muted': '#a1a1aa',
+    '--border-main': '#27272a',
+    '--border-accent': '#3b82f6',
+  },
+  'sovereign-slate': {
+    '--rgb-base': '12, 15, 23',
+    '--rgb-sidebar': '18, 23, 34',
+    '--rgb-card': '24, 32, 48',
+    '--color-brand': '#6366f1',
+    '--color-brand-hover': '#4f46e5',
+    '--color-accent': '#38bdf8',
+    '--text-main': '#f1f5f9',
+    '--text-muted': '#94a3b8',
+    '--border-main': '#1e2d4a',
+    '--border-accent': '#6366f1',
+  },
+  'sovereign-studio': {
+    '--rgb-base': '10, 14, 15',
+    '--rgb-sidebar': '17, 24, 26',
+    '--rgb-card': '23, 34, 37',
+    '--color-brand': '#10b981',
+    '--color-brand-hover': '#059669',
+    '--color-accent': '#2dd4bf',
+    '--text-main': '#ecfdf5',
+    '--text-muted': '#94a3b8',
+    '--border-main': '#1e3040',
+    '--border-accent': '#10b981',
+  },
+  'sovereign-obsidian': {
+    '--rgb-base': '14, 11, 8',
+    '--rgb-sidebar': '23, 19, 14',
+    '--rgb-card': '34, 28, 21',
+    '--color-brand': '#f59e0b',
+    '--color-brand-hover': '#d97706',
+    '--color-accent': '#fbbf24',
+    '--text-main': '#fef3c7',
+    '--text-muted': '#a8a29e',
+    '--border-main': '#3d2e1e',
+    '--border-accent': '#f59e0b',
+  },
+  'sovereign-manifesto': {
+    '--rgb-base': '245, 240, 232',
+    '--rgb-sidebar': '234, 228, 216',
+    '--rgb-card': '252, 251, 250',
+    '--color-brand': '#d42b2b',
+    '--color-brand-hover': '#b91c1c',
+    '--color-accent': '#1a3dc4',
+    '--text-main': '#0a0a0a',
+    '--text-muted': '#525252',
+    '--border-main': '#0a0a0a',
+    '--border-accent': '#d42b2b',
+  },
+  'sovereign-light': {
+    '--rgb-base': '248, 250, 252',
+    '--rgb-sidebar': '241, 245, 249',
+    '--rgb-card': '255, 255, 255',
+    '--color-brand': '#2563eb',
+    '--color-brand-hover': '#1d4ed8',
+    '--color-accent': '#0ea5e9',
+    '--text-main': '#0f172a',
+    '--text-muted': '#64748b',
+    '--border-main': '#cbd5e1',
+    '--border-accent': '#2563eb',
+  },
 }
 
 const STARTER_PRESETS = [
@@ -194,20 +281,80 @@ export default function SettingsPage() {
   const reducedMotion = useStore(s => s.reducedMotion) || false
   const toggleReducedMotion = useStore(s => s.toggleReducedMotion)
 
-  // Custom Theme Studio State
+  // Auth store bindings
+  const authUser = useStore(s => s.authUser)
+  const isAuthenticated = useStore(s => s.isAuthenticated)
+  const setShowAuthModal = useStore(s => s.setShowAuthModal)
+  const clearAuth = useStore(s => s.clearAuth)
+  const [signingOut, setSigningOut] = useState(false)
+
+  // Custom Theme Studio & Import/Export State
   const [showCustomStudio, setShowCustomStudio] = useState(false)
+  const [isLivePreviewing, setIsLivePreviewing] = useState(false)
+  const [hasCustomized, setHasCustomized] = useState(false)
   const [customThemeName, setCustomThemeName] = useState('My Custom Theme')
   const [customTokens, setCustomTokens] = useState({ ...STARTER_PRESETS[0].tokens })
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false)
+  const [themeToast, setThemeToast] = useState(null)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importJsonText, setImportJsonText] = useState('')
+  const fileInputRef = useRef(null)
 
-  // Live preview custom tokens while studio is open
+  const showToast = (type, text) => {
+    setThemeToast({ type, text })
+    setTimeout(() => setThemeToast(null), 3500)
+  }
+
+  // Helper to open the Studio cleanly without prematurely overriding the active theme
+  const handleOpenStudio = () => {
+    const currentTokens = customThemes[activeTheme] || BUILTIN_THEME_TOKENS[activeTheme] || STARTER_PRESETS[0].tokens
+    const normalized = {}
+    Object.entries(currentTokens).forEach(([k, v]) => {
+      if (k.startsWith('--')) {
+        normalized[k] = k.startsWith('--rgb-') ? rgbTupleToHex(v) : v
+      }
+    })
+    setCustomTokens(normalized)
+    setCustomThemeName(
+      customThemes[activeTheme]?._meta?.name
+        ? `${customThemes[activeTheme]._meta.name} (Custom)`
+        : 'My Custom Theme'
+    )
+    setIsLivePreviewing(false)
+    setHasCustomized(false)
+    setShowCustomStudio(true)
+  }
+
+  // Live preview custom tokens ONLY when explicitly enabled or when user has customized
   useEffect(() => {
-    if (!showCustomStudio) return
+    if (!showCustomStudio || !isLivePreviewing) return
     Object.entries(customTokens).forEach(([k, val]) => {
       const finalVal = k.startsWith('--rgb-') ? hexToRgbTuple(val) : val
       document.documentElement.style.setProperty(k, finalVal)
     })
-  }, [showCustomStudio, customTokens])
+  }, [showCustomStudio, isLivePreviewing, customTokens])
+
+  const handleTokenChange = (key, val) => {
+    setCustomTokens(prev => ({ ...prev, [key]: val }))
+    setHasCustomized(true)
+    setIsLivePreviewing(true) // User actually customized: engage live preview!
+  }
+
+  const handleSelectPreset = (starter) => {
+    setCustomTokens({ ...starter.tokens })
+    setCustomThemeName(starter.name)
+    setHasCustomized(true)
+    setIsLivePreviewing(true) // User intentionally picked a starter preset
+  }
+
+  const handleToggleLivePreview = () => {
+    if (isLivePreviewing) {
+      setIsLivePreviewing(false)
+      setActiveTheme(activeTheme) // Revert document inline styles to active theme
+    } else {
+      setIsLivePreviewing(true)
+    }
+  }
 
   const handleSaveCustomTheme = () => {
     const id = `custom-${Date.now()}`
@@ -224,13 +371,172 @@ export default function SettingsPage() {
     }
     saveCustomTheme(id, finalTokens)
     setActiveTheme(id)
+    setIsLivePreviewing(false)
+    setHasCustomized(false)
     setSaveSuccessMsg(true)
-    setTimeout(() => setSaveSuccessMsg(false), 3000)
+    showToast('success', `Theme "${customThemeName.trim() || 'Custom Theme'}" saved and activated!`)
+    setTimeout(() => setSaveSuccessMsg(false), 3500)
   }
 
   const handleCloseStudio = () => {
     setShowCustomStudio(false)
-    setActiveTheme(activeTheme)
+    setIsLivePreviewing(false)
+    setHasCustomized(false)
+    setActiveTheme(activeTheme) // Revert document inline styles to active theme
+  }
+
+  // Export theme as downloadable .json file
+  const handleExportTheme = (themeId = null, themeTokens = null, themeName = null) => {
+    try {
+      let name = themeName
+      let tokens = themeTokens
+
+      if (!tokens) {
+        const targetId = themeId || activeTheme
+        if (customThemes[targetId]) {
+          tokens = { ...customThemes[targetId] }
+          name = tokens._meta?.name || 'Custom Theme'
+          delete tokens._meta
+        } else if (BUILTIN_THEME_TOKENS[targetId]) {
+          tokens = BUILTIN_THEME_TOKENS[targetId]
+          const builtin = BUILTIN_THEMES.find(t => t.id === targetId)
+          name = builtin ? builtin.name : targetId
+        } else if (showCustomStudio) {
+          tokens = { ...customTokens }
+          name = customThemeName || 'Custom Theme'
+        }
+      }
+
+      if (!tokens) {
+        showToast('error', 'No theme tokens available to export')
+        return
+      }
+
+      const payload = {
+        name: name || 'AetherFlow Theme',
+        type: 'aetherflow-theme',
+        version: 1,
+        author: authUser?.user_metadata?.full_name || 'AetherFlow User',
+        exportedAt: new Date().toISOString(),
+        tokens: tokens,
+      }
+
+      const jsonStr = JSON.stringify(payload, null, 2)
+      const blob = new Blob([jsonStr], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const filename = `${(name || 'theme').toLowerCase().replace(/[^a-z0-9_-]/g, '_')}.aetherflow-theme.json`
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      showToast('success', `Exported "${name}" theme successfully!`)
+    } catch (err) {
+      console.error('Export theme error:', err)
+      showToast('error', 'Failed to export theme')
+    }
+  }
+
+  // Copy theme JSON to clipboard
+  const handleCopyThemeJson = (themeId = null) => {
+    try {
+      const targetId = themeId || activeTheme
+      const targetTheme = customThemes[targetId]
+      const tokens = targetTheme ? { ...targetTheme } : (BUILTIN_THEME_TOKENS[targetId] || customTokens)
+      const name = targetTheme?._meta?.name || BUILTIN_THEMES.find(t => t.id === targetId)?.name || customThemeName
+      const cleanTokens = { ...tokens }
+      if (cleanTokens._meta) delete cleanTokens._meta
+
+      const payload = {
+        name: name || 'AetherFlow Theme',
+        type: 'aetherflow-theme',
+        version: 1,
+        tokens: cleanTokens,
+      }
+      navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+      showToast('success', `Copied "${name}" theme JSON to clipboard!`)
+    } catch (err) {
+      showToast('error', 'Failed to copy to clipboard')
+    }
+  }
+
+  // Process and import theme JSON object
+  const processImportedTheme = (parsed) => {
+    try {
+      const tokens = parsed.tokens || parsed
+      if (!tokens || typeof tokens !== 'object') {
+        throw new Error('Invalid theme format: no tokens object found')
+      }
+
+      // Verify at least one essential token exists
+      const hasBase = tokens['--rgb-base'] || tokens['base'] || tokens['--bg-base']
+      const hasBrand = tokens['--color-brand'] || tokens['brand'] || tokens['accent']
+      if (!hasBase && !hasBrand) {
+        throw new Error('Missing essential color tokens (--rgb-base or --color-brand)')
+      }
+
+      // Normalize tokens
+      const normalized = {}
+      Object.entries(tokens).forEach(([k, v]) => {
+        if (typeof v === 'string') {
+          const key = k.startsWith('--') ? k : `--${k}`
+          normalized[key] = key.startsWith('--rgb-') && v.startsWith('#') ? hexToRgbTuple(v) : v
+        }
+      })
+
+      const themeName = parsed.name || 'Imported Theme'
+      const id = `custom-imported-${Date.now()}`
+      normalized._meta = {
+        name: themeName,
+        bg: normalized['--rgb-base'] ? (normalized['--rgb-base'].startsWith('#') ? normalized['--rgb-base'] : rgbTupleToHex(normalized['--rgb-base'])) : '#09090b',
+        card: normalized['--rgb-card'] ? (normalized['--rgb-card'].startsWith('#') ? normalized['--rgb-card'] : rgbTupleToHex(normalized['--rgb-card'])) : '#1a1a20',
+        accent: normalized['--color-brand'] || '#3b82f6',
+        text: normalized['--text-main'] || '#fafafa',
+      }
+
+      saveCustomTheme(id, normalized)
+      setActiveTheme(id)
+      showToast('success', `Theme "${themeName}" imported and activated!`)
+      setShowImportModal(false)
+      setImportJsonText('')
+    } catch (err) {
+      console.error('Theme import error:', err)
+      showToast('error', err.message || 'Failed to import theme JSON')
+    }
+  }
+
+  // Handle file import from <input type="file">
+  const handleFileImport = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result
+        const parsed = JSON.parse(text)
+        processImportedTheme(parsed)
+      } catch (err) {
+        showToast('error', 'Invalid JSON file: ' + err.message)
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  const handleSignOut = async () => {
+    setSigningOut(true)
+    try {
+      await signOut()
+    } catch (err) {
+      console.warn('Sign out error:', err)
+    } finally {
+      clearAuth()
+      setSigningOut(false)
+      showToast('success', 'Successfully signed out')
+    }
   }
 
   // Thumbnails store bindings
@@ -367,6 +673,7 @@ export default function SettingsPage() {
     { id: 'taskbar',     label: 'Taskbar',     icon: LayoutTemplate },
     { id: 'audio',       label: 'Audio',       icon: Mic },
     { id: 'system',      label: 'System',      icon: Power },
+    { id: 'account',     label: 'Account',     icon: User },
   ]
 
   return (
@@ -491,24 +798,78 @@ export default function SettingsPage() {
         <div className="animate-fadeIn">
           {/* Preset Themes Gallery */}
           <div className="setting-card">
-            <div className="setting-card-header">
+            <div className="setting-card-header" style={{ flexWrap: 'wrap', gap: 10 }}>
               <div className="flex items-center gap-2.5">
                 <Palette size={16} style={{ color: 'var(--color-accent)' }} />
                 <span className="text-sm font-semibold">Sovereign Theme Presets</span>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ fontSize: 11.5, padding: '4px 12px', height: 28 }}
-                onClick={() => setShowCustomStudio(prev => !prev)}
-              >
-                <Plus size={13} /> {showCustomStudio ? 'Hide Theme Studio' : 'Customize & Create Theme'}
-              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".json"
+                  onChange={handleFileImport}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11.5, padding: '4px 10px', height: 28 }}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Import theme from a .json file"
+                >
+                  <FileUp size={13} /> Import
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11.5, padding: '4px 10px', height: 28 }}
+                  onClick={() => handleExportTheme()}
+                  title="Export active theme as .json file"
+                >
+                  <FileDown size={13} /> Export Active
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ fontSize: 11.5, padding: '4px 12px', height: 28 }}
+                  onClick={() => {
+                    if (showCustomStudio) {
+                      handleCloseStudio()
+                    } else {
+                      handleOpenStudio()
+                    }
+                  }}
+                >
+                  <Plus size={13} /> {showCustomStudio ? 'Hide Studio' : 'Customize & Create'}
+                </button>
+              </div>
             </div>
+
+            {themeToast && (
+              <div
+                className="flex items-center gap-2 animate-fadeIn"
+                style={{
+                  margin: '12px 18px 0',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 500,
+                  background: themeToast.type === 'error'
+                    ? 'color-mix(in srgb, var(--color-rose) 15%, transparent)'
+                    : 'color-mix(in srgb, var(--color-emerald) 15%, transparent)',
+                  border: `1px solid ${themeToast.type === 'error' ? 'var(--color-rose)' : 'var(--color-emerald)'}`,
+                  color: themeToast.type === 'error' ? 'var(--color-rose)' : 'var(--color-emerald)',
+                }}
+              >
+                {themeToast.type === 'error' ? <AlertCircle size={14} /> : <CheckCircle2 size={14} />}
+                <span>{themeToast.text}</span>
+              </div>
+            )}
 
             <div style={{ padding: '16px 18px' }}>
               <div className="text-xs text-muted" style={{ marginBottom: 14 }}>
-                Select a visual identity or create a custom theme. All UI surfaces, elevations, accents, and glows will instantly adapt.
+                Select a visual identity, import a theme JSON, or create a custom palette. All UI surfaces, elevations, accents, and glows will dynamically adapt.
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
@@ -613,19 +974,31 @@ export default function SettingsPage() {
                             {meta.name}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           {isSelected && (
                             <span
                               style={{
                                 width: 18, height: 18, borderRadius: '50%',
                                 background: 'var(--color-brand)',
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                color: '#fff',
+                                color: '#fff'
                               }}
                             >
                               <Check size={11} strokeWidth={3} />
                             </span>
                           )}
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            style={{ padding: 4, color: 'var(--text-muted)' }}
+                            title="Export theme JSON"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleExportTheme(id)
+                            }}
+                          >
+                            <Download size={12} />
+                          </button>
                           <button
                             type="button"
                             className="btn-icon"
@@ -667,13 +1040,36 @@ export default function SettingsPage() {
           {/* Custom Theme Studio */}
           {showCustomStudio && (
             <div className="setting-card animate-fadeIn" style={{ border: '1px solid var(--color-brand)' }}>
-              <div className="setting-card-header" style={{ background: 'color-mix(in srgb, var(--color-brand) 8%, var(--bg-card))' }}>
+              <div className="setting-card-header" style={{ background: 'color-mix(in srgb, var(--color-brand) 8%, var(--bg-card))', flexWrap: 'wrap', gap: 8 }}>
                 <div className="flex items-center gap-2.5">
                   <Paintbrush size={16} style={{ color: 'var(--color-brand)' }} />
                   <span className="text-sm font-semibold">Custom Theme Studio</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="badge badge-brand font-mono" style={{ fontSize: 10 }}>Live CSS Engine</span>
+                  <span
+                    className={`badge ${isLivePreviewing ? 'badge-brand' : ''} font-mono`}
+                    style={{ fontSize: 10 }}
+                  >
+                    {isLivePreviewing ? '⚡ Live Preview' : 'Draft Mode'}
+                  </span>
+                  <button
+                    type="button"
+                    className={`btn ${isLivePreviewing ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ fontSize: 11, padding: '3px 8px', height: 24 }}
+                    onClick={handleToggleLivePreview}
+                    title={isLivePreviewing ? 'Pause live preview and inspect default' : 'Engage live preview of your custom tweaks'}
+                  >
+                    <Eye size={12} /> {isLivePreviewing ? 'Preview ON' : 'Preview OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: 11, padding: '3px 8px', height: 24 }}
+                    onClick={() => handleExportTheme(null, customTokens, customThemeName)}
+                    title="Export current custom theme draft as JSON file"
+                  >
+                    <Download size={12} /> Export Draft
+                  </button>
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -686,9 +1082,27 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ padding: '16px 18px' }}>
+                {isLivePreviewing && (
+                  <div
+                    className="flex items-center gap-2 animate-fadeIn"
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'color-mix(in srgb, var(--color-brand) 12%, transparent)',
+                      border: '1px solid var(--color-brand)',
+                      color: 'var(--color-brand)',
+                      marginBottom: 16,
+                      fontSize: 12,
+                    }}
+                  >
+                    <Eye size={14} />
+                    <span>Live Preview Active: UI changes reflect live across the window. Click <strong>Save & Apply</strong> to keep or <strong>Cancel & Reset</strong> to revert.</span>
+                  </div>
+                )}
+
                 {saveSuccessMsg && (
                   <div
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 animate-fadeIn"
                     style={{
                       padding: '10px 14px',
                       borderRadius: 8,
@@ -747,10 +1161,7 @@ export default function SettingsPage() {
                             background: 'var(--bg-card)',
                             border: '1px solid var(--border-subtle)',
                           }}
-                          onClick={() => {
-                            setCustomTokens({ ...starter.tokens })
-                            setCustomThemeName(starter.name)
-                          }}
+                          onClick={() => handleSelectPreset(starter)}
                         >
                           <span
                             style={{
@@ -771,7 +1182,7 @@ export default function SettingsPage() {
 
                 {/* Color Pickers Grid */}
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted" style={{ marginBottom: 10 }}>
-                  Theme Color Tokens (Live Preview)
+                  Theme Color Tokens ({isLivePreviewing ? 'Live Preview Active' : 'Draft'})
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
@@ -806,7 +1217,7 @@ export default function SettingsPage() {
                           <input
                             type="color"
                             value={rawVal}
-                            onChange={e => setCustomTokens(prev => ({ ...prev, [key]: e.target.value }))}
+                            onChange={e => handleTokenChange(key, e.target.value)}
                             style={{
                               width: 36,
                               height: 28,
@@ -834,14 +1245,24 @@ export default function SettingsPage() {
                   >
                     <RotateCcw size={13} /> Cancel & Reset
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    style={{ fontSize: 12, padding: '8px 20px' }}
-                    onClick={handleSaveCustomTheme}
-                  >
-                    <Save size={14} /> Save & Apply Custom Theme
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: 12 }}
+                      onClick={() => handleCopyThemeJson()}
+                    >
+                      <Copy size={13} /> Copy JSON
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ fontSize: 12, padding: '8px 20px' }}
+                      onClick={handleSaveCustomTheme}
+                    >
+                      <Save size={14} /> Save & Apply Custom Theme
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1314,6 +1735,229 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab 7: Account & Identity ────────────────────────────────────────── */}
+      {activeTab === 'account' && (
+        <div className="animate-fadeIn">
+          {isAuthenticated && authUser ? (
+            /* Authenticated User Profile */
+            <div className="setting-card">
+              <div className="setting-card-header">
+                <div className="flex items-center gap-2.5">
+                  <User size={16} style={{ color: 'var(--color-brand)' }} />
+                  <span className="text-sm font-semibold">Account Profile & Community Identity</span>
+                </div>
+                <span className="badge badge-emerald font-mono" style={{ fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-emerald)', display: 'inline-block' }} />
+                  Connected
+                </span>
+              </div>
+
+              <div style={{ padding: '20px 22px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+                  <UserAvatar user={authUser} size={56} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="font-bold text-lg" style={{ color: 'var(--text-main)', letterSpacing: '-0.3px' }}>
+                      {authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.user_metadata?.user_name || 'AetherFlow Creator'}
+                    </div>
+                    <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                      {authUser.email || 'Connected Account'}
+                    </div>
+                    <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
+                      <span className="badge" style={{ fontSize: 10 }}>
+                        {(() => {
+                          const meta = authUser?.user_metadata || {}
+                          const appMeta = authUser?.app_metadata || {}
+                          const identities = authUser?.identities || []
+                          const hasGoogle = meta.iss?.includes('google') || appMeta.provider === 'google' || identities.some(i => i.provider === 'google')
+                          const hasGitHub = meta.iss?.includes('github') || appMeta.provider === 'github' || identities.some(i => i.provider === 'github')
+                          if (hasGoogle && hasGitHub) return 'Google + GitHub Linked'
+                          if (hasGoogle) return 'Google Account'
+                          if (hasGitHub) return 'GitHub Account'
+                          return 'Verified Creator'
+                        })()}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-ghost font-mono"
+                        style={{ fontSize: 10, padding: '2px 8px', height: 'auto', color: 'var(--text-muted)' }}
+                        onClick={() => {
+                          navigator.clipboard.writeText(authUser.id || '')
+                          showToast('success', 'Copied User ID to clipboard')
+                        }}
+                        title="Copy User ID"
+                      >
+                        <Copy size={10} style={{ marginRight: 4 }} />
+                        ID: {(authUser.id || '').substring(0, 8)}…
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                  <div>
+                    <div className="text-xs font-semibold" style={{ color: 'var(--text-main)' }}>Community Sync</div>
+                    <div className="text-xs text-muted" style={{ marginTop: 2 }}>
+                      Your custom wallpaper submissions, marketplace likes, and installed packages are synced to this account.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--color-rose)',
+                      border: '1px solid color-mix(in srgb, var(--color-rose) 30%, transparent)',
+                      background: 'color-mix(in srgb, var(--color-rose) 8%, transparent)',
+                    }}
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                  >
+                    <LogOut size={13} style={{ marginRight: 6 }} />
+                    {signingOut ? 'Signing out…' : 'Sign Out'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Guest / Unauthenticated View */
+            <div className="setting-card">
+              <div className="setting-card-header">
+                <div className="flex items-center gap-2.5">
+                  <Shield size={16} style={{ color: 'var(--color-brand)' }} />
+                  <span className="text-sm font-semibold">Account & Community Access</span>
+                </div>
+                <span className="badge" style={{ fontSize: 10 }}>Guest Mode</span>
+              </div>
+
+              <div style={{ padding: '24px 22px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: '16px 18px',
+                  borderRadius: 12,
+                  background: 'color-mix(in srgb, var(--border-main) 20%, var(--bg-card))',
+                  border: '1px solid var(--border-subtle)',
+                  marginBottom: 20
+                }}>
+                  <div style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: '50%',
+                    background: 'color-mix(in srgb, var(--color-brand) 15%, transparent)',
+                    border: '1px solid var(--color-brand)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-brand)',
+                    flexShrink: 0
+                  }}>
+                    <User size={22} />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm" style={{ color: 'var(--text-main)' }}>
+                      You are currently using AetherFlow in Offline Guest Mode
+                    </div>
+                    <div className="text-xs text-muted" style={{ marginTop: 3, lineHeight: 1.45 }}>
+                      All core functionality (Canvas 2D engines, MPV videos, local pictures, web streams, and taskbar styling) operates completely offline without an account.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 20 }}>
+                  <div className="text-xs font-semibold uppercase tracking-wider text-muted" style={{ marginBottom: 12 }}>
+                    Why connect an account?
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                    <div style={{ padding: 14, borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)' }}>
+                      <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-brand)', marginBottom: 4 }}>
+                        <Upload size={14} /> Publish Wallpapers
+                      </div>
+                      <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                        Share your animated videos, audio visualizers, and interactive canvases to the Community Marketplace.
+                      </div>
+                    </div>
+                    <div style={{ padding: 14, borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)' }}>
+                      <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-accent)', marginBottom: 4 }}>
+                        <Cloud size={14} /> Cloud Bookmarks
+                      </div>
+                      <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                        Sync your liked wallpapers, favorites list, and creator profile across all your Windows PCs.
+                      </div>
+                    </div>
+                    <div style={{ padding: 14, borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)' }}>
+                      <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--color-emerald)', marginBottom: 4 }}>
+                        <ShieldCheck size={14} /> Creator Reputation
+                      </div>
+                      <div className="text-xs text-muted" style={{ lineHeight: 1.4 }}>
+                        Track your community download counts, receive likes, and earn verified creator status.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ fontSize: 13, padding: '9px 24px' }}
+                    onClick={() => setShowAuthModal(true)}
+                  >
+                    <LogIn size={15} style={{ marginRight: 6 }} /> Sign In / Create Account
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Cloud Infrastructure & Local Storage Card */}
+          <div className="setting-card" style={{ marginTop: 18 }}>
+            <div className="setting-card-header">
+              <div className="flex items-center gap-2.5">
+                <Globe size={16} style={{ color: 'var(--color-accent)' }} />
+                <span className="text-sm font-semibold">Backend Infrastructure & Diagnostics</span>
+              </div>
+              <span className="badge font-mono" style={{ fontSize: 10 }}>Cloud Status</span>
+            </div>
+
+            <SettingRow
+              label="Supabase Cloud Connectivity"
+              desc="Required for Community Marketplace browsing, publishing, and OAuth session synchronization"
+            >
+              <span
+                className={`badge ${isOnline() ? 'badge-emerald' : ''}`}
+                style={{
+                  fontSize: 11,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: isOnline() ? 'var(--color-emerald)' : 'var(--text-muted)'
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: isOnline() ? 'var(--color-emerald)' : 'var(--text-muted)'
+                  }}
+                />
+                {isOnline() ? 'Online · Connected' : 'Offline / Standalone Mode'}
+              </span>
+            </SettingRow>
+
+            <SettingRow
+              label="Local Storage & Data Persistence"
+              desc="Installed wallpapers, customized themes, audio presets, and favorites are safely stored on disk"
+            >
+              <span className="telemetry-chip font-mono">
+                Persisted (LocalStorage)
+              </span>
+            </SettingRow>
           </div>
         </div>
       )}

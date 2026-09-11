@@ -1324,4 +1324,29 @@
   - Playwright visual tests verified Home, Library, and Settings features (Liked filters, Heart buttons, Theme Studio live preview, saving custom theme, active selection, deletion).
 ---
 
-
+## Session: 2026-09-11 18:25 (Theme Import/Export, Non-Intrusive Theme Studio & Account Tab)
+- **Agent:** Antigravity (Google DeepMind)
+- **User Requests**:
+  1. Add an option to import and export theme options.
+  2. Fix Custom Theme Studio auto-applying on click: it should not automatically apply, only when actually customized should changes take effect.
+  3. Add Account settings to Settings.
+- **Completed**:
+  1. **Theme Import & Export**:
+     - Added 1-click **Export Active** and **Import** file buttons in the Sovereign Theme Presets header.
+     - Added individual theme export buttons on user-saved custom theme cards and draft export in Theme Studio.
+     - Implemented clipboard JSON export (`Copy JSON`) and `.json` file downloads (`<name>.aetherflow-theme.json`).
+     - Implemented `.json` file importer validating tokens, normalizing hex/RGB tuples, and auto-activating with toast feedback.
+  2. **Non-Intrusive Custom Theme Studio**:
+     - Fixed auto-apply: opening the studio now initializes cleanly in **Draft Mode** with **Preview OFF**, leaving the active desktop and app themes completely untouched.
+     - When the user edits a color picker or clicks a starter preset, Live Preview dynamically engages with an informational banner.
+     - Added manual **Preview ON/OFF** button for instant comparison against the active theme.
+     - Added clean revert on "Cancel & Reset" and "Close", cleanly restoring the active theme with zero CSS leakage.
+  3. **Dedicated Account Tab in Settings**:
+     - Added `Account` tab (`{ id: 'account', label: 'Account', icon: User }`) to Settings navigation bar.
+     - Authenticated View: User avatar, display name, email, click-to-copy User ID chip, provider badge (Google / GitHub), community sync status, and Sign Out button.
+     - Guest Mode View: Guest badge, explanation of 100% offline capabilities, benefits of joining (marketplace publishing, cloud sync, creator reputation), and "Sign In / Create Account" button.
+     - Diagnostics: Real-time Supabase Cloud connectivity indicator and local storage persistence confirmation.
+- **Verification**:
+  - `npm run build`: ✅ Passes in 514ms with zero errors.
+  - Playwright visual tests: Verified Account tab rendering in Guest mode, Appearance import/export header controls, Draft Mode non-intrusive opening, Emerald Matrix live preview engagement, and clean revert upon Cancel.
+---

@@ -3,14 +3,11 @@
 <!-- If you are an AI agent, read this file FIRST before doing anything. -->
 
 ## Last Updated
-2026-09-11 18:05 IST — Theme Consolidation, Custom Theme Studio, Local Liked Wallpapers & Ambience Dynamics:
-1. Removed theme selector from `Home.jsx` and `Library.jsx`; consolidated all theme customization exclusively inside `Settings.jsx` under the `Appearance` tab.
-2. Built a full-featured **Custom Theme Studio** in `Settings.jsx` with real-time live preview, 5 quick starter presets (`Cyber Neon`, `Emerald Matrix`, `Solar Flare`, `Crimson Blood`, `Nordic Blue`), 7 color pickers, and persistent "Save & Apply" to `useStore` with RGB tuple generation and localStorage sync.
-3. Created a Saved Custom Themes gallery with active badges, multi-color palette swatches, and 1-click delete with fallback to default Sovereign Onyx.
-4. Added a local **Liked Wallpapers** filter in both `Home.jsx` and `Library.jsx` with real-time counters and heart/favorite action buttons on all wallpaper cards.
-5. Replaced ineffective glassmorphism/material surface sliders with **Visual Ambience & Dynamics** (Accent Glow Ambience segmented control: `Vivid`, `Balanced`, `Subtle`, `Off` and Reduced Motion / Snappy UI toggle).
-6. Eliminated hardcoded colors across CSS files and components (using `color-mix(in srgb, var(--text-main) 6%, transparent)` and CSS variables) for contrast adaptivity across both dark and light modes.
-7. Fixed custom theme `:root` CSS variable fallback formulas ensuring complete background and surface opacity.
+2026-09-11 18:25 IST — Theme Import/Export, Non-Intrusive Theme Studio, and Dedicated Account Tab:
+1. Implemented **Theme Import & Export**: 1-click JSON file export for active and custom themes, clipboard copying, and file-based JSON importer with automatic token validation, normalization, and activation.
+2. Fixed **Theme Studio Auto-Apply**: Opening the studio no longer modifies or overrides the active theme. Studio opens in clean **Draft Mode** (Preview OFF), engaging live preview only when a color is customized or a preset selected, with a manual preview toggle and clean cancellation.
+3. Added dedicated **Account Settings Tab**: User profile view for authenticated creators (avatar, display name, email, user ID, provider badge, community sync, sign out) and guest mode view (offline capability details, community benefits checklist, and sign in CTA).
+4. Verified via Playwright automation: Account tab rendering, Appearance header actions, non-intrusive studio open, and clean revert on cancel. Frontend compiles in 514ms.
 
 
 ---
